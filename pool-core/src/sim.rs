@@ -22,6 +22,7 @@ use crate::geometry::TableGeometry;
 use crate::math::{Vec2, Vec3};
 use crate::pocket;
 use crate::state::{BallState, GamePhase, GameState, MotionState, PocketState, ShotInput};
+use crate::trace::{OpenSegment, Recorder, SegmentKind, Trace};
 
 /// An error raised by the simulation. The core never panics; a fault is reported.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,6 +112,8 @@ pub struct Simulation<'a> {
     balls: Vec<BallState>,
     time: f64,
     events: Vec<SimEvent>,
+    /// The path recorder, off unless [`Simulation::record`] turns it on.
+    recorder: Option<Recorder>,
 }
 
 impl<'a> Simulation<'a> {
@@ -138,8 +141,26 @@ impl<'a> Simulation<'a> {
             balls,
             time: 0.0,
             events: Vec::new(),
+            recorder: None,
         }
     }
+
+    /// Turns the path recorder on.
+    ///
+    /// The recorder only reads the state of the simulation, so the shot it produces
+    /// is the same shot: the event list, the final state and the hash are
+    /// unchanged. What it adds is the *path* - the list of segments a renderer
+    /// interpolates (§11.2, [`crate::trace`]).
+    pub fn record(&mut self) {
+        let numbers: Vec<u8> = self.balls.iter().map(|ball| ball.number).collect();
+        self.recorder = Some(Recorder::new(&numbers));
+    }
+
+    /// The recorded path of the shot, if the recorder was on.
+    pub fn trace(&self) -> Option<&Trace> {
+        self.recorder.as_ref().map(|recorder| &recorder.trace)
+    }
+
     /// The balls of the simulation.
     pub fn balls(&self) -> &[BallState] {
         &self.balls
@@ -170,7 +191,10 @@ impl<'a> Simulation<'a> {
     pub fn run(&mut self, input: &ShotInput) -> Result<(), SimError> {
         self.refresh_all_states();
         self.apply_cue_strike(input);
-        self.run_events()
+        self.open_all_segments();
+        let result = self.run_events();
+        self.finish_trace();
+        result
     }
 
     /// Runs the simulation from the current state, without applying a cue strike.
@@ -179,7 +203,10 @@ impl<'a> Simulation<'a> {
     /// shot, so the balls are already moving.
     pub fn run_without_strike(&mut self) -> Result<(), SimError> {
         self.refresh_all_states();
-        self.run_events()
+        self.open_all_segments();
+        let result = self.run_events();
+        self.finish_trace();
+        result
     }
 
     /// The event loop.
@@ -212,7 +239,9 @@ impl<'a> Simulation<'a> {
             }
             self.advance_all(dt);
             self.time = event.time;
+            self.close_segments(&event);
             self.apply(event)?;
+            self.open_segments(&event);
 
             self.events.push(event);
         }
@@ -448,6 +477,149 @@ impl<'a> Simulation<'a> {
             cloth::shelf_acceleration(ball, self.cfg.simulation.gravity, self.cfg.table.mu_slate)
         } else {
             cloth::segment_acceleration(ball, &self.cloth)
+        }
+    }
+
+    /// The balls an event touches.
+    ///
+    /// Only a ball-ball event has a second ball; for every other event `b` is a
+    /// rail or a pocket index.
+    fn affected_balls(event: &SimEvent) -> [Option<usize>; 2] {
+        match event.kind {
+            EventKind::BallBall => [Some(event.a as usize), Some(event.b as usize)],
+            _ => [Some(event.a as usize), None],
+        }
+    }
+
+    /// The kind of motion a ball is in, as the recorder sees it.
+    fn segment_kind(&self, ball: &BallState) -> SegmentKind {
+        if ball.pocket_state == PocketState::Entering {
+            return SegmentKind::Shelf;
+        }
+        match ball.motion_state {
+            MotionState::Sliding => SegmentKind::Sliding,
+            MotionState::Rolling => SegmentKind::Rolling,
+            MotionState::Spinning => SegmentKind::Spinning,
+            MotionState::Stationary => SegmentKind::Stationary,
+            MotionState::Airborne => SegmentKind::Airborne,
+        }
+    }
+
+    /// The constant angular acceleration of a ball over a segment.
+    ///
+    /// It mirrors what the advance functions of `cloth` do to the spin:
+    ///
+    /// * a sliding ball is spun up towards the rolling condition and its vertical
+    ///   spin decays (§3.3);
+    /// * a rolling ball takes the rolling spin of its (changing) velocity and its
+    ///   vertical spin decays (§3.2);
+    /// * a ball on a shelf takes the rolling spin of its velocity and its vertical
+    ///   spin is left alone (§9.4);
+    /// * a spinning ball only decays (§3.4);
+    /// * a ball in the air keeps its spin (§7.1).
+    fn angular_acceleration(&self, ball: &BallState, kind: SegmentKind, a: Vec3) -> Vec3 {
+        let radius = self.cfg.ball.radius;
+        let g = self.cfg.simulation.gravity;
+        let decay = 5.0 * self.cfg.cloth.mu_sp * g / (2.0 * radius);
+        match kind {
+            SegmentKind::Sliding => {
+                let u = cloth::slip_velocity(ball.velocity, ball.angular_velocity, radius);
+                let u_hat = match u.normalize() {
+                    Some(direction) => direction,
+                    None => return Vec3::ZERO,
+                };
+                let spin_up =
+                    Vec3::Z.cross(u_hat) * (5.0 * self.cfg.cloth.mu_s * g / (2.0 * radius));
+                spin_up + Vec3::new(0.0, 0.0, -decay)
+            }
+            SegmentKind::Rolling => Vec3::Z.cross(a) / radius + Vec3::new(0.0, 0.0, -decay),
+            SegmentKind::Shelf => Vec3::Z.cross(a) / radius,
+            SegmentKind::Spinning => Vec3::new(0.0, 0.0, -decay),
+            SegmentKind::Stationary | SegmentKind::Airborne => Vec3::ZERO,
+        }
+    }
+
+    /// The segment a ball opens at the time `t0`.
+    fn open_segment(&self, index: usize, t0: f64) -> OpenSegment {
+        let ball = &self.balls[index];
+        let kind = self.segment_kind(ball);
+        let a = self.segment_acceleration(index);
+        OpenSegment {
+            t0,
+            kind,
+            p0: ball.position,
+            v0: ball.velocity,
+            a,
+            w0: ball.angular_velocity,
+            wa: self.angular_acceleration(ball, kind, a),
+            pocket_state: ball.pocket_state,
+        }
+    }
+
+    /// Opens the first segment of every ball.
+    fn open_all_segments(&mut self) {
+        if self.recorder.is_none() {
+            return;
+        }
+        let mut opened = Vec::with_capacity(self.balls.len());
+        for index in 0..self.balls.len() {
+            opened.push((index, self.open_segment(index, 0.0)));
+        }
+        if let Some(recorder) = self.recorder.as_mut() {
+            for (index, segment) in opened {
+                recorder.open(index, segment);
+            }
+        }
+    }
+
+    /// Closes the segments of the balls an event touches.
+    fn close_segments(&mut self, event: &SimEvent) {
+        if self.recorder.is_none() {
+            return;
+        }
+        let time = event.time;
+        if let Some(recorder) = self.recorder.as_mut() {
+            for index in Self::affected_balls(event).into_iter().flatten() {
+                recorder.close(index, time);
+            }
+        }
+    }
+
+    /// Opens the segments of the balls an event touches.
+    fn open_segments(&mut self, event: &SimEvent) {
+        if self.recorder.is_none() {
+            return;
+        }
+        let time = event.time;
+        let mut opened = Vec::new();
+        for index in Self::affected_balls(event).into_iter().flatten() {
+            let ball = &self.balls[index];
+            if ball.is_pocketed || ball.is_off_table {
+                // The ball is out of play: it has no path any more.
+                continue;
+            }
+            opened.push((index, self.open_segment(index, time)));
+        }
+        if let Some(recorder) = self.recorder.as_mut() {
+            for (index, segment) in opened {
+                recorder.open(index, segment);
+            }
+        }
+    }
+
+    /// Closes the trace: the last segment of every ball ends with the shot.
+    fn finish_trace(&mut self) {
+        if self.recorder.is_none() {
+            return;
+        }
+        let time = self.time;
+        let events = self.events.clone();
+        if let Some(recorder) = self.recorder.as_mut() {
+            for index in 0..recorder.len() {
+                recorder.close(index, time);
+            }
+            recorder.trace.duration = time;
+            recorder.trace.events = events;
         }
     }
 
@@ -903,6 +1075,22 @@ pub fn try_simulate_state(input: &ShotInput, table: &TableConfig) -> Result<Game
     let mut simulation = Simulation::new(input, table);
     let result = simulation.run_without_strike();
     finish(simulation, result, input, table)
+}
+
+/// Simulates a shot and returns the final state together with the recorded path.
+///
+/// This is the entry point a renderer uses: the state is the one
+/// [`simulate_shot`] returns, and the trace is the piecewise-analytic path the
+/// renderer interpolates (§11.2).
+pub fn try_simulate_shot_traced(
+    input: &ShotInput,
+    table: &TableConfig,
+) -> Result<(GameState, Trace), SimError> {
+    let mut simulation = Simulation::new(input, table);
+    simulation.record();
+    let result = simulation.run(input);
+    let trace = simulation.trace().cloned().unwrap_or_default();
+    finish(simulation, result, input, table).map(|state| (state, trace))
 }
 
 fn finish(

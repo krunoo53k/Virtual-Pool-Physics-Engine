@@ -304,11 +304,140 @@ impl TableGeometry {
     pub fn bounds(&self, cfg: &TableConfig) -> (f64, f64) {
         (cfg.table.length, cfg.table.width)
     }
+
+    /// The geometry as JSON, for a renderer (§12.2).
+    ///
+    /// The renderer draws the table from *this*, not from its own idea of what a
+    /// pool table looks like, so that the picture and the physics cannot drift
+    /// apart: the rails, the pocket mouths and the facings the model uses are the
+    /// ones on the screen.
+    pub fn to_json_value(&self, cfg: &TableConfig) -> crate::json::Value {
+        use crate::json::Value;
+        fn pair(v: Vec2) -> Value {
+            Value::Array(vec![Value::Number(v.x), Value::Number(v.y)])
+        }
+        Value::Object(vec![
+            ("length".into(), Value::Number(cfg.table.length)),
+            ("width".into(), Value::Number(cfg.table.width)),
+            ("ball_radius".into(), Value::Number(cfg.ball.radius)),
+            (
+                "cushion".into(),
+                Value::Object(vec![
+                    ("epsilon".into(), Value::Number(self.cushion.epsilon)),
+                    ("theta".into(), Value::Number(self.cushion.theta)),
+                    ("cos_theta".into(), Value::Number(self.cushion.cos_theta)),
+                    (
+                        "rail_top_height".into(),
+                        Value::Number(self.rail_top_height),
+                    ),
+                ]),
+            ),
+            (
+                "rails".into(),
+                Value::Array(
+                    self.rails
+                        .iter()
+                        .enumerate()
+                        .map(|(index, rail)| {
+                            Value::Object(vec![
+                                ("label".into(), Value::String(rail_label(index).into())),
+                                ("normal".into(), pair(rail.normal)),
+                                ("tangent".into(), pair(rail.tangent)),
+                                ("line".into(), Value::Number(rail.line_coord)),
+                                (
+                                    "spans".into(),
+                                    Value::Array(
+                                        rail.cushion_spans
+                                            .iter()
+                                            .map(|(lo, hi)| {
+                                                Value::Array(vec![
+                                                    Value::Number(*lo),
+                                                    Value::Number(*hi),
+                                                ])
+                                            })
+                                            .collect(),
+                                    ),
+                                ),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "pockets".into(),
+                Value::Array(
+                    self.pockets
+                        .iter()
+                        .enumerate()
+                        .map(|(index, pocket)| {
+                            Value::Object(vec![
+                                ("label".into(), Value::String(pocket_label(index).into())),
+                                (
+                                    "kind".into(),
+                                    Value::String(
+                                        match pocket.kind {
+                                            PocketKind::Corner => "corner",
+                                            PocketKind::Side => "side",
+                                        }
+                                        .into(),
+                                    ),
+                                ),
+                                ("mouth_centre".into(), pair(pocket.mouth_centre)),
+                                ("centreline".into(), pair(pocket.centreline)),
+                                ("width".into(), Value::Number(pocket.mouth_width)),
+                                ("facing_angle".into(), Value::Number(pocket.facing_angle)),
+                                ("shelf_depth".into(), Value::Number(pocket.shelf_depth)),
+                                (
+                                    "jaws".into(),
+                                    Value::Array(
+                                        pocket
+                                            .jaws
+                                            .iter()
+                                            .map(|jaw| {
+                                                Value::Object(vec![
+                                                    ("tip".into(), pair(jaw.tip)),
+                                                    ("end".into(), pair(jaw.end)),
+                                                    ("normal".into(), pair(jaw.normal)),
+                                                ])
+                                            })
+                                            .collect(),
+                                    ),
+                                ),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ])
+    }
 }
 
 /// The unit vector of `v`, or the zero vector when `v` has no direction.
 fn unit(v: Vec2) -> Vec2 {
     v.normalize().unwrap_or(Vec2::ZERO)
+}
+
+/// The name of a rail, in the order the core keeps them.
+fn rail_label(index: usize) -> &'static str {
+    match index {
+        0 => "bottom",
+        1 => "top",
+        2 => "left",
+        _ => "right",
+    }
+}
+
+/// The name of a pocket, in the order the core keeps them: the corners first,
+/// then the sides.
+fn pocket_label(index: usize) -> &'static str {
+    match index {
+        0 => "bottom-left corner",
+        1 => "bottom-right corner",
+        2 => "top-left corner",
+        3 => "top-right corner",
+        4 => "bottom side",
+        _ => "top side",
+    }
 }
 
 /// The direction of a facing: the centreline tilted by the facing angle towards the

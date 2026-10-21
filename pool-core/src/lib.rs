@@ -36,16 +36,19 @@ pub mod pocket;
 pub mod quartic;
 pub mod sim;
 pub mod state;
+pub mod trace;
 
 pub use config::TableConfig;
 pub use hash::{canonical_bytes, hash_state, hash_state_hex};
 pub use math::{Vec2, Vec3};
 pub use sim::{
-    simulate_shot, try_simulate_shot, try_simulate_state, EventKind, SimEvent, Simulation,
+    simulate_shot, try_simulate_shot, try_simulate_shot_traced, try_simulate_state, EventKind,
+    SimEvent, Simulation,
 };
 pub use state::{
     BallState, CueStickState, GamePhase, GameState, MotionState, PocketState, ShotInput,
 };
+pub use trace::{Segment, SegmentKind, Trace};
 
 /// The version of the physics model, following the research document.
 pub const MODEL_VERSION: &str = "1.4";
