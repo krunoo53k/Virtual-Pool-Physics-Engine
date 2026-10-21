@@ -1,5 +1,8 @@
 //! Shared helpers for the fixture-driven tests.
 //!
+//! Every test binary that includes this module only uses part of it.
+#![allow(dead_code)]
+//!
 //! The fixtures in `tests/fixtures/` are the acceptance criteria of the physics
 //! core: each file is a shot specification plus the expected outcome. They are read
 //! with the engine's own JSON reader, so the numbers are exactly the ones the

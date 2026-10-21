@@ -5,7 +5,7 @@
 use pool_core::cushion::{self, RailRegime};
 use pool_core::geometry::TableGeometry;
 use pool_core::math::{Vec2, Vec3};
-use pool_core::state::{BallState, MotionState, PocketState, ShotInput};
+use pool_core::state::{BallState, GamePhase, MotionState, PocketState, ShotInput};
 use pool_core::EventKind;
 use pool_core::{cue, simulate_shot, try_simulate_state, TableConfig};
 
@@ -238,6 +238,53 @@ fn a_ball_above_the_rail_top_clears_the_rail() {
 }
 
 #[test]
+fn a_ball_in_the_regime_two_band_hits_the_rail_structure() {
+    // The band between the nose and the rail's top edge: the ball meets the upper
+    // structure, not the rubber, and the rubber model must not be extrapolated into
+    // it (§11.3).
+    let cfg = TableConfig::default();
+    let geometry = TableGeometry::new(&cfg);
+    let rail = &geometry.rails[3]; // the right rail
+    let height = cfg.cushion.nose_height + cfg.ball.radius + 0.005;
+    let mut ball = ball(&cfg, 0, cfg.table.length - 0.05, 0.635);
+    ball.position.z = height;
+    ball.velocity = Vec3::new(2.0, 0.0, 0.0);
+    ball.motion_state = MotionState::Airborne;
+
+    let accel = Vec3::new(0.0, 0.0, -cfg.simulation.gravity);
+    let (time, regime) = cushion::time_of_impact(&ball, accel, rail, &geometry.cushion, &cfg, 10.0)
+        .expect("the impact is found");
+    assert_eq!(regime, RailRegime::RailStructure);
+    assert!(time > 0.0);
+
+    // The impulse is the structure's, not the rubber's: a vertical wall with the
+    // structure's own restitution, and no vertical impulse at all.
+    let structure = cushion::resolve_cushion(
+        &ball,
+        Vec3::X,
+        Vec3::Y,
+        0.0,
+        1.0,
+        cfg.cushion.e_rail_structure,
+        cfg.cushion.mu_rail_structure,
+        &cfg,
+    );
+    let rubber = cushion::resolve_nose_cushion(&ball, Vec3::X, Vec3::Y, &cfg, &geometry.cushion);
+    assert!(
+        structure.velocity.z.abs() < 1e-12,
+        "the wall gives no vertical kick"
+    );
+    assert!(
+        rubber.velocity.z < 0.0,
+        "the rubber presses the ball into the slate"
+    );
+    assert!(
+        (structure.velocity.x - rubber.velocity.x).abs() > 1e-3,
+        "the two surfaces have to give different rebounds"
+    );
+}
+
+#[test]
 fn a_ball_that_flies_over_the_rail_leaves_the_table() {
     let cfg = TableConfig::default();
     let geometry = TableGeometry::new(&cfg);
@@ -269,16 +316,17 @@ fn shoot_into_the_corner_pocket(
     speed: f64,
     offset: f64,
 ) -> pool_core::GameState {
-    shoot_into_the_corner_pocket_from(cfg, speed, offset, 0.25)
+    simulate_into_the_corner_pocket(cfg, speed, offset, 0.25).0
 }
 
-/// The same, but starting a given distance in front of the pocket.
-fn shoot_into_the_corner_pocket_from(
+/// The same, but starting a given distance in front of the pocket and returning the
+/// resolved events as well.
+fn simulate_into_the_corner_pocket(
     cfg: &TableConfig,
     speed: f64,
     offset: f64,
     distance: f64,
-) -> pool_core::GameState {
+) -> (pool_core::GameState, Vec<EventKind>) {
     let geometry = TableGeometry::new(cfg);
     let pocket = &geometry.pockets[0];
     let direction = pocket.centreline;
@@ -288,7 +336,11 @@ fn shoot_into_the_corner_pocket_from(
     let mut ball = ball(cfg, 0, start.x, start.y);
     ball.velocity = Vec3::new(direction.x * speed, direction.y * speed, 0.0);
     let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
-    try_simulate_state(&input, cfg).expect("the shot runs")
+    let state = try_simulate_state(&input, cfg).expect("the shot runs");
+    let mut simulation = pool_core::Simulation::new(&input, cfg);
+    let _ = simulation.run_without_strike();
+    let kinds = simulation.events().iter().map(|e| e.kind).collect();
+    (state, kinds)
 }
 
 #[test]
@@ -305,7 +357,7 @@ fn a_ball_that_is_too_slow_to_reach_the_drop_hangs_up() {
     let slow = cfg.minimum_speed_to_drop(cfg.table.shelf_depth_corner) * 0.8;
     // On the centre line the ball does not meet a facing, so it runs out of speed on
     // the shelf and hangs up there.
-    let state = shoot_into_the_corner_pocket_from(&cfg, slow, 0.0, 0.05);
+    let state = simulate_into_the_corner_pocket(&cfg, slow, 0.0, 0.05).0;
     assert!(!state.balls[0].is_pocketed, "a slow ball must not drop");
     assert_eq!(state.balls[0].pocket_state, PocketState::HungUp);
 }
@@ -385,6 +437,20 @@ fn a_ball_can_rattle_out_of_the_pocket() {
 }
 
 #[test]
+fn a_ball_can_be_rattled_into_the_pocket() {
+    // The third failure mode of §9.2: the ball hits a facing on its way in and still
+    // drops.
+    let cfg = TableConfig::default();
+    let state = shoot_into_the_corner_pocket(&cfg, 1.8, 0.3);
+    assert!(state.balls[0].is_pocketed, "the ball did not drop");
+
+    let (_, kinds) = simulate_into_the_corner_pocket(&cfg, 1.8, 0.3, 0.25);
+    assert!(kinds.contains(&EventKind::PocketEnter));
+    assert!(kinds.contains(&EventKind::Jaw));
+    assert!(kinds.contains(&EventKind::PocketDrop));
+}
+
+#[test]
 fn a_ball_whose_centre_only_crosses_the_mouth_is_not_pocketed() {
     let cfg = TableConfig::default();
     let geometry = TableGeometry::new(&cfg);
@@ -397,6 +463,139 @@ fn a_ball_whose_centre_only_crosses_the_mouth_is_not_pocketed() {
     let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
     let state = try_simulate_state(&input, &cfg).expect("the shot runs");
     assert!(!state.balls[0].is_pocketed);
+}
+
+// ---------------------------------------------------------------- the stop shot
+
+#[test]
+fn a_centre_ball_hit_stops_the_cue_ball() {
+    // The stun shot: the cue ball has no spin, so the cloth takes it straight away.
+    // It keeps the 2.5% of its speed that the restitution leaves it (the fixture
+    // pins that) and is then stopped by the cloth.
+    let cfg = TableConfig::default();
+    let mut balls = vec![ball(&cfg, 0, 1.0, 0.635)];
+    // The cue ball is struck at its centre: it has no spin at all.
+    balls[0].velocity = Vec3::new(2.0, 0.0, 0.0);
+    // The object ball is right in front of it, so the cue ball has hardly slid by the
+    // time of the collision and has picked up almost no natural roll.
+    balls.push(ball(&cfg, 1, 1.0 + 2.0 * cfg.ball.radius + 0.003, 0.635));
+    let input = ShotInput::new(0.0, Vec3::X, balls);
+    let state = try_simulate_state(&input, &cfg).expect("the shot runs");
+
+    // The cue ball stops almost dead: it keeps the 2.5% of its speed that the
+    // restitution leaves it and the cloth takes that away at once. (It creeps a
+    // little, because it has picked up a little natural roll on the way in and
+    // because the collision throws it sideways.)
+    let contact = 1.0 + 2.0 * cfg.ball.radius + 0.003 - 2.0 * cfg.ball.radius;
+    let cue_x = state.balls[0].position.x;
+    assert!(
+        cue_x > contact && cue_x < contact + 0.02,
+        "the cue ball should stop on the spot, it ended at {cue_x}"
+    );
+    assert!(
+        state.balls[0].velocity.norm() < 1e-9,
+        "the cue ball has to be at rest"
+    );
+
+    // The object ball carries on: right after the collision it is moving forwards at
+    // nearly the speed the cue ball had.
+    let mut quick = TableConfig::default();
+    quick.simulation.max_sim_time = 0.05;
+    let mut balls = vec![ball(&cfg, 0, 1.0, 0.635)];
+    balls[0].velocity = Vec3::new(2.0, 0.0, 0.0);
+    balls.push(ball(&cfg, 1, 1.0 + 2.0 * cfg.ball.radius + 0.003, 0.635));
+    let input = ShotInput::new(0.0, Vec3::X, balls);
+    let state = try_simulate_state(&input, &quick).expect("the shot runs");
+    let object = state.balls[1].velocity;
+    assert!(
+        object.x > 1.8,
+        "the object ball has to carry on: {object:?}"
+    );
+    assert!(
+        object.y.abs() < 0.2,
+        "a full hit throws the object ball straight: {object:?}"
+    );
+}
+
+#[test]
+fn a_ball_ball_collision_conserves_the_momentum_along_the_line_of_centres() {
+    // `v_A,n' + v_B,n' = v_n` (§4.4.5): the momentum along the line of centres is
+    // conserved, and the cue ball keeps ((1 - e) / 2) of it.
+    let cfg = TableConfig::default();
+    for cut in [0.0_f64, 15.0, 30.0, 45.0] {
+        let angle = cut.to_radians();
+        let mut a = ball(&cfg, 0, 0.0, 0.0);
+        a.velocity = Vec3::new(2.0, 0.0, 0.0);
+        let mut b = ball(&cfg, 1, 0.3 * angle.cos(), 0.3 * angle.sin());
+        b.velocity = Vec3::ZERO;
+        let outcome = pool_core::ball_ball::resolve(&a, &b, &cfg);
+        let v_n = a.velocity.dot(outcome.normal);
+        let after = outcome.velocity_a.dot(outcome.normal) + outcome.velocity_b.dot(outcome.normal);
+        assert!(
+            (after - v_n).abs() < 1e-12,
+            "the momentum along the line of centres is not conserved: {after} != {v_n}"
+        );
+        // The normal components follow the document.
+        let expected_a = ((1.0 - cfg.ball_ball.e_ball) / 2.0) * v_n;
+        assert!((outcome.velocity_a.dot(outcome.normal) - expected_a).abs() < 1e-12);
+    }
+}
+
+// ---------------------------------------------------------------- the game state
+
+#[test]
+fn a_settled_shot_reports_the_settled_phase() {
+    let cfg = TableConfig::default();
+    let input = ShotInput::new(1.0, Vec3::X, vec![ball(&cfg, 0, 1.0, 0.635)]);
+    let state = simulate_shot(input, &cfg);
+    assert_eq!(state.phase, GamePhase::Settled);
+    assert!(state.balls[0].velocity.norm() < 1e-9);
+}
+
+#[test]
+fn a_shot_that_is_cut_short_reports_that_it_is_still_going() {
+    let cfg = TableConfig::default();
+    let mut short = TableConfig::default();
+    short.simulation.max_sim_time = 0.05;
+    let input = ShotInput::new(3.0, Vec3::X, vec![ball(&cfg, 0, 1.0, 0.635)]);
+    let state = simulate_shot(input, &short);
+    assert_eq!(state.phase, GamePhase::Settling);
+    assert!(state.balls[0].velocity.norm() > 0.0);
+    assert!(state.elapsed_time <= short.simulation.max_sim_time);
+}
+
+#[test]
+fn the_cue_stick_is_reported_with_the_shot() {
+    let cfg = TableConfig::default();
+    let direction = Vec3::new(0.0, 0.0, -1.0); // a cue pointing straight down
+    let input = ShotInput::new(2.0, direction, vec![ball(&cfg, 0, 1.0, 0.635)]);
+    let state = simulate_shot(input, &cfg);
+    let stick = state.cue_stick;
+    assert!((stick.direction.z + 1.0).abs() < 1e-12);
+    assert!((stick.elevation + core::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    // The tip was at the surface of the cue ball and the butt is a cue length
+    // behind it, along the cue's axis.
+    let strike_position = Vec3::new(1.0, 0.635, cfg.ball.radius);
+    let tip = strike_position - stick.direction * cfg.ball.radius;
+    let butt = tip - stick.direction * cfg.cue.cue_length;
+    assert!(
+        (stick.butt_position - butt).norm() < 1e-12,
+        "the butt is where it should be"
+    );
+}
+
+#[test]
+fn a_ball_that_leaves_the_table_is_a_foul() {
+    let cfg = TableConfig::default();
+    let rail_top = cfg.cushion.rail_top_height + cfg.ball.radius + 0.01;
+    let mut ball = ball(&cfg, 0, 0.2, 0.635);
+    ball.position.z = rail_top;
+    ball.velocity = Vec3::new(-2.0, 0.0, 2.0);
+    ball.motion_state = MotionState::Airborne;
+    let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
+    let state = try_simulate_state(&input, &cfg).expect("the shot runs");
+    assert!(state.balls[0].is_off_table);
+    assert!(state.foul, "a ball off the table is a foul (§10.1)");
 }
 
 // ---------------------------------------------------------------- the cue

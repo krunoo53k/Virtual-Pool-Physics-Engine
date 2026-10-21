@@ -282,9 +282,9 @@
   "expectations": [
     {
       "quantity": "final_state_hash",
-      "expected": "52b9e0b7acc088f6",
+      "expected": "a245b7defed9a324",
       "tolerance": 0,
-      "notes": "the golden value: the hash of the raw f64 state of the break shot below (positions, velocities, angular velocities, the discrete states and the elapsed time). The generator writes null here; this value was written by hand and must survive a regeneration."
+      "notes": "the golden value: the hash of the canonical byte form of the final state of the break shot below - the raw f64 positions, velocities and angular velocities, the discrete states, the phase, the flags and the elapsed time. The generator writes null here; this value was written by hand and must survive a regeneration."
     },
     {
       "quantity": "hash_stability",

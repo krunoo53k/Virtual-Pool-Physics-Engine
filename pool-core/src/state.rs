@@ -95,6 +95,8 @@ pub enum GamePhase {
     Shooting,
     /// The balls have come to rest.
     Settled,
+    /// The shot is still running: the balls have not all come to rest yet.
+    Settling,
     /// The simulation aborted with an error; the state is the last consistent one.
     Faulted,
 }

@@ -53,30 +53,64 @@ impl Hasher {
     }
 }
 
+/// The canonical byte form of a game state.
+///
+/// This is the serialisation the determinism check compares (§14.4): the raw `f64`
+/// values in a fixed order, never a formatted or rounded representation. Two runs
+/// that agree byte for byte here agree on every bit of the state.
+pub fn canonical_bytes(state: &GameState) -> Vec<u8> {
+    let mut bytes: Vec<u8> = Vec::with_capacity(16 * (9 * 8 + 4) + 128);
+    bytes.extend_from_slice(&(state.balls.len() as u64).to_le_bytes());
+    for ball in &state.balls {
+        for value in [
+            ball.position.x,
+            ball.position.y,
+            ball.position.z,
+            ball.velocity.x,
+            ball.velocity.y,
+            ball.velocity.z,
+            ball.angular_velocity.x,
+            ball.angular_velocity.y,
+            ball.angular_velocity.z,
+        ] {
+            bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+        }
+        bytes.push(ball.motion_state as u8);
+        bytes.push(ball.pocket_state as u8);
+        bytes.push(ball.number);
+        bytes.push(u8::from(ball.is_pocketed));
+        bytes.push(u8::from(ball.is_off_table));
+    }
+    // The rest of the game state: the phase, the flags and the cue stick.
+    bytes.push(state.phase as u8);
+    bytes.push(state.turn);
+    bytes.push(u8::from(state.foul));
+    bytes.push(u8::from(state.game_over));
+    bytes.push(u8::from(state.miscue));
+    bytes.push(state.winner.unwrap_or(0xff));
+    for value in [
+        state.cue_stick.butt_position.x,
+        state.cue_stick.butt_position.y,
+        state.cue_stick.butt_position.z,
+        state.cue_stick.direction.x,
+        state.cue_stick.direction.y,
+        state.cue_stick.direction.z,
+        state.cue_stick.elevation,
+        state.cue_stick.tip_offset,
+    ] {
+        bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+    }
+    bytes.extend_from_slice(&state.elapsed_time.to_bits().to_le_bytes());
+    bytes
+}
+
 /// The hash of a complete game state.
 ///
 /// The balls are hashed in index order, and each ball contributes its position, its
 /// velocity, its angular velocity and its discrete state.
 pub fn hash_state(state: &GameState) -> u64 {
     let mut hasher = Hasher::new();
-    hasher.write_u64(state.balls.len() as u64);
-    for ball in &state.balls {
-        hasher.write_f64(ball.position.x);
-        hasher.write_f64(ball.position.y);
-        hasher.write_f64(ball.position.z);
-        hasher.write_f64(ball.velocity.x);
-        hasher.write_f64(ball.velocity.y);
-        hasher.write_f64(ball.velocity.z);
-        hasher.write_f64(ball.angular_velocity.x);
-        hasher.write_f64(ball.angular_velocity.y);
-        hasher.write_f64(ball.angular_velocity.z);
-        hasher.write_u8(ball.motion_state as u8);
-        hasher.write_u8(ball.pocket_state as u8);
-        hasher.write_u8(ball.number);
-        hasher.write_u8(u8::from(ball.is_pocketed));
-        hasher.write_u8(u8::from(ball.is_off_table));
-    }
-    hasher.write_f64(state.elapsed_time);
+    hasher.write_bytes(&canonical_bytes(state));
     hasher.finish()
 }
 

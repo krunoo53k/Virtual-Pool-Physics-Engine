@@ -240,6 +240,9 @@ pub struct CueConfig {
     /// Effective cue-end mass, kg (~12 g). This - never the total mass - is the mass
     /// that belongs in a squirt calculation (§6.1).
     pub cue_end_mass: f64,
+    /// The length of the cue, m (>= 40"). It is only used to place the cue in the
+    /// state that the renderer draws.
+    pub cue_length: f64,
     /// Global multiplier on the squirt calibration curve.
     pub squirt_scale: f64,
     /// The squirt calibration curve: `(b/R, degrees)` anchors, interpolated linearly
@@ -254,6 +257,7 @@ impl Default for CueConfig {
             mu_cue: 0.60,
             cue_mass: 0.454,
             cue_end_mass: 0.012,
+            cue_length: 1.45,
             squirt_scale: 1.0,
             // Nearly linear up to 0.5 R and flattening beyond, in the 1-5 deg band that
             // the published measurements show for a maximum english (§6.1).
@@ -592,6 +596,7 @@ impl CueConfig {
             ("mu_cue".into(), Value::Number(self.mu_cue)),
             ("cue_mass".into(), Value::Number(self.cue_mass)),
             ("cue_end_mass".into(), Value::Number(self.cue_end_mass)),
+            ("cue_length".into(), Value::Number(self.cue_length)),
             ("squirt_scale".into(), Value::Number(self.squirt_scale)),
             ("squirt_curve".into(), pairs_value(&self.squirt_curve)),
         ])
@@ -604,6 +609,7 @@ impl CueConfig {
             mu_cue: f64_field(value, "mu_cue")?,
             cue_mass: f64_field(value, "cue_mass")?,
             cue_end_mass: f64_field(value, "cue_end_mass")?,
+            cue_length: f64_field(value, "cue_length")?,
             squirt_scale: f64_field(value, "squirt_scale")?,
             squirt_curve: pairs_field(value, "squirt_curve")?,
         })

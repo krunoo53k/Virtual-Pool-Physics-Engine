@@ -6,7 +6,7 @@
 mod common;
 
 use common::{array, field, fixture, number, optional_number};
-use pool_core::hash::hash_state_hex;
+use pool_core::hash::{canonical_bytes, hash_state_hex};
 use pool_core::math::Vec3;
 use pool_core::state::{BallState, ShotInput};
 use pool_core::{hash_state, simulate_shot, try_simulate_shot, TableConfig};
@@ -111,12 +111,28 @@ fn a_repeated_run_gives_the_same_bytes() {
     let input = golden_shot(&cfg);
     let first = simulate_shot(input.clone(), &cfg);
     let second = simulate_shot(input, &cfg);
+
+    // The canonical serialisation of the two states is byte for byte identical.
+    let first_bytes = canonical_bytes(&first);
+    let second_bytes = canonical_bytes(&second);
+    assert_eq!(first_bytes.len(), second_bytes.len());
+    assert!(
+        first_bytes == second_bytes,
+        "the two runs differ in {} of {} bytes",
+        first_bytes
+            .iter()
+            .zip(second_bytes.iter())
+            .filter(|(a, b)| a != b)
+            .count(),
+        first_bytes.len()
+    );
     assert_eq!(hash_state_hex(&first), hash_state_hex(&second));
 
     // The hash is over the raw f64 state: a single bit of difference changes it.
     let mut third = first.clone();
     third.balls[0].position.x = f64::from_bits(third.balls[0].position.x.to_bits() + 1);
     assert_ne!(hash_state(&first), hash_state(&third));
+    assert_ne!(canonical_bytes(&first), canonical_bytes(&third));
 }
 
 #[test]

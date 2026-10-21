@@ -38,7 +38,7 @@ pub mod sim;
 pub mod state;
 
 pub use config::TableConfig;
-pub use hash::{hash_state, hash_state_hex};
+pub use hash::{canonical_bytes, hash_state, hash_state_hex};
 pub use math::{Vec2, Vec3};
 pub use sim::{
     simulate_shot, try_simulate_shot, try_simulate_state, EventKind, SimEvent, Simulation,

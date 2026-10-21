@@ -907,12 +907,24 @@ fn finish(
     table: &TableConfig,
 ) -> Result<GameState, SimError> {
     let mut state = GameState::new(simulation.balls().to_vec());
-    state.phase = GamePhase::Settled;
     state.elapsed_time = simulation.time();
+    // The phase says whether the shot is over: a shot that ran into the time limit
+    // is still going (§12.2).
+    state.phase = if simulation.balls().iter().all(|b| b.is_settled()) {
+        GamePhase::Settled
+    } else {
+        GamePhase::Settling
+    };
+    // The cue stick, as the renderer wants it (§12.2).
+    state.cue_stick = cue_stick_state(input, table, &simulation.balls());
     // The miscue flag comes from the cue model (§6.3).
     let strike = cue::strike(input, table);
     state.miscue = strike.miscue;
     if strike.miscue {
+        state.foul = true;
+    }
+    // A ball that left the table is a foul (§10.1).
+    if simulation.balls().iter().any(|b| b.is_off_table) {
         state.foul = true;
     }
     match result {
@@ -921,6 +933,28 @@ fn finish(
             state.phase = GamePhase::Faulted;
             Err(error)
         }
+    }
+}
+
+/// Where the cue was when the ball was struck.
+fn cue_stick_state(
+    input: &ShotInput,
+    table: &TableConfig,
+    balls: &[BallState],
+) -> crate::state::CueStickState {
+    let direction = match input.cue_direction.normalize() {
+        Some(d) => d,
+        None => return crate::state::CueStickState::default(),
+    };
+    let tip = match balls.first() {
+        Some(ball) => ball.position - direction * ball.radius,
+        None => return crate::state::CueStickState::default(),
+    };
+    crate::state::CueStickState {
+        butt_position: tip - direction * table.cue.cue_length,
+        direction,
+        elevation: libm::asin(direction.z.clamp(-1.0, 1.0)),
+        tip_offset: 0.0,
     }
 }
 
