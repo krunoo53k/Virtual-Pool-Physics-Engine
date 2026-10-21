@@ -1,0 +1,10 @@
+[package]
+name = "pool-cli"
+description = "Headless tuning harness for the pool physics core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+pool-core = { path = "../pool-core" }

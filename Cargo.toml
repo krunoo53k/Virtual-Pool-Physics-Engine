@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["pool-core", "pool-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/example/virtual-pool-physics-engine"
+
+[workspace.dependencies]
+libm = "0.2"
+
+[profile.release]
+# Keep the floating point flags uniform across every target (§11.4 risk 7):
+# no FMA contraction, no fast-math.
+opt-level = 3
+debug = false
+overflow-checks = false

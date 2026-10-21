@@ -1,0 +1,10 @@
+[package]
+name = "pool-core"
+description = "Deterministic, event-driven 8-ball pool physics core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+libm = { workspace = true }

@@ -31,11 +31,22 @@ expectations cannot drift away from the specification. Two files contain values 
 
 - `squirt_curve.json` — the `squirt_deg` anchors are `null` and marked `TO BE CALIBRATED`;
   fill them from Cross (2008) or from high-speed video of your table.
-- `determinism_golden.json` — `final_state_hash` is `null`; the first implementation writes the
-  hash of the final state there, and from then on it is the golden value.
+- `determinism_golden.json` — `final_state_hash` is the hex hash of the final state of the
+  break shot. The generator writes `null` for it; the value in the file was written by hand
+  by the first implementation and is the golden value from then on.
 
 The generator never overwrites those fields (it writes `null` for them), so edit them in the
 JSON and keep the generator's `TO BE FILLED` markers in place.
+
+## Two quirks of the generator
+
+- `stun_separation_90.json` holds its first expectation inside a nested list. The generator
+  builds that entry with a trailing comma, which makes it a one-element tuple. The test
+  harness flattens the nested lists, so the file is read either way.
+- The break layout of `determinism_golden.json` used to sit at `y = 1.270`, which is the far
+  rail of a 1.27 m wide table: the rack was off the table and the shot was not a break. The
+  foot spot of a 9 ft table is 25" (0.635 m) from the foot rail and on the centre line of
+  the width, so the cue ball and the rack now start at `(0.635, 0.635)`.
 
 ## Schema
 

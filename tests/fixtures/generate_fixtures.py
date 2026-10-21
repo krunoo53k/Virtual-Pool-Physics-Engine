@@ -513,11 +513,16 @@ def fixture_determinism():
                    "identical state, bit for bit, on every run and every platform.",
         "sources": ["doc section 11.4"],
         "setup": {
+            # The foot spot of a 9 ft table is 25" (0.635 m) from the foot rail and on
+            # the centre line of the width, so the break starts at (0.635, 0.635) with
+            # the rack around it. (The rack used to be placed at y = 1.270, which is
+            # the far rail: the balls were off the table and the shot was not a
+            # break at all.)
             "balls": [
-                {"id": "cue", "position": [0.635, 1.270], "velocity": [0.0, 0.0],
+                {"id": "cue", "position": [0.635, 0.635], "velocity": [0.0, 0.0],
                  "angular_velocity": [0.0, 0.0, 0.0]},
             ] + [
-                {"id": f"obj{n}", "position": [0.635 + 0.06*(n % 4), 1.270 + 0.06*(n // 4)],
+                {"id": f"obj{n}", "position": [0.635 + 0.06*(n % 4), 0.635 + 0.06*(n // 4)],
                  "velocity": [0.0, 0.0], "angular_velocity": [0.0, 0.0, 0.0]}
                 for n in range(1, 16)
             ],
