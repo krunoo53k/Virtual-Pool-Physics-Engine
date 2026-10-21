@@ -1,0 +1,34 @@
+[package]
+name = "pool-godot"
+description = "The Godot 4 binding of the deterministic pool physics core"
+readme = "README.md"
+keywords = ["godot", "gdextension", "pool", "physics", "godot-rust"]
+categories = ["game-development", "simulation"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[lib]
+# The name the `.gdextension` file points at.
+name = "pool_godot"
+# `cdylib` is the GDExtension library; `rlib` lets the tests use it.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The version is here as well as the path: a published crate has to ask for a
+# version of the core, and the two are released together - the core first.
+pool-core = { path = "../pool-core", version = "0.1.0" }
+# The Godot 4 bindings. `api-4-6` selects the GDExtension API of Godot 4.6, and
+# the extension runs on any later 4.x. The bindings come from the prebuilt
+# `extension_api.json`, so no Godot binary is needed to build.
+godot = { version = "0.5", features = ["api-4-6"] }
+# The same pure-Rust `libm` the core uses, so the game side never picks up the
+# platform's libm.
+libm = { workspace = true }
+
+[dev-dependencies]
+# The tests name Godot's own types, so they need the bindings as well.
+godot = { version = "0.5", features = ["api-4-6"] }
