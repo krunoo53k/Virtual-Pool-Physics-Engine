@@ -1,9 +1,14 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.0
+> **Version:** 1.1
 > **Date:** 2026-10-21
 > **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, and ball-cue interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
+>
+> **Revision note (1.1):** corrected the sliding-state spin sign (§3.3), the ball-ball normal and
+> tangential impulse (§4.4.5), the cushion geometry and the mechanism of the "pop" (§5, §8.1),
+> the cue-strike spin and squirt treatment (§6), the jump-shot criterion and drag figures (§7),
+> and the determinism guidance (§10). Sources were re-checked against the primary papers.
 
 ---
 
@@ -33,7 +38,8 @@
 - **Deterministic:** Same inputs → same outputs, regardless of frame rate or platform.
 - **3D:** Must support jump shots, ball elevation, ball-slate bounces, and balls leaving the table.
 - **8-Ball focused:** Six pockets, 16 balls (cue + 15 object), standard 9×4.5 ft table.
-- **Rust backend:** Physics computed in Rust; inputs are ball positions, cue impulse, spin (english), and cue angle.
+- **Rust backend:** Physics computed in Rust; inputs are ball positions, cue speed, cue direction
+  (unit vector), and the contact offset on the cue ball (english).
 
 ### 1.2 Core Physics Domains
 
@@ -57,7 +63,7 @@ Each domain has well-studied analytical models.
 |---|---|---|
 | Diameter | 2.25 in (57.15 mm) | Dr. Dave Pool Info, BCA |
 | Radius (R) | 1.125 in (28.575 mm) | Derived |
-| Mass | 5.5–6.0 oz (156 g) | Dr. Dave Pool Info, BCA |
+| Mass | 5.5–6 oz (156–170 g); use 6 oz (170 g) | WPA/BCA; Dr. Dave Pool Info |
 | Moment of Inertia | I = (2/5) mR² (solid sphere) | Standard physics, Dr. Dave |
 | Ball-ball Coefficient of Restitution (e) | 0.92–0.98 (typical ~0.95) | Dr. Dave Pool Info; arXiv 2402.13258 |
 | Ball-ball friction coefficient (μ_ball) | 0.03–0.08 | Dr. Dave Pool Info; arXiv 2402.13258 |
@@ -71,8 +77,9 @@ Each domain has well-studied analytical models.
 | Overall table size | 9 ft × 4.5 ft | WPA |
 | Table bed height | 29¼"–31" from floor | WPA |
 | Cushion profile | K-66 (BCA standard) | Wikipedia (Billiard table) |
-| Cushion nose height | 1" (25 mm) above playing surface | BCA |
+| Cushion nose height | 63.5% of ball diameter ≈ 36.3 mm (1 7/16") | WPA/BCA; Dr. Dave Pool Info |
 | Cushion base | 1 3/16" (30 mm) | BCA |
+| Cushion contact point above ball centre (ε) | 0.1–0.2 R in practice (Han); Mathavan models a contact height of h = 7R/5 = 1.4 R | Han 2005; Mathavan 2010 |
 
 ### 2.3 Pockets (WPA/BCA)
 
@@ -96,8 +103,20 @@ Each domain has well-studied analytical models.
 | Spinning friction μ_sp | — (phenomenological) | Kiefl, 2020 |
 | Spin deceleration rate | 5–15 rad/s² | Dr. Dave Pool Info |
 | Cushion coefficient of restitution (e_cushion) | 0.6–0.9 | Dr. Dave Pool Info |
+| Cushion sliding friction (μ_cushion) | 0.14 (measured) | Mathavan et al., 2010 |
 | Table (slate) coefficient of restitution (e_table) | 0.5–0.7 | Dr. Dave Pool Info |
 | Cushion rubber thickness | 1/16"–1/4" (1.6–6.4 mm) | WPA |
+
+**Notation:** `μ_s` always means the **sliding (kinetic)** ball-cloth coefficient. Where static
+friction is meant it is written `μ_stat` — the two are not interchangeable (§4.5).
+
+**Mapping the measured spin decay to `μ_sp`:** the equations of §3 use the phenomenological
+coefficient `μ_sp`, while the table above lists the measured *decay rate*. They are related by
+`dω_z/dt = 5·μ_sp·g/(2R)`, so
+
+```
+μ_sp = (2R / (5g)) · (spin decay rate)  →  0.006 … 0.017  for 5–15 rad/s²
+```
 
 ### 2.5 Cue Stick Properties
 
@@ -202,13 +221,29 @@ v(t) = v₀ - μ_s · g · t · û₀
 
 **Angular velocity (in-plane):**
 ```
-ω_xy(t) = ω₀xy - (5 · μ_s · g) / (2R) · t · (k̂ × û₀)
+ω_xy(t) = ω₀xy + (5 · μ_s · g) / (2R) · t · (k̂ × û₀)
 ```
+
+> **Sign check (this sign is easy to get wrong).** The friction force on a sliding ball is
+> `F = -μ_s·m·g·û₀`, applied at the contact point `r = -R·k̂`. The resulting torque is
+> `τ = r × F = R·μ_s·m·g·(k̂ × û₀)`, so `ω̇ = τ/I = +(5·μ_s·g)/(2R)·(k̂ × û₀)`. For a ball sliding
+> along +x with no spin (`û₀ = x̂`) this gives `ω_y` growing **positive**, i.e. the ball spins up
+> towards forward roll — exactly the rolling condition of §3.2 (`ω_y = +v/R`). A minus sign here
+> would spin the ball up *backwards* and would also contradict the `u(t)` equation above
+> (`u_x = v_x - R·ω_y` would grow instead of decaying to zero). *(The published Kiefl page carries
+> this sign error; the equations here are checked against the torque balance.)*
+>
+> **Unit test:** integrate the sliding state and assert that `u` reaches zero at exactly
+> `t = 2·u₀/(7·μ_s·g)`, and that `ω` at that instant satisfies the rolling condition of §3.2.
 
 **Spin decay (z-component):**
 ```
 ω_z(t) = ω₀z - (5 · μ_sp · g) / (2R) · t
 ```
+
+> The slip direction `û₀` is constant while the ball slides on a flat bed: `u̇ = -(7/2)·μ_s·g·û₀`
+> is anti-parallel to `u`, so `u` neither grows nor rotates. Curved *paths* still occur because
+> the component of `v` perpendicular to `û₀` shrinks faster than the component along `û₀`.
 
 **Transition to rolling:** When `t = 2/7 · u₀ / (μ_s · g)`, the ball enters the rolling state. The remaining equations use rolling friction `μ_r` instead of `μ_s`.
 
@@ -315,8 +350,9 @@ When friction between balls is included, two phenomena occur:
 Due to the cut angle, there is relative sliding between the ball surfaces at the contact point. Friction during this sliding deflects the object ball slightly off the line of centers.
 
 - CIT throws the object ball in the direction of the cue ball's post-collision motion.
-- Maximum throw occurs at cut angles of ~30°–35° (Dr. Dave Pool Info).
-- Typical throw: 0.5°–1.5° off the line of centers.
+- Maximum throw occurs at cut angles of ~30°–35° (half-ball hit) (Dr. Dave Pool Info, TP A-14).
+- Typical throw: ~1.5° at a 10° cut, rising to ~3°–5.5° at 30°–40° cuts on slow shots
+  (Dr. Dave Pool Info, TP A-14).
 
 #### 4.4.2 Spin-Induced Throw (SIT) / Gear Effect
 
@@ -328,42 +364,102 @@ English (sidespin) creates additional relative sliding at the contact point:
 
 #### 4.4.5 Mathematical Model with Friction
 
-From arXiv 2402.13258, the post-collision velocities accounting for friction:
+Resolve the collision in the frame of the line of centres `n̂` (from A's centre to B's centre)
+and the tangent `t̂`. Let `v_n = v_A·n̂` (positive while A approaches B) and `v_t = v_A·t̂`.
+Assume equal masses `m` and that B is initially at rest.
 
-**Normal component (line of centers):**
-```
-v_A,n = -e · v_A,n(initial)    (reversed and reduced by COR)
-v_B,n = (1 + e) · v_A,n(initial) / 2  (for equal mass, B initially at rest)
-```
+**Normal component (line of centres):**
 
-**Tangential component (perpendicular to line of centers):**
-```
-v_A,t = v_A,t(initial) - (2/7) · μ_ball · v_rel,t · sign
-v_B,t = v_A,t(initial) + (2/7) · μ_ball · v_rel,t · sign
-```
+For two equal masses, momentum conservation along `n̂` plus the restitution law give:
 
-The tangential impulse is limited by:
 ```
-|J_t| ≤ μ_ball · |J_n|
+J_n = ((1 + e)/2) · m · v_n        (normal impulse, > 0, applied to B along n̂)
+
+v_A,n′ = ((1 - e)/2) · v_n
+v_B,n′ = ((1 + e)/2) · v_n
 ```
 
-If the required tangential impulse exceeds this limit, the balls slip and the tangential impulse is capped at `μ_ball · |J_n|`.
+Sanity check: `v_A,n′ + v_B,n′ = v_n` (momentum conserved) and for a head-on hit
+(`v_A,t = 0`) at `e = 0.95` the cue ball keeps only `0.025·v_n` and the object ball takes
+`0.975·v_n`. The commonly written shortcut `v_A,n′ = -e·v_A,n` is **wrong** — it describes a
+ball bouncing off an immovable wall, it does not conserve momentum for two balls, and it would
+send the cue ball backwards at nearly full speed on a head-on shot.
+
+**Tangential component (perpendicular to the line of centres):**
+
+The tangential slip velocity at the contact point (including the contribution of both balls'
+spin) is
+
+```
+u_t = (v_A + ω_A × r_A)·t̂ - (v_B + ω_B × r_B)·t̂
+```
+
+with `r_A = R·n̂` and `r_B = -R·n̂` the vectors from each centre to the contact point. An impulse
+`J_t` applied at the contact changes the relative tangential slip by `7·J_t/m` (each ball's
+contact-point velocity changes by `(7/2)·J_t/m`, because `1/m + R²/I = 7/(2m)` for
+`I = (2/5)mR²`). Hence the impulse that exactly stops the slip is
+
+```
+J_t(stick) = m · u_t / 7
+```
+
+and the Coulomb limit caps it at
+
+```
+|J_t| ≤ μ_ball · J_n
+```
+
+so
+
+```
+J_t = sign(u_t) · min( m·|u_t|/7 , μ_ball·J_n )
+```
+
+applied as `−J_t·t̂` on A and `+J_t·t̂` on B (the friction always opposes the relative slip), and
+then
+
+```
+v_A,t′ = v_A,t - J_t/m          v_B,t′ = v_B,t + J_t/m
+ω_A′ = ω_A + (r_A × (-J_t·t̂))/I     ω_B′ = ω_B + (r_B × (+J_t·t̂))/I
+```
+
+> **The factor is 1/7, not 2/7.** `2/7` is the *ball-on-a-fixed-plane* constant (there the slip
+> changes by `(7/2)·J/m`, not `7·J/m`). The 1/7 form is confirmed by Dr. Dave's published throw
+> equation (TP A-14), whose sticking branch is `min(…, 1/7)·(v·sin φ - R·ω_z)`.
+> The spin update is not optional: throw, gear effect and spin transfer are all consequences of
+> it.
 
 ### 4.5 Table Effect During Collision (arXiv 2402.13258)
 
 During collision, the impact force between balls is ~400× gravity. The friction force between balls can have a vertical component that:
 
-1. **Lifts the cue ball** if the friction force exceeds gravity:
+1. **Lifts the cue ball** if the friction force exceeds gravity. The friction force between the
+   balls is ~20× gravity, so the table's normal force on the cue ball can momentarily drop to
+   zero and the ball leaves the cloth. The vertical impulse is `μ_ball · M · U_i`, so the
+   vertical speed gained is `Δv_z = μ_ball · U_i` and the height reached is
+
    ```
-   h ≈ (μ_ball · U_i²) / (2g)
+   h = Δv_z² / (2g) = (μ_ball · U_i)² / (2g)
    ```
-   For U_i = 10 m/s, μ_ball = 0.05: h ≈ 1.3 cm (observable).
+
+   For `U_i = 10 m/s`, `μ_ball = 0.05`: `h ≈ 1.3 cm` (observable).
+
+   > The frequently copied form `h ≈ μ_ball·U_i²/(2g)` is a typo — it is off by a factor `μ_ball`
+   > and gives 25 cm instead of 1.3 cm for the same inputs. The correct scaling is `(μ_ball·U_i)²`.
 
 2. **Pushes the object ball down** into the cloth, activating large static friction.
 
-3. The static friction coefficient between ball and cloth is μ_s ≈ 0.2–0.4, significantly larger than sliding friction.
+3. The static friction coefficient between ball and cloth (`μ_stat`) is at least as large as the
+   sliding coefficient (0.15–0.40) and is the value that actually applies during the collision:
+   the cloth fibres cannot respond within 250 μs, so the full static friction is available.
+   This is why the table plays such a large role in ball-ball collisions.
 
-**Implementation recommendation:** For a game-level simulator, approximate this by applying a brief impulse to the object ball in the direction of the cue ball's spin at the contact point, and reducing the object ball's post-collision speed by ~1–3% for typical shots.
+**Implementation recommendation:** Treat the table during the collision as (a) an extra
+tangential friction contribution on the ball-ball contact, which is already captured by the
+`u_t` slip velocity in §4.4.5 (spin is part of the slip), and (b) a possible vertical impulse
+that can lift the cue ball (§8.1). Do not apply an ad-hoc speed reduction to the object ball:
+the observed loss is a consequence of the normal restitution `e` and of the throw mechanics,
+both of which the collision model already produces.
 
 ### 4.6 Multi-Ball Collisions
 
@@ -377,47 +473,122 @@ This is the **least accurately modeled** aspect of pool physics (Kiefl, 2020). T
 
 ### 5.1 Recommended Model: Han (2005)
 
-**Reference:** Inhwan Han, "Dynamics in Carom and Three Cushion Billiards," Journal of Mechanical Science and Technology 19, 976 (2005).
+**Reference:** Inhwan Han, "Dynamics in Carom and Three Cushion Billiards," Journal of Mechanical
+Science and Technology 19(4), 976–984 (2005). A corrected transcription of the equations, with
+two typographical errors in the original identified, is given by Kiefl (2020) and his
+[worksheet](https://ekiefl.github.io/images/pooltool/pooltool-theory/ball_cushion_inhwan_han.pdf).
 
 **Assumptions:**
 - Instantaneous collision (dt → 0)
 - Negligible cushion deformation
 - Single point of contact between ball and cushion
 
-**Frame of reference:** Rail is perpendicular to the x-axis; +x points away from the playing surface.
+**Frame of reference:** The rail is perpendicular to the x-axis and `+x` points *toward* the rail
+(away from the playing surface); `+z` is up; `ŷ` runs along the rail. The incoming velocity makes
+an angle `φ` with the x-axis.
 
-**Post-collision velocities:**
+**Geometry — the one parameter that matters:**
 
-Let the incoming state be `(v, ω)` at time `τ`, and the outgoing state be `(v', ω')` at time `τ + dt`.
+Let `ε` be the height of the contact point *above the ball's centre*, and `θ` the angle between
+the contact normal and the horizontal normal:
 
-**Position:** Unchanged (instantaneous):
 ```
-r' = r
-```
-
-**Velocity components:**
-
-The cushion has a coefficient of restitution `e_cushion` (0.6–0.9). The normal component of velocity is reversed and scaled:
-```
-v'_n = -e_cushion · v_n
+θ = arcsin(ε / R)
 ```
 
-The tangential component is modified by friction and spin:
+`ε` is set by the cushion profile. The *nose height* is the headline number — real cushions sit
+at 63.5% of the ball diameter (≈36.3 mm for a 2.25" ball), i.e. 0.27 R above the ball's centre —
+but the ball does not touch the nose apex, it touches the nose's rounded face, so the effective
+`ε` is lower than that and profile-dependent. Han's model is usually run with `ε ≈ 0.1 R … 0.2 R`;
+Mathavan et al. (2010) use a contact height of `h = 7R/5` (0.4 R above the centre) for both
+snooker and pool.
+
+The contact point relative to the ball's centre is `r_c = R·(cos θ, 0, sin θ)`, so the cushion's
+**normal** impulse acts along `n̂ = (-cos θ, 0, -sin θ)` — **i.e. it points away from the rail and
+downwards**. Because the contact is above the ball's centre, the cushion presses the ball into
+the slate rather than lifting it.
+
+The **tangential** impulse is a separate story: it acts along the contact tangent
+`t̂ = (sin θ, 0, -cos θ)`, and it opposes the slip. For a rolling ball the surface at the rail
+side of the ball moves *downwards* (it is the leading edge of a rolling sphere), so the friction
+force on the ball points *upwards*. The two vertical contributions therefore partly cancel, and
+the net vertical velocity depends on `ε` and on the ball's spin. For a rolling ball with
+`e_cushion = 0.75`:
+
+| Contact height above the ball's centre | Net vertical velocity |
+|---|---|
+| `ε ≲ 0.19 R` | **upward** — the cushion launches the ball (a "popping" rail) |
+| `ε ≳ 0.19 R` | **downward** — the ball is pressed into the slate |
+
+With a standard cushion the ball is pressed into the slate, and it is the *slate* that bounces it
+back up (§8.1). A low cushion instead throws the ball straight up — which is why worn or
+incorrectly mounted rails "pop" the balls. (Kiefl, 2020, makes the same point in his discussion
+of Han's model.)
+
+**Impulse model:**
+
 ```
-v'_t = v_t - (1 + e_cushion) · (μ_cushion · v_n · sign + effects from ω)
+c   = v_x(τ) · cos θ                       (normal approach speed)
+s_x = v_x(τ) · sin θ + R·ω_y(τ)                    (slip along the contact tangent)
+s_y = v_y(τ) + R·ω_z(τ) · cos θ - R·ω_x(τ) · sin θ  (slip along the rail)
+
+J_n = (1 + e_cushion) · m · c              (normal impulse, > 0 for an incoming ball)
 ```
 
-**Angular velocity:**
+The slip components are the contact point's velocity (`v + ω × r_c`) projected onto the tangent
+plane of the contact, which is spanned by `t̂ = (sin θ, 0, -cos θ)` and `ŷ`:
+
+- along `t̂`: `(v + ω × r_c)·t̂ = v_x·sin θ + R·ω_y`
+- along `ŷ`: `(v + ω × r_c)·ŷ = v_y + R·(ω_z·cos θ - ω_x·sin θ)`
+
+> Han (2005) prints `s_y` with the opposite sign (which flips the `v_y` equation) and prints
+> `s_x` with an extra `-v_y·cos θ` term that does not follow from the projection above. The two
+> forms agree exactly for a perpendicular impact (`φ = 0`), which is the case most simulations
+> are validated against; for oblique incidence use the projected forms given here.
+
+The tangential impulse is either enough to stop the slip or is limited by Coulomb friction:
+
 ```
-ω' = ω + (torque from cushion interaction)
+J_t(stick)  = (2/7) · m · sqrt(s_x² + s_y²)
+J_t(slip)   = μ_cushion · J_n
+use J_t(stick) if J_t(stick) ≤ J_t(slip), else J_t(slip)
 ```
 
-The exact formulas depend on cushion height `h`, ball radius `R`, and the angle of incidence `φ`.
+(`2/7` here, not `1/7`: the cushion does not move, so the slip changes by `(7/2)·J_t/m` — this is
+the ball-on-a-fixed-plane constant, unlike the ball-ball case of §4.4.5.)
+
+**Post-collision state** (`t̂ = (sin θ, 0, -cos θ)` is the contact tangent in the x–z plane, and
+`ŝ = (s_x·t̂ + s_y·ŷ)/|s|` is the unit slip direction):
+
+```
+r' = r                                            (instantaneous)
+
+Δv = (1/m) · [ J_n·n̂ - J_t·ŝ ]
+
+ω' = ω + (r_c × (J_n·n̂ - J_t·ŝ)) / I ,  I = (2/5)·m·R²
+```
+
+Written out component-wise, the sticking branch is:
+
+```
+v_x' = v_x - (1 + e)·c·cos θ - (2/7)·s_x·sin θ
+v_y' = v_y - (2/7)·s_y
+v_z' =         -(1 + e)·c·sin θ + (2/7)·s_x·cos θ
+```
+
+> The `v_x` term is missing from the x-equation as printed in Han (2005) (and from Kiefl's
+> transcription of it); the term is required for momentum to balance (the same term is present in
+> the z-equation, and without it the `θ = 0, e = 1` case returns `-2·v_x` instead of `-v_x`).
 
 **Key effects the model captures:**
-1. **Angle of reflection ≠ angle of incidence** (due to cushion friction and spin)
-2. **English affects rebound angle** — typically ~4.2° deflection per unit of english (research data)
-3. **Ball pops into the air** after cushion contact (because cushion apex is above ball center)
+1. **Angle of reflection ≠ angle of incidence** (cushion friction and spin).
+2. **English changes both the rebound angle and the rebound speed.** With heavy left/right spin
+   a ball can rebound *back towards the side it came from* (Mathavan et al., 2010, Fig. 10–11;
+   also Cross (2008) for tennis balls). The change in rebound angle is of the order of a few
+   degrees at maximum english — not a fixed "degrees per unit english" constant.
+3. **The vertical behaviour depends on the cushion height**: a tall cushion presses the ball into
+   the slate (the slate's rebound is what makes it hop, §8.1); a low cushion launches it
+   directly upward.
 
 ### 5.2 Alternative: Mathavan et al. (2010)
 
@@ -425,36 +596,90 @@ More realistic but requires solving differential equations numerically. Recommen
 
 **Reference:** S. Mathavan, M.R. Jackson, R.M. Parkin, "A theoretical analysis of billiard ball dynamics under cushion impacts," Proceedings of the Institution of Mechanical Engineers, Part C 224(9), 1863-1873 (2010).
 
+Useful concrete values from that paper (measured on a snooker table):
+
+| Quantity | Value |
+|---|---|
+| Contact point height `h` | `7R/5` (so `sin θ = 2/5`, i.e. 0.4 R above the ball's centre) |
+| Ball–cushion coefficient of restitution `e_e` | 0.98 |
+| Ball–cushion sliding friction `μ_w` | 0.14 |
+| Largest speed loss | at incident angles around 40° |
+| Sidespin | can raise the rebound speed above the incident speed, and reverse the rebound side |
+
+Note the difference in `e`: the *rail rubber* restitution measured by Mathavan (0.98) is much
+higher than the effective ball–rail restitution of 0.6–0.9 quoted by Dr. Dave, which includes the
+energy lost in the cloth contact that follows the cushion impact. Use the effective value unless
+you are modelling the two contacts separately.
+
 ### 5.3 Simplified Model (Game-Level)
 
-For a game-level implementation, a simplified model may suffice:
+For a game-level implementation, a simplified model may suffice. The important points are that
+the normal component is reversed and damped, that the tangential component is reduced by a
+Coulomb-limited impulse that is computed from the *contact-point* slip (spin included), that the
+spin is updated consistently, and that the ball is **not** given a fictitious upward kick:
 
 ```rust
-// Pseudocode for simplified cushion collision
-fn resolve_cushion_collision(ball: &mut Ball, cushion_normal: Vec3, cushion_e: f32) {
-    let v_normal = ball.velocity.dot(cushion_normal);
-    let v_tangent = ball.velocity - v_normal * cushion_normal;
-    
-    // Reverse and dampen normal component
-    ball.velocity = -cushion_e * v_normal * cushion_normal + v_tangent;
-    
-    // Apply cushion friction to spin
-    let cushion_friction = 0.15; // approximate
-    ball.angular_velocity += cushion_friction * v_normal * (cushion_normal.cross(Vec3::Z));
-    
-    // Pop ball slightly into the air (cushion apex effect)
-    ball.velocity.z += 0.1 * v_normal.abs();
+// Simplified cushion collision (instantaneous, rigid cushion).
+// n_rail: unit horizontal vector pointing from the playing surface towards the rail.
+fn resolve_cushion_collision(ball: &mut Ball, n_rail: Vec3, e_cushion: f64,
+                             mu_cushion: f64) {
+    // Local frame: x = towards the rail, y = along the rail, z = up.
+    let x = n_rail;
+    let y = Vec3::Z.cross(x);
+
+    // The contact point sits above the ball's centre, so the impulse direction is tilted
+    // downwards by theta = asin(eps / R).
+    let eps = 0.15 * ball.radius;            // contact height above the ball centre
+    let sin_t = eps / ball.radius;
+    let cos_t = (1.0 - sin_t * sin_t).sqrt();
+
+    // Contact point relative to the ball's centre, the contact tangent and the contact normal.
+    // The normal points away from the rail and *downwards* - the cushion drives the ball
+    // into the slate, and the slate is what bounces it back up (section 8.1).
+    let r_c = x * (ball.radius * cos_t) + Vec3::Z * (ball.radius * sin_t);
+    let tangent = x * sin_t - Vec3::Z * cos_t;
+    let n_hat = -x * cos_t - Vec3::Z * sin_t;
+
+    // Slip velocity of the contact point (the cushion is stationary).
+    let v_contact = ball.velocity + ball.angular_velocity.cross(r_c);
+    let s_x = v_contact.dot(tangent);
+    let s_y = v_contact.dot(y);
+    let slip = (s_x * s_x + s_y * s_y).sqrt();
+
+    // Normal approach speed (positive while the ball is heading into the rail).
+    let v_n = -ball.velocity.dot(n_hat);
+    if v_n <= 0.0 || slip <= 0.0 {
+        return;
+    }
+
+    // Normal impulse, and a tangential impulse capped by Coulomb friction.
+    let j_n = (1.0 + e_cushion) * ball.mass * v_n;
+    let j_t = ((2.0 / 7.0) * ball.mass * slip).min(mu_cushion * j_n);
+
+    // The tangential impulse opposes the slip.
+    let slip_dir = tangent * (s_x / slip) + y * (s_y / slip);
+    let impulse = j_n * n_hat - j_t * slip_dir;
+
+    ball.velocity = ball.velocity + impulse / ball.mass;
+    ball.angular_velocity =
+        ball.angular_velocity + r_c.cross(impulse) / ball.moment_of_inertia;
+
+    // The ball stays on the cloth here; the slate rebound is handled separately.
+    // Do not add an upward velocity in this function.
 }
 ```
 
 ### 5.4 Cushion Geometry (K-66 Profile)
 
 The K-66 cushion profile has:
-- Nose height: 1" (25 mm)
+- Nose height: 63.5% of the ball diameter ≈ 36.3 mm (1 7/16") above the playing surface
 - Base width: 1 3/16" (30 mm)
 - Radius at nose tip: ~1/4" (6.35 mm)
 
-The cushion nose height being greater than the ball radius is what causes the "pop" effect. The geometry determines the angle at which the ball contacts the cushion, which affects the rebound.
+The nose height is **above** the ball's radius (R = 28.575 mm), so the contact point sits above
+the ball's centre and the cushion's normal impulse presses the ball down into the slate. What
+makes the ball hop is the slate's rebound, not the cushion (§8.1) — although on a low or worn
+cushion the friction impulse can dominate and throw the ball up instead (§5.1).
 
 ---
 
@@ -465,18 +690,52 @@ The cushion nose height being greater than the ball radius is what causes the "p
 The cue stick strikes the ball at a specific point, imparting both linear and angular velocity.
 
 **Impact parameter (b):** Distance from ball center to the cue's line of travel (perpendicular offset).
+The angle between the cue axis and the line from the ball's centre to the contact point is
+`φ`, with `sin φ = b/R`. (Here `φ` is the cue impact angle; §5 uses `φ` for the cushion
+incidence angle.)
 
-**Squirt (deflection):** When the cue strikes off-center, the ball deflects from the intended direction by the "squirt angle" ψ:
+**Squirt (deflection):** When the cue strikes off-center, the tip first *slides* on the ball's
+surface; the friction force is not along the cue axis, so the ball leaves along the resultant of
+the normal and friction forces, deflected from the intended direction by the "squirt angle" ψ.
+This slip is the origin of squirt (Kim, 2021).
+
+Kim's rigid-cue model gives
 
 ```
-ψ ≈ arctan((5/2) · (b/R) · (1/(1 + M·R²/I)))
+tan θ = μ_c · ( 1 + (γ⁻¹ - 1)·μ_c·tan φ / (1 + e*·G + μ_c·tan φ) )
+ψ = φ - θ
 ```
 
-where M is the effective cue mass, R is ball radius, I is ball moment of inertia.
+where `μ_c` is the effective tip–ball friction coefficient, `e*` the tip COR (~0.75), and `G` and
+`γ` are the tip geometry and mass-ratio factors of Kim's model.
 
-For a well-chalked tip and typical cue, squirt is ~2°–5° for full english.
+**But the rigid-cue model badly over-predicts squirt.** Kim's own evaluation: with a cue/ball
+mass ratio `M_c/M ≈ 3` and a strike at half the radius (`φ = 30°`), the rigid model predicts
+**ψ ≈ 16°**, "very different from the actual squirt angle that appears in billiard games".
 
-**Reference:** R. Cross, "Cue and ball deflection (or 'squirt') in billiards," Am. J. Phys. 76, 205 (2008).
+The reason is that a real cue is not rigid. Its vibration period is ~4 ms and the tip-to-ball
+contact lasts ~2 ms, so the impulse never reaches the butt of the cue: only the last ~12 cm
+responds — an effective **cue-end mass of roughly 12 g**, not the 454 g total cue mass. Modelling
+the cue as a rigid body of the full mass is what makes the squirt far too large.
+
+**Practical values and trends** (Cross, 2008; Kim, 2021):
+
+- Squirt for a well-chalked tip is a few degrees: roughly **1°–5°** at maximum english, growing
+  almost linearly with the impact parameter for `b < 0.5R` and then flattening.
+- Squirt **increases** with the cue's effective end mass and **decreases** with a slicker tip
+  (lower `μ_c`). It vanishes for a centre-ball hit.
+- Therefore the cue mass that belongs in any squirt formula is the **effective end mass**
+  (~12 g for a typical shaft), never the total cue mass.
+
+> The formula `ψ ≈ arctan((5/2)·(b/R)·(1/(1 + M·R²/I)))` sometimes quoted for squirt is wrong:
+> with `M` taken as the total cue mass it predicts ≈9° at `b = 0.5R` and ≈17–18° at `b = R`, which
+> contradicts both the measured 1°–5° and the doc's own "2°–5°" claim; and because its
+> denominator grows with `M` it predicts that squirt *shrinks* with cue mass, which is the
+> opposite of the real trend.
+
+**References:** R. Cross, "Cue and ball deflection (or 'squirt') in billiards," Am. J. Phys. 76,
+205 (2008). H.-C. Kim, "Motions of a billiard ball after a cue stroke," arXiv:2104.11232 /
+New Physics: Sae Mulli 72, 208 (2022).
 
 ### 6.2 Post-Impact Ball State
 
@@ -486,25 +745,35 @@ Given a cue velocity `V_cue`, impact parameter `b`, and cue elevation angle `θ`
 ```
 v_ball = (1 + e_cue) · M_cue · V_cue / (m_ball + M_cue)
 ```
+(for a centre-ball hit; `e_cue` is the tip COR, 0.71–0.75 leather / 0.81–0.87 phenolic)
 
 **Angular velocity (spin) from offset hit:**
 
-For a horizontal stroke (θ = 0):
-- **Topspin (follow):** Hit above center → `ω_x < 0` (ball rotates forward)
-- **Backspin (draw):** Hit below center → `ω_x > 0` (ball rotates backward)
-- **Sidespin (english):** Hit left/right of center → `ω_z ≠ 0`
+For a horizontal stroke (θ = 0), taking the shot direction as +x̂:
+- **Topspin (follow):** Hit above center → `ω_y > 0` (this is the rolling condition of §3.2)
+- **Backspin (draw):** Hit below center → `ω_y < 0`
+- **Sidespin (english):** Hit the +ŷ (right) side → `ω_z < 0` (clockwise seen from above);
+  hit the −ŷ (left) side → `ω_z > 0`
 
-The spin magnitude is approximately:
+The spin magnitude for a tip that grips the ball (no slip at the end of contact) follows from the
+torque of the impulse about the ball's centre, `τ = r_c × J`, with `|r_c| = b` and
+`J ≈ m_ball·v_ball`:
+
 ```
-ω = (b · V_cue) / R²  (simplified)
+ω = (b · J) / I = (5/2) · b · v_ball / R² = (5/2) · (b/R) · (v_ball/R)
 ```
 
-More precisely, from arXiv 2104.11232:
+Equivalently, in terms of the slip between the tip and the ball surface (Kim, 2021):
+
 ```
 ω = (F · t / I) × (offset vector)
 ```
 
 where `F · t` is the impulse delivered by the cue.
+
+> The commonly copied form `ω = b·V_cue/R²` is missing the factor 5/2 and uses the *cue* speed
+> instead of the *ball* speed; it under-predicts the spin by more than a factor of two for a
+> typical cue.
 
 ### 6.3 Miscue Condition
 
@@ -512,8 +781,10 @@ To avoid miscue (the cue slipping off the ball), the impact parameter must satis
 ```
 b ≤ R · μ_cue / sqrt(1 + μ_cue²)
 ```
+(equivalently `μ_static ≥ tan φ = (b/R)/sqrt(1 - (b/R)²)`, Kim, 2021.)
 
-For μ_cue ≈ 0.6: `b ≤ 0.47 · R` — you can hit up to ~47% of the ball's radius from center before miscuing.
+For μ_cue ≈ 0.6: `b ≤ 0.51 · R` — you can hit up to ~51% of the ball's radius from center
+before miscuing.
 
 ---
 
@@ -523,12 +794,27 @@ For μ_cue ≈ 0.6: `b ≤ 0.47 · R` — you can hit up to ~47% of the ball's r
 
 A jump shot is executed by striking the cue ball **below center** with the cue elevated at an angle θ above horizontal.
 
-**Required vertical impulse to lift the ball:**
+**Mechanism (this is the part most often got wrong):** the elevated cue does *not* launch the
+ball upwards. It drives the ball **downwards into the slate**, and it is the slate's reaction
+that launches the ball. The cue ball is compressed against the cloth and rebounds off it, so a
+jump shot is really a ball–slate bounce with a horizontal velocity component.
+
+**The relevant criterion is an impulse, not a force.** Comparing a force to `m·g`
+("`F_vertical ≥ m_ball·g`") is meaningless here, because the cue strike is an impulse of a few
+milliseconds: the ball is pressed into the cloth for far less time than it takes gravity to pull
+it down. What matters is the downward velocity the ball carries into the slate:
+
 ```
-F_vertical ≥ m_ball · g
+v_z↓ = (1 + e_cue) · M_cue · V_cue / (m_ball + M_cue) · sin(θ)    (downward)
 ```
 
-The vertical component of the cue force must overcome gravity to lift the ball off the cloth.
+and the resulting hop, after the slate's restitution (§7.2):
+
+```
+h_jump = (e_table · |v_z↓|)² / (2g)
+```
+
+For `v_z↓ = 1 m/s` and `e_table = 0.6`: `h_jump ≈ 1.8 cm`; for `v_z↓ = 2 m/s`: `h_jump ≈ 7 cm`.
 
 **From Regis Petit's "Billiards: Theory of the Game":**
 - The cue must be elevated (typically 10°–45°)
@@ -548,8 +834,11 @@ While airborne, the ball is subject to:
 - Cross-sectional area A = π · R² ≈ 0.00256 m²
 
 For a jump shot at 3 m/s with topspin of 500 rpm:
-- Drag deceleration: ~0.5 m/s² (minor for short jumps)
-- Magnus effect: negligible for pool ball speeds and sizes (Reynolds number ~10⁴, Magnus force is small)
+- Drag deceleration: `½·ρ·C_d·A·v²/m ≈ 0.04 m/s²` — negligible next to gravity
+  (9.81 m/s²), even over the longest plausible jump
+- Magnus effect: also negligible *in practice*. The relevant parameter is the spin ratio
+  `S = ωR/v` (≈0.5 for 500 rpm at 3 m/s), not the Reynolds number; the induced force is
+  modest and a jump lasts only ~0.1–0.3 s, so the resulting Δv is a few cm/s.
 
 **Recommendation:** Air drag and Magnus effect are **minor** for jump shots in pool. Gravity is the dominant force. Include air drag for realism but Magnus effect can be omitted.
 
@@ -573,14 +862,47 @@ When the ball lands back on the table:
 
 ### 8.1 Ball Popped by Cushion
 
-As noted in Section 5, cushion collisions pop the ball into the air because the cushion apex is above the ball's center. The ball then lands back on the slate.
+A cushion hit can make the ball hop. There are two distinct vertical effects, and it matters
+which one you are modelling:
 
-**The "pop" velocity:**
+**Case A — tall cushion (the standard):** the contact is above the ball's centre, so the
+cushion's normal impulse presses the ball *into* the slate. The ball is then arrested by the
+cloth and slate and rebounds, and that rebound is the "pop". From the Han model, the downward
+velocity imparted by the cushion is
+
 ```
-v_z ≈ (h_cushion - R) / R · |v_n| · sin(φ)
+v_z↓ = (2/7)·s_x·cos θ - (1 + e_cushion)·c·sin θ
 ```
 
-where `h_cushion` is the cushion apex height, `R` is ball radius, `v_n` is the normal component of incoming velocity, and `φ` is the angle of incidence.
+For a rolling ball (s_x = |v_n|·(1 + sin θ)) this is roughly `v_z↓ ≈ -0.11·|v_n|` with a
+standard cushion (ε = 0.27 R, e_cushion = 0.75) and `≈ -0.30·|v_n|` with Mathavan's geometry
+(ε = 0.4 R).
+
+**Case B — low cushion:** the friction impulse dominates and the ball is launched *upwards*
+directly by the cushion (§5.1). This is the "the rails pop the ball into the air" complaint,
+and it is a mounting/geometry problem, not a physics feature.
+
+**The rebound off the slate** is then
+
+```
+v_z↑ = e_table · |v_z↓|
+h_hop = v_z↑² / (2g)
+```
+
+Magnitudes, for a 2 m/s cushion hit with a standard cushion: `v_z↓ ≈ -0.22 m/s`,
+`v_z↑ ≈ 0.13 m/s`, `h_hop ≈ 1 mm`. The simple impulse model therefore predicts only a
+millimetre-scale hop; the hop you can see after a hard hit comes from the *cloth* being
+compressed and the ball bouncing on it, which is a short stiff contact rather than a plain
+restitution, and from the ball's spin changing during the impact.
+
+> The formula `v_z ≈ (h_cushion - R)/R · |v_n| · sin(φ)` does not correspond to any published
+> model; it is dimensionally plausible but has no derivation behind it. Use the two-step
+> impulse-and-rebound treatment above instead.
+
+**Implementation:** keep the ball's `z` on the cloth during the cushion impulse, then apply the
+slate rebound (§7.2) to the resulting downward velocity. Do not add an upward velocity directly
+in the cushion handler. If you want the visible hop, model the cloth as a compliant contact
+(the ball depresses the cloth and rebounds) rather than trying to fake it with a constant.
 
 ### 8.2 Ball-Slate Bounce
 
@@ -621,7 +943,7 @@ When a ball is hit hard enough (or jumped) to leave the playing surface:
 
 ### 9.2 Minimum Speed to Leave the Table
 
-A ball traveling at speed `v` across a 100" (2.54 m) table takes approximately:
+A ball travelling at speed `v` across a 100" (2.54 m) table takes approximately:
 ```
 t = 2.54 / v seconds
 ```
@@ -631,12 +953,39 @@ With rolling friction `μ_r ≈ 0.01` and `g = 9.81`:
 deceleration = μ_r · g ≈ 0.098 m/s²
 ```
 
-A ball starting at 5 m/s will travel approximately:
+The distance a rolling ball covers before stopping is `d = v₀² / (2·μ_r·g)`:
+
+| Initial speed | Distance before stopping |
+|---|---|
+| 3 m/s | ≈ 46 m |
+| 5 m/s | ≈ 128 m |
+
+So a ball is nowhere near being stopped by friction within the length of a table. In practice it
+hits a cushion or a pocket long before friction stops it.
+
+**Minimum speed to reach the far end of the table** (i.e. to travel the 2.54 m of playing
+surface): solving `d = v₀²/(2·μ_r·g)` for `v₀` gives
+
 ```
-d = v₀² / (2 · μ_r · g) ≈ 128 m
+v_min = sqrt(2 · μ_r · g · d) ≈ 0.71 m/s
 ```
 
-So balls can easily leave the table if hit hard enough — even at 3 m/s, the ball would travel ~65 m if the table were infinite. In practice, the ball hits a cushion or pocket long before friction stops it.
+— a very gentle shot is already enough to cross the table.
+
+**Minimum speed to actually leave the table** is a different question, because the ball has to
+clear the rail (≈50 mm above the cloth), not merely reach it. Two routes exist:
+
+1. **The ball is already airborne.** A jump shot (§7.1) or the vertical impulse of a
+   ball-ball collision (§4.5) can lift the ball, and an airborne ball that strikes the rail
+   above the nose height can sail over it. The rail's top edge — not the cushion nose — is what
+   the ball has to clear, and it is ~15 mm higher than the nose.
+2. **The ball hops off the cushion.** On a correctly mounted cushion the simple model predicts
+   only a millimetre-scale hop (§8.1), so this is not a realistic route; it becomes one on a low
+   or worn cushion, where the cushion's friction throws the ball upward instead.
+
+Because route 1 depends on the ball's height at the rail and route 2 on the cushion condition,
+there is no single "minimum speed" to quote. Balls leaving the table is a rare event in real
+play, which is why §9.1 recommends simply removing the ball and calling the shot a foul.
 
 ---
 
@@ -644,7 +993,9 @@ So balls can easily leave the table if hit hard enough — even at 3 m/s, the ba
 
 ### 10.1 Fixed Timestep Simulation
 
-**Reference:** Gaffer on Games, "Fix Your Timestep" (2004).
+**References:**
+- Gaffer on Games, "Fix Your Timestep!" (2004) — https://gafferongames.com/post/fix_your_timestep/
+- Gaffer on Games, "Snapshot Interpolation" (2014) — https://gafferongames.com/post/snapshot_interpolation/
 
 **Core principle:** Decouple simulation rate from rendering rate.
 
@@ -670,22 +1021,69 @@ loop:
 ```
 
 **Why fixed timestep?**
-- Same inputs → same outputs (determinism)
-- No floating-point drift across platforms
-- No tunneling at different framerates
+- Same inputs → same outputs (determinism), independent of the render frame rate
+- No accumulation of floating-point drift across variable-length frames
 - Essential for replay systems and network lockstep
 
-### 10.2 Collision Detection Strategy
+**What a fixed timestep does *not* do:** it does not prevent tunnelling. A fixed step makes
+tunnelling *consistent* across frame rates, but if a ball moves further than a diameter in one
+step, it will pass straight through another ball or through a cushion. At 240 Hz a 13 m/s break
+shot moves `13/240 = 5.4 cm` per step — 94% of a ball diameter (5.715 cm) — and a cushion is only
+1.6–6.4 mm of rubber. Discrete "distance < 2R" checks will miss those collisions.
+
+Two ways out:
+
+1. **Continuous (swept) collision detection** — solve for the time of impact within the step
+   rather than testing the end-of-step position (§10.3).
+2. **Event-driven simulation** — do not step at all; solve for the next event time (§10.2).
+
+### 10.2 Two Architectures: Stepped vs Event-Driven
+
+Section 3 gives *closed-form* trajectories for each motion state (slide / roll / spin / air).
+That is an event-driven description of the world, not a stepped one: between events a ball's
+state is known analytically for any `t`, so the simulation never needs to integrate anything.
+
+**Event-driven (recommended core, as in pooltool):**
+
+```
+loop:
+    for each ball: compute the time until its next event
+                   (state change, ball-ball hit, cushion hit, pocket, rest)
+    take the earliest event
+    advance every ball analytically to that time
+    apply the event (instantaneous impulse, or a state switch)
+```
+
+| | Stepped integration | Event-driven |
+|---|---|---|
+| Collision ordering | approximate; simultaneous events are fuzzy | exact by construction |
+| Tunnelling | possible unless CCD is added | impossible |
+| Step-size error | yes | none (closed form) |
+| Cost of a long shot | many steps | a handful of events |
+| Renderer | samples positions each frame | gets a piecewise-analytic path to interpolate |
+| Implementation | simple | needs TOI solvers (§10.3) |
+
+The "Renderer" row matters for the Godot side: with an event-driven core you hand the renderer a
+list of segments ("ball 7 slides in a straight line until t=1.83 s, then rolls until t=4.1 s")
+and it can interpolate the exact position at any render time, including sub-step times, with no
+accumulated interpolation error.
+
+**Recommendation:** use the event-driven core for the shot simulation (it makes §3's closed-form
+equations the single source of truth and removes tunnelling), and keep a fixed-timestep loop only
+for continuous/ambient motion (ball-in-hand placement, cue stick animation, UI).
+
+### 10.3 Collision Detection Strategy
 
 **Broad phase:** Spatial partitioning (grid or BVH) to find potentially colliding pairs.
 
-**Narrow phase:** Analytical collision detection:
-- **Ball-ball:** Solve quadratic equation for sphere-sphere intersection
-- **Ball-cushion:** Ray-cushion intersection
-- **Ball-pocket:** Point-in-circle/polygon test
-- **Ball-off-table:** Boundary check
+**Narrow phase:** Time-of-impact (TOI) tests rather than overlap tests:
+- **Ball-ball:** solve for the first `t` at which the centres are `2R` apart (§ below)
+- **Ball-cushion:** solve for the first `t` at which the ball surface meets the cushion
+  profile (a swept sphere against the nose arc, not a ray against a plane)
+- **Ball-pocket:** point-in-circle/polygon test, with the pocket's cut angle (§2.3)
+- **Ball-off-table:** boundary check on the ball's centre against the rail line
 
-**Ball-ball collision time:**
+**Ball-ball collision time (constant velocity):**
 ```
 Let dp = p₂ - p₁ (position difference)
 Let dv = v₂ - v₁ (velocity difference)
@@ -698,29 +1096,66 @@ t = (-2(dp·dv) - sqrt(4(dp·dv)² - 4|dv|²(|dp|² - 4R²))) / (2|dv|²)
 
 Pick the smallest positive `t`.
 
-### 10.3 Determinism in Rust
+> **This quadratic is only valid for straight-line motion.** Under cloth friction the positions
+> are quadratic in `t` (`p(t) = p₀ + v₀·t + ½·a·t²`), so the time-of-impact condition
+>
+> ```
+> |Δp₀ + Δv·t + ½·Δa·t²|² = (2R)²
+> ```
+>
+> is a **quartic** in `t`, not a quadratic. In an event-driven core, where each segment's
+> trajectory is known in closed form, solve the quartic (or use conservative advancement /
+> a swept-sphere test) instead of assuming constant velocity. With a stepped integrator the
+> usual workaround is to solve the quadratic against the *start-of-step* positions and accept the
+> error.
 
-**Key requirements for deterministic simulation:**
+### 10.4 Determinism in Rust
 
-1. **Fixed-precision floating point:** Use `f32` consistently (not `f64`). Both client and server must use the same precision.
+**Precision is an accuracy decision, not a determinism decision.** IEEE-754 defines `+`, `-`,
+`*`, `/` and `sqrt` exactly, and Rust maps them to correctly-rounded hardware instructions on
+every target (x86-64 SSE, ARM, WASM). So `f32` vs `f64` does not change whether two runs agree;
+both are bit-exact for these operations. Choose `f64` for accuracy (a 30 s shot at 240 Hz is
+7200 steps of accumulation across 16 balls) and be consistent about it everywhere.
 
-2. **No platform-dependent math:** Use the same math library on all platforms. Rust's `f32` is IEEE 754 single-precision, which is deterministic on x86, ARM, and WebAssembly.
+The real determinism risks are:
 
-3. **Avoid non-deterministic operations:**
-   - No `sqrt` of negative numbers (guard against floating-point errors)
-   - No `NaN` or `Inf` propagation
-   - Use `min`/`max` instead of conditional branches where possible
+1. **Platform libm.** `sin`, `cos`, `powf`, `exp`, `ln` call the platform's libm, which differs
+   between glibc, musl, macOS and different library versions — *and* between the same platform
+   on different hardware with different SIMD paths. Section 3's rotation matrices need `sin`/`cos`,
+   so this is not avoidable by choosing a different architecture. Use the [`libm`](https://crates.io/crates/libm)
+   crate (a pure-Rust, musl-derived implementation) instead of `f64::sin`/`f64::cos`, or supply
+   your own polynomial approximations. Anything computed once at startup (cue direction, table
+   geometry) should be computed *outside* the deterministic core and passed in as data.
+2. **`HashMap` iteration order.** Rust's `HashMap` uses a per-process random seed, so iteration
+   order changes between runs of the same binary. Never iterate a `HashMap` to drive simulation
+   order; use a `Vec`, a `BTreeMap`, or an explicitly sorted list.
+3. **Parallel reductions.** `rayon`'s `reduce`/`sum` over floats may combine partial results in a
+   different order on different runs, which changes the last bits. Reduce sequentially, or use a
+   fixed-order tree reduction.
+4. **Unstable sorts and partial comparisons.** `sort_unstable` is fine for reproducibility only
+   if the comparator is a total order; `partial_cmp` returns `None` for `NaN` and makes the
+   order input-dependent. Sort by `(key, ball_index)` so ties are broken deterministically.
+5. **Simultaneous events.** Two collisions at the same instant must be ordered by an explicit
+   rule — e.g. by ball index — or two runs can diverge.
+6. **NaN / Inf.** Guard `sqrt` of negative arguments, zero-length normals and division by zero;
+   a single `NaN` silently poisons every later comparison and breaks reproducibility.
+7. **FMA contraction and fast-math.** Rust does not contract `a*b+c` into an FMA by default, but
+   enabling `+fma`/`fast-math` for one target changes results. Keep the flags uniform across
+   every target in the release profile.
 
-4. **Lockstep networking (if multiplayer):**
-   - Each client runs the same simulation
-   - Inputs are synchronized across clients
-   - Client n waits for input from all other clients before advancing to step n+1
-   - Only 2–4 players recommended (Gaffer on Games)
+> `min`/`max` instead of branches is a branchless-code performance tip, not a determinism rule —
+> both forms are deterministic. Keep it if you like it; it is not load-bearing here.
 
-5. **Snapshot interpolation (alternative to lockstep):**
-   - Server runs simulation at fixed rate
-   - Clients receive snapshots and interpolate between them
-   - More bandwidth, less waiting
+**Lockstep networking (if multiplayer):**
+- Each client runs the same simulation
+- Inputs are synchronized across clients
+- Client n waits for input from all other clients before advancing to step n+1
+- Only 2–4 players recommended (Gaffer on Games)
+
+**Snapshot interpolation (alternative to lockstep):**
+- Server runs simulation at fixed rate
+- Clients receive snapshots and interpolate between them
+- More bandwidth, less waiting
 
 ---
 
@@ -740,12 +1175,12 @@ struct BallState {
     angular_velocity: Vec3, // (wx, wy, wz) in rad/s
     
     // Derived: motion state
-    motion_state: MotionState, // SLIDING, ROLLING, SPINNING, STATIONARY
+    motion_state: MotionState, // SLIDING, ROLLING, SPINNING, STATIONARY, AIRBORNE
     
     // Physical properties
-    mass: f32,           // 0.156 kg (standard)
-    radius: f32,         // 0.028575 m (standard)
-    moment_of_inertia: f32, // (2/5) * m * R²
+    mass: f64,           // 0.170 kg (6 oz, standard)
+    radius: f64,         // 0.028575 m (standard)
+    moment_of_inertia: f64, // (2/5) * m * R²
     
     // Game properties
     number: u8,          // 0 = cue ball, 1-15 = object balls
@@ -753,6 +1188,9 @@ struct BallState {
     is_off_table: bool,
 }
 ```
+
+All simulation state is `f64`. The precision choice is an accuracy decision — it does not affect
+determinism (§10.4) — but it must be consistent across the whole codebase.
 
 ### 11.2 Game State
 
@@ -775,18 +1213,28 @@ The input to the physics simulation is:
 ```rust
 struct ShotInput {
     // Cue stick state at moment of strike
-    cue_speed: f32,           // m/s (impulse force magnitude)
-    cue_angle_horizontal: f32, // degrees (0–360°, azimuth)
-    cue_angle_vertical: f32,   // degrees (0–45°, elevation for jump shots)
+    cue_speed: f64,            // m/s
+    // Direction of the cue axis as a unit vector (x, y, z) in table coordinates.
+    // The elevation for jump shots is baked into this vector.
+    cue_direction: Vec3,       // pre-normalized by the caller
     
     // Contact point on cue ball (offset from center)
-    contact_offset_x: f32,    // -R to +R (left/right english)
-    contact_offset_y: f32,    // -R to +R (top/bottom spin)
+    contact_offset_x: f64,     // -R to +R (left/right english)
+    contact_offset_y: f64,     // -R to +R (top/bottom spin)
     
     // Current state of all balls at moment of strike
     ball_states: [BallState; 16],
 }
 ```
+
+**Why a direction vector and not angles:** expressing the aim as degrees (or radians) forces the
+deterministic core to call `sin`/`cos` to convert it, and those calls go to the platform libm,
+which is the single largest source of cross-platform divergence (§10.4). Passing a
+pre-normalized unit vector moves the trigonometry into the UI layer, where a one-bit difference
+does not matter, and keeps the simulation core free of transcendental functions.
+
+The same rule applies to any other angle that reaches the core (table geometry, pocket angles):
+normalize once outside the deterministic boundary and pass vectors/coordinates.
 
 **From this input, the physics computes:**
 1. Initial velocity and angular velocity of the cue ball
@@ -795,33 +1243,76 @@ struct ShotInput {
 
 ### 11.4 Simulation Loop
 
+**Event-driven (recommended, see §10.2):**
+
 ```rust
 fn simulate_shot(input: ShotInput) -> GameState {
     // 1. Apply cue strike to cue ball
-    let cue_ball = apply_cue_strike(&input);
+    let mut balls = apply_cue_strike(&input);
     
-    // 2. Run physics simulation at fixed timestep
-    let mut accumulator = 0.0;
-    let fixed_dt = 1.0 / 240.0; // 240 Hz for physics (higher than 60 Hz render)
-    
-    while !all_balls_settled(&balls) && accumulator < MAX_SIM_TIME {
-        accumulator += fixed_dt;
-        integrate_step(fixed_dt);
+    // 2. Event loop: advance to the next event, resolve it, repeat
+    let mut t = 0.0;
+    while t < MAX_SIM_TIME && !all_balls_settled(&balls) {
+        // For each ball, find the time of its next event:
+        //   - motion-state change (slide -> roll, roll -> rest)
+        //   - ball-ball contact, cushion contact, pocket, off-table
+        // Take the earliest one; ties are broken by ball index (deterministic).
+        let (dt, event) = next_event(&balls, t);
         
-        // Handle collisions
-        resolve_ball_ball_collisions();
-        resolve_cushion_collisions();
-        resolve_pocket_collisions();
-        resolve_ball_off_table();
-        resolve_ball_slate_bounces();
+        // Advance every ball analytically to t + dt (closed form, section 3)
+        advance_all(&mut balls, dt);
+        t += dt;
+        
+        // Apply the event
+        match event {
+            Event::BallBall(a, b) => resolve_ball_ball(&mut balls, a, b),
+            Event::Cushion(b)     => resolve_cushion(&mut balls, b),
+            Event::Pocket(b)      => resolve_pocket(&mut balls, b),
+            Event::OffTable(b)    => resolve_off_table(&mut balls, b),
+            Event::StateChange(b) => switch_motion_state(&mut balls, b),
+        }
     }
     
-    // 3. Return final state
-    GameState { balls, ... }
+    GameState { balls, .. }
 }
 ```
 
-**Why 240 Hz for physics?** Ball-ball collisions last ~250 μs. A 240 Hz timestep (4.17 ms) is coarse but sufficient for game-level simulation. For maximum accuracy, use 480–1000 Hz. The key is that the timestep is **fixed and independent of rendering**.
+**Stepped alternative** (if the event-driven core is too much work for a first version):
+
+```rust
+fn simulate_shot(input: ShotInput) -> GameState {
+    let mut balls = apply_cue_strike(&input);
+    let fixed_dt = 1.0 / 240.0;
+    let mut accumulator = 0.0;
+    
+    while !all_balls_settled(&balls) && accumulator < MAX_SIM_TIME {
+        accumulator += fixed_dt;
+        integrate_step(&mut balls, fixed_dt);
+        
+        resolve_ball_ball_collisions(&mut balls);
+        resolve_cushion_collisions(&mut balls);
+        resolve_pocket_collisions(&mut balls);
+        resolve_ball_off_table(&mut balls);
+        resolve_ball_slate_bounces(&mut balls);
+    }
+    
+    GameState { balls, .. }
+}
+```
+
+**Choosing the timestep:** a fixed timestep is required for determinism regardless of which
+architecture you use, but 240 Hz is *not* justified by the ball-ball contact time. Collisions are
+modelled as instantaneous, so the 250 μs contact duration never enters the integrator; what the
+timestep actually has to be small enough for is *spatial* accuracy — that no ball may move far
+enough in one step to pass through another ball or a cushion. At 240 Hz a 13 m/s break shot
+covers 5.4 cm per step, essentially a full ball diameter, so discrete overlap tests will miss
+collisions at break speed.
+
+So:
+- with **event-driven** simulation, no timestep constraint applies at all;
+- with a **stepped** integrator, either use continuous collision detection (swept TOI within
+  each step, §10.3) or raise the rate — 1000 Hz gives 1.3 cm per step at 13 m/s, which is below
+  a ball diameter but still not comfortable for a fast grazing hit.
 
 ---
 
@@ -832,36 +1323,40 @@ fn simulate_shot(input: ShotInput) -> GameState {
 | Domain | Recommended Model | Complexity | Accuracy |
 |---|---|---|---|
 | Ball-cloth | Analytical (Kiefl 2020, Section I) | Low | High |
-| Ball-ball | Elastic + friction correction (arXiv 2402.13258) | Medium | High |
+| Ball-ball | Elastic + friction impulse (Kim 2024; Dr. Dave TP A-14) | Medium | High |
 | Ball-cushion | Han (2005) or simplified game model | Low-Medium | Medium-High |
-| Ball-cue | Impulse-based with squirt correction (arXiv 2104.11232) | Medium | High |
+| Ball-cue | Impulse-based with squirt correction (Kim 2021) | Medium | High |
 | Jump shots | Gravity + air drag (Magnus optional) | Low | Medium-High |
 | Ball-slate | COR bounce (e_table = 0.5–0.7) | Low | Medium |
-| Determinism | Fixed timestep, f32, lockstep | Low | N/A |
+| Determinism | f64, event-driven core, platform-independent libm, lockstep | Medium | N/A |
 
 ### 12.2 Key Parameters (Summary)
 
 | Parameter | Value |
 |---|---|
 | Ball radius R | 0.028575 m |
-| Ball mass m | 0.156 kg |
+| Ball mass m | 0.170 kg (6 oz) |
 | Ball COR (ball-ball) e | 0.95 |
 | Ball-ball friction μ_ball | 0.05 |
 | Sliding friction μ_s | 0.20 |
 | Rolling friction μ_r | 0.01 |
 | Cushion COR e_cushion | 0.75 |
+| Cushion contact height above ball centre ε | 0.15 R (Han; 0.1–0.2 R) |
+| Cushion sliding friction μ_cushion | 0.14 |
 | Table COR e_table | 0.60 |
 | Cue-ball friction μ_cue | 0.60 |
-| Simulation timestep | 1/240 s (or 1/480 s) |
+| Simulation timestep | none required (event-driven); 1/240–1/1000 s if stepped |
 | Max simulation time | 30 seconds |
 | Gravity g | 9.81 m/s² |
+| Numeric type | f64 throughout |
 
 ### 12.3 What to Skip (for a game)
 
 - **Full soft-body cushion physics** (Mathavan 2010) — overkill for a game
 - **Magnus effect in air** — negligible for pool ball sizes/speeds
-- **Multi-ball simultaneous collisions** — resolve sequentially
-- **Cue flexion** — treat cue as rigid body (small effect on ball state)
+- **Multi-ball simultaneous collisions** — resolve pairwise, ordered by (event time, ball index)
+- **Cue flexion** — treat the cue as rigid (small effect on the ball state), but note that the
+  *effective cue-end mass* (~12 g, not 454 g) is what matters for squirt
 - **Cloth nap anisotropy** — negligible for game-level play
 - **Temperature/humidity effects** — can be added as optional modifiers later
 
@@ -872,23 +1367,34 @@ fn simulate_shot(input: ShotInput) -> GameState {
 1. **Kiefl, Evan (2020).** "The physics of pool/billiards." https://ekiefl.github.io/2020/04/24/pooltool-theory/
    - Comprehensive modern treatment of all five interaction domains
    - Includes full analytical equations for ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate
+   - Errata worksheet for Han (2005): https://ekiefl.github.io/images/pooltool/pooltool-theory/ball_cushion_inhwan_han.pdf
+   - Note: the sliding-state angular velocity equation on that page carries a sign error (§3.3)
 
-2. **arXiv 2402.13258 (2024).** "Collision of two spinning billiard balls and the role of table."
+2. **Kim, Hyeong-Chan (2024).** "Collision of two spinning billiard balls and the role of table."
+   arXiv:2402.13258; published in *New Physics: Sae Mulli* **74**(6), 621 (2024).
    - Modern research on ball-ball collisions with spin and table friction
-   - Includes experimental values for COR, friction coefficients
+   - Experimental values for COR (0.92–0.98) and friction (0.03–0.08); contact time 250–300 μs
+   - Source of the vertical hop estimate `h = (μ·U)²/(2g)` (§4.5)
 
-3. **arXiv 2104.11232 (2021).** "Motions of a billiard ball after a cue stroke."
-   - Complete theoretical analysis of cue-ball collision
-   - Includes squirt angle derivation
+3. **Kim, Hyeong-Chan (2021/2022).** "Motions of a billiard ball after a cue stroke."
+   arXiv:2104.11232; published in *New Physics: Sae Mulli* **72**, 208 (2022).
+   - Complete theoretical analysis of the cue-ball collision
+   - Squirt angle derivation, the rigid-cue vs. flexible-cue distinction, the effective cue-end mass
+   - Miscue condition `μ_static ≥ tan φ = (b/R)/√(1-(b/R)²)`
 
-4. **Han, Inhwan (2005).** "Dynamics in Carom and Three Cushion Billiards." Journal of Mechanical Science and Technology 19, 976.
-   - Analytical ball-cushion model
+4. **Han, Inhwan (2005).** "Dynamics in Carom and Three Cushion Billiards." Journal of Mechanical
+   Science and Technology **19**(4), 976–984.
+   - Analytical ball-cushion model (instantaneous, point contact, ε/θ geometry)
 
-5. **Mathavan, S. et al. (2010).** "A theoretical analysis of billiard ball dynamics under cushion impacts." Proceedings of the Institution of Mechanical Engineers, Part C 224(9), 1863-1873.
+5. **Mathavan, S., Jackson, M.R. & Parkin, R.M. (2010).** "A theoretical analysis of billiard ball dynamics under cushion impacts." Proceedings of the Institution of Mechanical Engineers, Part C **224**(9), 1863–1873.
    - Most complete ball-cushion model (requires numerical solution)
+   - Contact height h = 7R/5, cushion COR 0.98, sliding friction 0.14
 
 6. **Dr. Dave Pool Info (drdavepoolinfo.com).** "Pool Physics Property Constants."
+   https://drdavepoolinfo.com/faq/physics/physical-properties/ and
+   https://drdavepoolinfo.com/faq/table/cushion-nose-height/
    - Authoritative reference for all physical property values
+   - Also the source of the throw equation in TP A-14 and the throw data used in §4.4
 
 7. **Cross, R. (2008).** "Cue and ball deflection (or 'squirt') in billiards." Am. J. Phys. 76, 205.
    - Experimental and theoretical analysis of squirt
@@ -897,34 +1403,46 @@ fn simulate_shot(input: ShotInput) -> GameState {
    - Complete 3D vector treatment of billiard physics
    - Covers horizontal and inclined cue strokes, jump shots
 
-9. **Alciatore, David (Dr. Dave).** Multiple articles on billiards.colostate.edu
+9. **Alciatore, David (Dr. Dave).** "The Amazing World of Billiards Physics," *Scientific American*
+   (2007). https://billiards.colostate.edu/physics_articles/Alciatore_SCIAM_article_posted_version.pdf
    - Spin-induced throw, cut-induced throw, jump shot mechanics
-   - Practical experimental data
+   - Published throw equation (TP A-14), including the 1/7 sticking constant
 
-10. **Gaffer on Games.** "Fix Your Timestep." https://gafferongames.com/post/snapshot_interpolation/
+10. **Gaffer on Games.** "Fix Your Timestep!" (2004).
+    https://gafferongames.com/post/fix_your_timestep/
     - Industry standard for fixed-timestep simulation
 
-11. **WPA Equipment Specifications.** https://wpapool.com/wp-content/uploads/2024/01/RECOMMENDED-EQUIPMENT-SPECIFICATIONS.pdf
+11. **Gaffer on Games.** "Snapshot Interpolation" (2014).
+    https://gafferongames.com/post/snapshot_interpolation/
+    - Industry standard for client-side interpolation of server snapshots
+
+12. **WPA Equipment Specifications.** https://wpapool.com/wp-content/uploads/2024/01/RECOMMENDED-EQUIPMENT-SPECIFICATIONS.pdf
     - Official tournament table, ball, and pocket dimensions
 
-12. **BCA Equipment Specifications.** https://cdn.ymaws.com/bca-pool.com/resource/resmgr/imported/BCAEquipmentSpecifications_2008.pdf
+13. **BCA Equipment Specifications.** https://cdn.ymaws.com/bca-pool.com/resource/resmgr/imported/BCAEquipmentSpecifications_2008.pdf
     - Additional equipment specifications
 
-13. **Aramith General Specifications.** https://aramith.com/general-specifications/
+14. **Aramith General Specifications.** https://aramith.com/general-specifications/
     - Ball material and physical properties
 
-14. **Nierhoff, T. et al. (2012).** "Strategic play for a pool-playing robot." IEEE Workshop on Advanced Robotics and its Social Impacts.
+15. **Nierhoff, T. et al. (2012).** "Strategic play for a pool-playing robot." IEEE Workshop on Advanced Robotics and its Social Impacts.
     - Robotic billiards implementation experience
 
-15. **Wallace, R.E. & Schroeder, M.C. (1988).** "Analysis of billiard ball collisions in two dimensions." Am. J. Phys. 56, 815.
+16. **Wallace, R.E. & Schroeder, M.C. (1988).** "Analysis of billiard ball collisions in two dimensions." Am. J. Phys. 56, 815.
     - Classic paper on billiard ball collision physics
 
-16. **Coriolis, G. (1835/2005).** "Théorie mathématique des effets du jeu de billard." English translation by D. Nadler.
+17. **Coriolis, G. (1835/2005).** "Théorie mathématique des effets du jeu de billard." English translation by D. Nadler.
     - Historical foundation of billiard physics (1835)
 
-17. **Peskin, C.S. (2020).** "Collision of Billiard Balls in 3D with Spin and Friction." https://math.nyu.edu/~peskin/Collision_of_Billiard_Balls_in_3D_with_Spin_and_Friction.pdf
+18. **Peskin, C.S. (2020).** "Collision of Billiard Balls in 3D with Spin and Friction." https://math.nyu.edu/~peskin/Collision_of_Billiard_Balls_in_3D_with_Spin_and_Friction.pdf
     - 3D collision model with spin and friction
 
 ---
 
-*Document generated 2026-10-21. All physics values sourced from peer-reviewed publications, official WPA/BCA specifications, and authoritative pool physics references.*
+*Document generated 2026-10-21. Physics values come from peer-reviewed papers (Han 2005;
+Mathavan et al. 2010; Cross 2008; Wallace & Schroeder 1988; Kim 2021, 2024 — all published in
+refereed journals, with the arXiv numbers given for the two Kim papers), official WPA/BCA
+equipment specifications, and practitioner references (Dr. Dave's site, Kiefl's blog). The
+practitioner references are not peer-reviewed and are used for empirical constants and for the
+cushion model, where no simple peer-reviewed treatment exists.*
+
