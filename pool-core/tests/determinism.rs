@@ -5,9 +5,9 @@
 
 mod common;
 
-use common::{array, assert_close, field, fixture, number, optional_number, text};
+use common::{array, field, fixture, number, optional_number};
 use pool_core::hash::hash_state_hex;
-use pool_core::math::{Vec2, Vec3};
+use pool_core::math::Vec3;
 use pool_core::state::{BallState, ShotInput};
 use pool_core::{hash_state, simulate_shot, try_simulate_shot, TableConfig};
 
@@ -137,7 +137,4 @@ fn the_fixture_pins_the_hash() {
         golden.chars().all(|c| c.is_ascii_hexdigit()),
         "the golden hash is hexadecimal"
     );
-    let _ = text(entry, "quantity");
-    let _ = assert_close;
-    let _ = Vec2::ZERO;
 }

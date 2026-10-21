@@ -219,23 +219,45 @@ fn command_simulate(args: &Args) -> Result<String, String> {
 
 /// The outcome of a shot at a given cut angle.
 struct Outcome {
-    cue_x: f64,
-    cue_y: f64,
     object_speed: f64,
     separation_deg: f64,
     throw_deg: f64,
     cue_speed: f64,
+    cue_x: f64,
+    cue_y: f64,
 }
 
 fn shoot_at_cut(cfg: &TableConfig, speed: f64, cut_deg: f64, distance: f64) -> Outcome {
     let cut = cut_deg.to_radians();
     let cue_position = (cfg.table.length / 4.0, cfg.table.width / 2.0);
+    // The cue ball shoots along +x. The object ball is placed so that the contact
+    // happens with the cut angle: the line of centres then makes that angle with the
+    // cue's path.
+    let contact = 2.0 * cfg.ball.radius;
     let object = (
-        cue_position.0 + distance * cut.cos(),
-        cue_position.1 + distance * cut.sin(),
+        cue_position.0 + distance - contact * cut.cos(),
+        cue_position.1 + contact * cut.sin(),
     );
     let input = build_shot(&cfg, cue_position, &[object], 0.0, speed, 0.0, 0.0);
-    let state = simulate_shot(input, cfg);
+
+    // The separation and the throw are properties of the collision, so the shot is
+    // stopped at the moment of the collision: the first pass finds when that is, the
+    // second one runs the shot up to it.
+    let mut simulation = pool_core::Simulation::new(&input, cfg);
+    let _ = simulation.run(&input);
+    let collision = simulation
+        .events()
+        .iter()
+        .find(|event| event.kind == pool_core::EventKind::BallBall)
+        .map(|event| event.time);
+
+    let mut short = TableConfig::default();
+    short.simulation.max_sim_time = match collision {
+        Some(time) => time + 1e-9,
+        None => cfg.simulation.max_sim_time,
+    };
+    let state = simulate_shot(input.clone(), &short);
+
     let cue = state.balls[0].velocity;
     let object_ball = state.balls[1].velocity;
     let separation = if cue.norm() > 1e-9 && object_ball.norm() > 1e-9 {
@@ -271,14 +293,21 @@ fn command_sweep(args: &Args) -> Result<String, String> {
     let mut out = String::new();
     match kind.as_str() {
         "speed" => {
-            out.push_str("cue_speed,cue_speed_after,object_speed,separation_deg,throw_deg\n");
+            out.push_str(
+                "cue_speed,cue_speed_after,object_speed,separation_deg,throw_deg,cue_x,cue_y\n",
+            );
             for i in 0..steps {
                 let v = from + (to - from) * (i as f64) / ((steps - 1) as f64);
                 let result = shoot_at_cut(&cfg, v, cut_deg, distance);
                 let _ = writeln!(
                     out,
-                    "{v:.6},{:.6},{:.6},{:.6},{:.6}",
-                    result.cue_speed, result.object_speed, result.separation_deg, result.throw_deg
+                    "{v:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
+                    result.cue_speed,
+                    result.object_speed,
+                    result.separation_deg,
+                    result.throw_deg,
+                    result.cue_x,
+                    result.cue_y
                 );
             }
         }
