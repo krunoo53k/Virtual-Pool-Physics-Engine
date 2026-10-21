@@ -210,10 +210,11 @@ fn the_squirt_points_away_from_the_side_that_was_struck() {
             _ => {}
         }
     }
-    // The left side was struck, so the ball leaves to the right, and the other
-    // way round: the ball squirts away from the side the tip hit (§6.1).
-    assert!(left.expect("the left english shot") > 0.0);
-    assert!(right.expect("the right english shot") < 0.0);
+    // The side the tip struck is the side the ball leaves away from (§6.1), and
+    // `+y` is the shooter's left for a shot along `+x`, so the left english
+    // leaves towards `-y` and the right english towards `+y`.
+    assert!(left.expect("the left english shot") < 0.0);
+    assert!(right.expect("the right english shot") > 0.0);
 }
 
 #[test]

@@ -240,9 +240,9 @@ fn english_scene(cfg: &TableConfig) -> Scene {
     let radius = cfg.ball.radius;
     let mut shots = Vec::new();
     for (name, note, offset) in [
-        ("left english", "side spin -0.4 R", -0.4),
+        ("right english", "the tip on the shooter's right, -0.4 R", -0.4),
         ("centre", "no side spin", 0.0),
-        ("right english", "side spin +0.4 R", 0.4),
+        ("left english", "the tip on the shooter's left, +0.4 R", 0.4),
     ] {
         let mut input = ShotInput::new(
             3.0,
