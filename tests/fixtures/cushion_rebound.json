@@ -1,0 +1,158 @@
+{
+  "id": "cushion_rebound",
+  "title": "Cushion rebound for a rolling, spinless ball",
+  "purpose": "Validates the Han impulse model (doc section 5.1). The incidence angle is measured from the rail normal, so 0 deg is a square hit. The second block pins the vertical flip between the normal impulse (into the slate) and the friction impulse (upward), which is what produces the hop.",
+  "sources": [
+    "doc sections 5.1 and 8.1",
+    "Mathavan et al. 2010, Figs. 8-10"
+  ],
+  "setup": {
+    "balls": [
+      {
+        "id": "b0",
+        "position": [
+          0.5,
+          0.5
+        ],
+        "velocity": [
+          2.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          69.9912510936133,
+          0.0
+        ]
+      }
+    ],
+    "params": {
+      "eps_over_R": 0.15,
+      "e_cushion": 0.75,
+      "mu_cushion": 0.14
+    },
+    "note": "the incoming velocity makes `incidence_angle` with the rail normal (+x); the ball is rolling, so omega = (k x v)/R"
+  },
+  "expectations": [
+    {
+      "incidence_angle": 10,
+      "rebound_speed": 1.493731,
+      "rebound_angle": 10.1974,
+      "rebound_vz": -0.046642,
+      "sticking": false
+    },
+    {
+      "incidence_angle": 20,
+      "rebound_speed": 1.496101,
+      "rebound_angle": 20.6797,
+      "rebound_vz": -0.064811,
+      "sticking": false
+    },
+    {
+      "incidence_angle": 30,
+      "rebound_speed": 1.508825,
+      "rebound_angle": 31.5831,
+      "rebound_vz": -0.090288,
+      "sticking": false
+    },
+    {
+      "incidence_angle": 40,
+      "rebound_speed": 1.541524,
+      "rebound_angle": 42.7824,
+      "rebound_vz": -0.116549,
+      "sticking": false
+    },
+    {
+      "incidence_angle": 50,
+      "rebound_speed": 1.601126,
+      "rebound_angle": 53.8907,
+      "rebound_vz": -0.135744,
+      "sticking": false
+    },
+    {
+      "incidence_angle": 60,
+      "rebound_speed": 1.687738,
+      "rebound_angle": 64.4171,
+      "rebound_vz": -0.139786,
+      "sticking": false
+    },
+    {
+      "incidence_angle": 70,
+      "rebound_speed": 1.793241,
+      "rebound_angle": 73.9896,
+      "rebound_vz": -0.1215,
+      "sticking": false
+    },
+    {
+      "incidence_angle": 80,
+      "rebound_speed": 1.903127,
+      "rebound_angle": 82.4824,
+      "rebound_vz": -0.075691,
+      "sticking": false
+    },
+    {
+      "incidence_angle": 90,
+      "rebound_speed": 2.0,
+      "rebound_angle": 90.0,
+      "rebound_vz": -0.0,
+      "sticking": false
+    }
+  ],
+  "vertical_flip": [
+    {
+      "eps_over_R": 0.04,
+      "rebound_vz": 0.349328,
+      "direction": "up",
+      "hop_height_mm": 6.22
+    },
+    {
+      "eps_over_R": 0.1,
+      "rebound_vz": 0.136854,
+      "direction": "up",
+      "hop_height_mm": 0.955
+    },
+    {
+      "eps_over_R": 0.139,
+      "rebound_vz": -0.001245,
+      "direction": "down",
+      "hop_height_mm": 0.0
+    },
+    {
+      "eps_over_R": 0.15,
+      "rebound_vz": -0.040085,
+      "direction": "down",
+      "hop_height_mm": 0.029
+    },
+    {
+      "eps_over_R": 0.27,
+      "rebound_vz": -0.455624,
+      "direction": "down",
+      "hop_height_mm": 3.809
+    },
+    {
+      "eps_over_R": 0.4,
+      "rebound_vz": -0.871521,
+      "direction": "down",
+      "hop_height_mm": 13.937
+    }
+  ],
+  "invariants": [
+    {
+      "quantity": "rebound_angle_independence",
+      "statement": "the rebound angle is identical for incident speeds of 1, 2 and 4 m/s at the same incidence angle (Mathavan Fig. 8)",
+      "tolerance": 1e-09,
+      "unit": "deg"
+    },
+    {
+      "quantity": "max_speed_loss_near_40deg",
+      "statement": "the speed loss is largest for incidence angles around 40 deg (Mathavan, section 4)",
+      "tolerance": 0.02,
+      "unit": "m/s"
+    },
+    {
+      "quantity": "vertical_flip_threshold",
+      "statement": "the outgoing vertical velocity changes sign at eps_c/R = mu_cushion/sqrt(1 + mu_cushion^2) = 0.139 for mu_cushion = 0.14; above it the ball is pressed into the slate, below it the ball is launched upward",
+      "tolerance": 1e-09,
+      "unit": "m/s"
+    }
+  ]
+}

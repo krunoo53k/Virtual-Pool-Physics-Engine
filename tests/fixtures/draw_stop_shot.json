@@ -1,0 +1,78 @@
+{
+  "id": "draw_stop_shot",
+  "title": "Draw shot: the cue ball reverses only when the backspin dominates",
+  "purpose": "Pins the draw/stop behaviour that follows from the sliding-state equations, including the analytic reversal threshold.",
+  "sources": [
+    "doc section 4.3"
+  ],
+  "setup": {
+    "balls": [
+      {
+        "id": "cue",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "velocity": [
+          0.05,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          -100.0,
+          0.0
+        ]
+      },
+      {
+        "id": "object",
+        "position": [
+          0.3,
+          0.0
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "params": {
+      "mu_s": 0.2,
+      "e_ball": 0.95
+    },
+    "note": "the cue ball state is the state immediately after the head-on collision; it then evolves on the cloth"
+  },
+  "expectations": [
+    {
+      "case": "follows_forward",
+      "omega_y_at_impact": -2.0,
+      "velocity_at_impact": 0.05,
+      "slip_at_impact": 0.10715,
+      "time_sliding_ends": 0.015603611475171105,
+      "velocity_when_sliding_ends": 0.01938571428571429,
+      "direction": "forward"
+    },
+    {
+      "case": "strong_draw",
+      "omega_y_at_impact": -100.0,
+      "velocity_at_impact": 0.05,
+      "slip_at_impact": 2.9074999999999998,
+      "time_sliding_ends": 0.4234017766127857,
+      "velocity_when_sliding_ends": -0.7807142857142856,
+      "direction": "backward"
+    }
+  ],
+  "invariants": [
+    {
+      "quantity": "reversal_threshold_R_omega_y",
+      "expected": 0.125,
+      "tolerance": 1e-09,
+      "unit": "m/s",
+      "statement": "the cue ball reverses iff R*|omega_y| > 2.5 * v_at_impact (derived from u0 > 3.5*v in the sliding phase)"
+    }
+  ]
+}

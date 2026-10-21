@@ -1,0 +1,93 @@
+{
+  "id": "stun_separation_90",
+  "title": "90 degree rule: cue and object ball separate at ~90 degrees (30 degree cut)",
+  "purpose": "Validates the normal components of the ball-ball collision together with the tangential (throw) impulse.",
+  "sources": [
+    "doc sections 5.2 and 5.4.5",
+    "Kim 2024: separation angle 85-89 degrees for e in [0.92, 0.98]"
+  ],
+  "setup": {
+    "balls": [
+      {
+        "id": "cue",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "velocity": [
+          2.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "object",
+        "position": [
+          0.2598076211353316,
+          0.14999999999999997
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "params": {
+      "e_ball": 0.95,
+      "mu_ball": 0.05
+    }
+  },
+  "expectations": [
+    [
+      {
+        "quantity": "cue_speed_after_head_on",
+        "expected": 0.050000000000000044,
+        "tolerance": 1e-09,
+        "unit": "m/s",
+        "notes": "((1-e)/2)*v = 0.025*v; the cue ball creeps, it does not stop dead"
+      }
+    ],
+    {
+      "quantity": "separation_angle",
+      "expected": 84.42982481306461,
+      "tolerance": 0.5,
+      "unit": "deg",
+      "notes": "85-89 deg expected; frictionless elastic would be exactly 90"
+    },
+    {
+      "quantity": "cue_speed_after",
+      "expected": 0.9165859118282551,
+      "tolerance": 1e-09,
+      "unit": "m/s"
+    },
+    {
+      "quantity": "object_speed_after",
+      "expected": 1.6908591566124014,
+      "tolerance": 1e-09,
+      "unit": "m/s"
+    },
+    {
+      "quantity": "object_throw_angle",
+      "expected": -2.8624052261117545,
+      "tolerance": 0.2,
+      "unit": "deg",
+      "notes": "object ball is thrown toward the cue ball's post-collision direction"
+    },
+    {
+      "quantity": "momentum_residual",
+      "expected": 0.0,
+      "tolerance": 1e-09,
+      "unit": "kg*m/s",
+      "notes": "sum of final momenta minus initial"
+    }
+  ]
+}

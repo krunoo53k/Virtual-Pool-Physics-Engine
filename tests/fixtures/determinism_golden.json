@@ -1,0 +1,304 @@
+{
+  "id": "determinism_golden",
+  "title": "Golden-shot determinism check",
+  "purpose": "The whole point of the architecture: identical inputs must produce identical state, bit for bit, on every run and every platform.",
+  "sources": [
+    "doc section 11.4"
+  ],
+  "setup": {
+    "balls": [
+      {
+        "id": "cue",
+        "position": [
+          0.635,
+          1.27
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj1",
+        "position": [
+          0.6950000000000001,
+          1.27
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj2",
+        "position": [
+          0.755,
+          1.27
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj3",
+        "position": [
+          0.815,
+          1.27
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj4",
+        "position": [
+          0.635,
+          1.33
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj5",
+        "position": [
+          0.6950000000000001,
+          1.33
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj6",
+        "position": [
+          0.755,
+          1.33
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj7",
+        "position": [
+          0.815,
+          1.33
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj8",
+        "position": [
+          0.635,
+          1.3900000000000001
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj9",
+        "position": [
+          0.6950000000000001,
+          1.3900000000000001
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj10",
+        "position": [
+          0.755,
+          1.3900000000000001
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj11",
+        "position": [
+          0.815,
+          1.3900000000000001
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj12",
+        "position": [
+          0.635,
+          1.45
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj13",
+        "position": [
+          0.6950000000000001,
+          1.45
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj14",
+        "position": [
+          0.755,
+          1.45
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": "obj15",
+        "position": [
+          0.815,
+          1.45
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "shot": {
+      "cue_speed": 8.0,
+      "cue_direction": [
+        0.0,
+        1.0
+      ],
+      "contact_offset": [
+        0.0,
+        0.0
+      ]
+    },
+    "params": {
+      "max_sim_time": 30.0
+    }
+  },
+  "expectations": [
+    {
+      "quantity": "final_state_hash",
+      "expected": null,
+      "tolerance": 0,
+      "notes": "TO BE FILLED: the first implementation writes the hash of the final state here, and it becomes the golden value"
+    },
+    {
+      "quantity": "hash_stability",
+      "statement": "the hash must be identical across repeated runs, across thread counts, and across x86-64 / ARM / wasm targets",
+      "tolerance": 0
+    },
+    {
+      "quantity": "event_order_stability",
+      "statement": "the sequence of resolved events must be identical between runs; equal-time events are broken by ball index",
+      "tolerance": 0
+    }
+  ],
+  "notes": [
+    "The hash must be computed over the raw f64 state (position, velocity, angular velocity) - not over a formatted or rounded representation.",
+    "Do not include wall-clock time, iteration order of any hash map, or thread scheduling in the hashed state."
+  ]
+}

@@ -1,14 +1,20 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.1
+> **Version:** 1.2
 > **Date:** 2026-10-21
-> **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, and ball-cue interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
+> **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, ball-cue and ball-pocket interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
 >
 > **Revision note (1.1):** corrected the sliding-state spin sign (§3.3), the ball-ball normal and
-> tangential impulse (§4.4.5), the cushion geometry and the mechanism of the "pop" (§5, §8.1),
+> tangential impulse (§4.4.5), the cushion geometry and the mechanism of the "pop" (§5.1, §8.1),
 > the cue-strike spin and squirt treatment (§6), the jump-shot criterion and drag figures (§7),
-> and the determinism guidance (§10). Sources were re-checked against the primary papers.
+> and the determinism guidance (§11.4). Sources were re-checked against the primary papers.
+>
+> **Revision note (1.2):** added ball–pocket interactions (§9) and the validation fixtures
+> (§14, with `tests/fixtures/`); added the tuning-parameter defaults and the calibration order
+> (§13.3); corrected the cushion's vertical impulse analysis, which now accounts for the
+> Coulomb cap on the friction impulse (§5.1, §8.1) — the flip threshold is `ε_c ≈ μ_cushion`,
+> not the value implied by the sticking branch.
 
 ---
 
@@ -22,11 +28,13 @@
 6. [Ball-Cue Interactions](#6-ball-cue-interactions)
 7. [Jump Shots & Ball-Air Interactions](#7-jump-shots--ball-air-interactions)
 8. [Ball-Slate Interactions](#8-ball-slate-interactions)
-9. [Balls Leaving the Table](#9-balls-leaving-the-table)
-10. [Deterministic Simulation Architecture](#10-deterministic-simulation-architecture)
-11. [State Representation & Input Model](#11-state-representation--input-model)
-12. [Summary of Recommended Model](#12-summary-of-recommended-model)
-13. [References](#13-references)
+9. [Ball-Pocket Interactions](#9-ball-pocket-interactions)
+10. [Balls Leaving the Table](#10-balls-leaving-the-table)
+11. [Deterministic Simulation Architecture](#11-deterministic-simulation-architecture)
+12. [State Representation & Input Model](#12-state-representation--input-model)
+13. [Summary of Recommended Model](#13-summary-of-recommended-model)
+14. [Validation Fixtures](#14-validation-fixtures)
+15. [References](#15-references)
 
 ---
 
@@ -505,25 +513,46 @@ snooker and pool.
 
 The contact point relative to the ball's centre is `r_c = R·(cos θ, 0, sin θ)`, so the cushion's
 **normal** impulse acts along `n̂ = (-cos θ, 0, -sin θ)` — **i.e. it points away from the rail and
-downwards**. Because the contact is above the ball's centre, the cushion presses the ball into
-the slate rather than lifting it.
+downwards**. Because the contact is above the ball's centre, the *normal* impulse presses the
+ball into the slate rather than lifting it. (The friction impulse pulls the other way; see
+below.)
 
 The **tangential** impulse is a separate story: it acts along the contact tangent
 `t̂ = (sin θ, 0, -cos θ)`, and it opposes the slip. For a rolling ball the surface at the rail
 side of the ball moves *downwards* (it is the leading edge of a rolling sphere), so the friction
-force on the ball points *upwards*. The two vertical contributions therefore partly cancel, and
-the net vertical velocity depends on `ε` and on the ball's spin. For a rolling ball with
-`e_cushion = 0.75`:
+force on the ball points *upwards*, while the normal impulse points down. For a rolling ball the
+Coulomb limit always binds (the slip is far larger than `3.5·μ·(1+e)·v_n`), so the net vertical
+velocity is
 
-| Contact height above the ball's centre | Net vertical velocity |
+```
+v_z' = (1 + e_cushion)·v_n·cos θ·(μ_cushion·cos θ - sin θ)
+```
+
+which changes sign at `tan θ = μ_cushion`, i.e. at an effective contact height of
+
+```
+ε_c/R = μ_cushion / sqrt(1 + μ_cushion²) ≈ 0.139 R   (μ_cushion = 0.14)
+```
+
+| Effective contact height | Net vertical velocity, 2 m/s square hit |
 |---|---|
-| `ε ≲ 0.19 R` | **upward** — the cushion launches the ball (a "popping" rail) |
-| `ε ≳ 0.19 R` | **downward** — the ball is pressed into the slate |
+| `ε = 0.04 R` (rounded 1/4" nose, the real K-66) | **+0.35 m/s** (up) — the ball hops ~6 mm |
+| `ε = 0.15 R` (Han's typical range) | -0.04 m/s (down) — pressed into the slate |
+| `ε = 0.27 R` (WPA nose *apex*) | -0.46 m/s (down) |
+| `ε = 0.40 R` (Mathavan's geometry) | -0.87 m/s (down) |
 
-With a standard cushion the ball is pressed into the slate, and it is the *slate* that bounces it
-back up (§8.1). A low cushion instead throws the ball straight up — which is why worn or
-incorrectly mounted rails "pop" the balls. (Kiefl, 2020, makes the same point in his discussion
-of Han's model.)
+**Which side of the threshold a real table sits on depends on the nose profile.** The nose is a
+~1/4" radius arc, so the ball does not touch the nose *apex* (which is 0.27 R above the ball's
+centre) but the rounded face just above the centre — an effective `ε ≈ 0.04 R` for a K-66 with a
+1/4" nose radius. On such a table the friction term dominates and the ball is launched slightly
+*upward*: a few-millimetre hop, and proportionally more on a hard hit. A tall, square-faced
+cushion (`ε ≥ 0.14 R`) instead presses the ball into the slate, and it is then the slate's
+rebound that lifts it (§8.1). A *stun* ball (no spin) is always pressed into the slate, because
+its slip at the contact is small enough for the sticking branch to apply.
+
+This is why `ε` is a calibration parameter rather than a constant: it sets both the vertical
+behaviour and the tilt of the normal impulse, and it should be fitted to the table being
+simulated.
 
 **Impulse model:**
 
@@ -576,9 +605,11 @@ v_y' = v_y - (2/7)·s_y
 v_z' =         -(1 + e)·c·sin θ + (2/7)·s_x·cos θ
 ```
 
-> The `v_x` term is missing from the x-equation as printed in Han (2005) (and from Kiefl's
-> transcription of it); the term is required for momentum to balance (the same term is present in
-> the z-equation, and without it the `θ = 0, e = 1` case returns `-2·v_x` instead of `-v_x`).
+> **Erratum.** The `v_x` term is missing from the x-equation as printed in Han (2005) (and from
+> Kiefl's transcription of it). The term is required: the same term is present in the z-equation,
+> and without it the `θ = 0, e = 1` limit returns `-2·v_x` instead of `-v_x`, i.e. the ball
+> rebounds at twice its incident speed, which violates energy conservation. The corrected form is
+> used throughout this document.
 
 **Key effects the model captures:**
 1. **Angle of reflection ≠ angle of incidence** (cushion friction and spin).
@@ -610,6 +641,12 @@ Note the difference in `e`: the *rail rubber* restitution measured by Mathavan (
 higher than the effective ball–rail restitution of 0.6–0.9 quoted by Dr. Dave, which includes the
 energy lost in the cloth contact that follows the cushion impact. Use the effective value unless
 you are modelling the two contacts separately.
+
+> **Do not port Mathavan's `h = 7R/5` straight across.** His measurements were made on a
+> Riley-style *snooker* table, and 7R/5 = 40 mm for a pool ball — about 10% above the WPA pool
+> nose height of 36.3 mm. For a K-66 pool table the effective contact height is lower
+> (≈ 0.04–0.27 R depending on the nose profile; §5.1). Snooker values must be recalibrated for
+> pool.
 
 ### 5.3 Simplified Model (Game-Level)
 
@@ -676,10 +713,11 @@ The K-66 cushion profile has:
 - Base width: 1 3/16" (30 mm)
 - Radius at nose tip: ~1/4" (6.35 mm)
 
-The nose height is **above** the ball's radius (R = 28.575 mm), so the contact point sits above
-the ball's centre and the cushion's normal impulse presses the ball down into the slate. What
-makes the ball hop is the slate's rebound, not the cushion (§8.1) — although on a low or worn
-cushion the friction impulse can dominate and throw the ball up instead (§5.1).
+The nose height is **above** the ball's radius (R = 28.575 mm), so the ball contacts the cushion
+above its own centre. But the ball touches the *rounded face*, not the apex: for a 1/4" nose
+radius the effective contact height is only ≈ 0.04 R above the centre (§5.1) — below the flip
+threshold of 0.139 R — so a rolling ball is launched slightly upward and hops a few
+millimetres. See §8.1 for the magnitudes and for what changes with a taller cushion.
 
 ---
 
@@ -726,6 +764,13 @@ the cue as a rigid body of the full mass is what makes the squirt far too large.
   (lower `μ_c`). It vanishes for a centre-ball hit.
 - Therefore the cue mass that belongs in any squirt formula is the **effective end mass**
   (~12 g for a typical shaft), never the total cue mass.
+
+**Implementation:** use a calibration curve, not Kim's flexible-cue model. Keep a table of
+`(b/R → ψ)` pairs, nearly linear up to `b = 0.5R` and flattening beyond, with a single
+`squirt_scale` multiplier in the config for global tuning. The effective end mass (~12 g) is
+baked into the curve and need not be exposed unless cue customisation is wanted. The curve's
+anchors are a calibration target, not a result: `squirt_curve` (§14) records where the
+measured values from Cross (2008) or high-speed video go.
 
 > The formula `ψ ≈ arctan((5/2)·(b/R)·(1/(1 + M·R²/I)))` sometimes quoted for squirt is wrong:
 > with `M` taken as the total cue mass it predicts ≈9° at `b = 0.5R` and ≈17–18° at `b = R`, which
@@ -862,47 +907,51 @@ When the ball lands back on the table:
 
 ### 8.1 Ball Popped by Cushion
 
-A cushion hit can make the ball hop. There are two distinct vertical effects, and it matters
-which one you are modelling:
-
-**Case A — tall cushion (the standard):** the contact is above the ball's centre, so the
-cushion's normal impulse presses the ball *into* the slate. The ball is then arrested by the
-cloth and slate and rebounds, and that rebound is the "pop". From the Han model, the downward
-velocity imparted by the cushion is
+A cushion hit can make the ball hop. Two vertical effects act at the contact (§5.1): the
+cushion's **normal** impulse presses the ball into the slate, and the cushion's **friction**
+impulse lifts it. Which one wins is set by the effective contact height `ε`, with the flip
+threshold at
 
 ```
-v_z↓ = (2/7)·s_x·cos θ - (1 + e_cushion)·c·sin θ
+ε_c/R = μ_cushion / sqrt(1 + μ_cushion²) ≈ 0.139 R   (μ_cushion = 0.14)
 ```
 
-For a rolling ball (s_x = |v_n|·(1 + sin θ)) this is roughly `v_z↓ ≈ -0.11·|v_n|` with a
-standard cushion (ε = 0.27 R, e_cushion = 0.75) and `≈ -0.30·|v_n|` with Mathavan's geometry
-(ε = 0.4 R).
+For a rolling ball the Coulomb limit always binds, so the outgoing vertical velocity is
 
-**Case B — low cushion:** the friction impulse dominates and the ball is launched *upwards*
-directly by the cushion (§5.1). This is the "the rails pop the ball into the air" complaint,
-and it is a mounting/geometry problem, not a physics feature.
+```
+v_z' = (1 + e_cushion)·v_n·cos θ·(μ_cushion·cos θ - sin θ)
+```
 
-**The rebound off the slate** is then
+For a 2 m/s square cushion hit:
+
+| Effective contact height | `v_z'` | What happens |
+|---|---|---|
+| `ε = 0.04 R` (rounded 1/4" nose, the real K-66) | **+0.35 m/s** (up) | the cushion launches the ball; it rises `v_z'²/(2g)` ≈ **6 mm** |
+| `ε = 0.15 R` (Han's typical range) | -0.04 m/s (down) | pressed into the slate; the slate rebound (§7.2) gives +0.02 m/s, i.e. a ~0.03 mm hop |
+| `ε = 0.27 R` (WPA nose *apex*) | -0.46 m/s (down) | pressed in; the slate rebound gives +0.27 m/s, i.e. a ~4 mm hop |
+| `ε = 0.40 R` (Mathavan's geometry) | -0.87 m/s (down) | pressed in harder; ~14 mm hop after the rebound |
+
+So the *visible* hop on a real table comes from the rounded nose (first row), not from the slate
+rebound — the slate-rebound story belongs to tall, square-faced cushions. If the rounded-nose
+hop is missing, `ε` is set too high; if the ball is being kicked up too much, it is set too low.
+The `cushion_rebound` fixture (§14) pins both ends of this table.
+
+**If the ball was pressed into the slate**, the rebound is
 
 ```
 v_z↑ = e_table · |v_z↓|
 h_hop = v_z↑² / (2g)
 ```
 
-Magnitudes, for a 2 m/s cushion hit with a standard cushion: `v_z↓ ≈ -0.22 m/s`,
-`v_z↑ ≈ 0.13 m/s`, `h_hop ≈ 1 mm`. The simple impulse model therefore predicts only a
-millimetre-scale hop; the hop you can see after a hard hit comes from the *cloth* being
-compressed and the ball bouncing on it, which is a short stiff contact rather than a plain
-restitution, and from the ball's spin changing during the impact.
-
 > The formula `v_z ≈ (h_cushion - R)/R · |v_n| · sin(φ)` does not correspond to any published
-> model; it is dimensionally plausible but has no derivation behind it. Use the two-step
-> impulse-and-rebound treatment above instead.
+> model; it is dimensionally plausible but has no derivation behind it. Use the impulse
+> treatment above instead.
 
-**Implementation:** keep the ball's `z` on the cloth during the cushion impulse, then apply the
-slate rebound (§7.2) to the resulting downward velocity. Do not add an upward velocity directly
-in the cushion handler. If you want the visible hop, model the cloth as a compliant contact
-(the ball depresses the cloth and rebounds) rather than trying to fake it with a constant.
+**Implementation:** the cushion handler returns the outgoing `v_z` from the impulse model and
+nothing else. If `v_z < 0` the ball is pressed into the slate: apply the slate rebound (§7.2)
+to it. If `v_z > 0` the ball leaves the cloth as an airborne ball and simply flies its
+ballistic arc until it lands (§7.2). Do not add an upward velocity by hand in the cushion
+handler.
 
 ### 8.2 Ball-Slate Bounce
 
@@ -918,9 +967,144 @@ If `|v_z(after)|` is small (below a threshold), the ball settles on the table an
 
 ---
 
-## 9. Balls Leaving the Table
+## 9. Ball-Pocket Interactions
 
-### 9.1 Ball Going Off the Table
+A pocket is not a hole in the slate. It is a short run of rail (the two **jaws**, or
+**facings**), a cut edge in the slate (the **lip**), a shelf of slate behind that lip, and a drop.
+A ball is pocketed only if it survives all four: it must pass between the jaw tips, cross the
+lip, cross the shelf without rattling back out, and pass the drop point. Any one of those can
+fail, which is why pocketing is the hardest thing in pool to model.
+
+### 9.1 Geometry
+
+Per pocket (dimensions in §3.3):
+
+| Element | Corner pocket | Side pocket |
+|---|---|---|
+| Mouth (jaw tip to jaw tip) | 4.5"–4.625" | 5.0"–5.125" |
+| Facing angle from the pocket centreline | 19° | 38.5° |
+| Slate cut angle at the lip (from vertical) | 12°–15° | 12°–15° |
+| Shelf depth behind the mouth | 1 5/8"–1 7/8" | 0"–3/8" |
+| Drop point radius | 1/8"–1/4" | 1/8"–1/4" |
+
+The facing angles follow from the pocket cut angles (142° corner, 103° side): each facing lies
+`(180° - cut angle)/2` away from the pocket's centreline, i.e. 19° for a corner pocket and 38.5°
+for a side pocket. The normal of a facing is therefore rotated by the same angle away from the
+perpendicular to the centreline, and that is the normal used for the jaw collision.
+
+Everything here is table-dependent. Pockets vary between manufacturers, and many tables are
+"shimmed" to make the openings smaller. Treat the numbers above as the WPA reference
+configuration and expose them in the table config so a specific table can be matched.
+
+### 9.2 The state machine
+
+Model the pocket as a small state machine attached to the ball:
+
+```
+ON_TABLE ──(centre crosses the mouth line)──► ENTERING
+   ▲                                            │
+   │                                            ├─(centre crosses the drop line)──► POCKETED
+   │                                            │
+   └────(centre crosses back over the mouth)────┘   ("rattle out")
+```
+
+- **ON_TABLE** — normal ball-cloth physics (§4).
+- **ENTERING** — the ball's centre is between the mouth line and the drop line. It is off the
+  cloth and sliding on slate. It may still hit a jaw.
+- **POCKETED** — the centre has crossed the drop line; the ball is in the cabinet.
+
+Three distinct failure modes have to be represented, and they are the whole reason the pocket
+needs its own model:
+
+1. **Rattle out** — the ball hits a jaw, is deflected back out of the mouth, and stays on the
+   table. This is the most common pocket failure and is the dominant effect of the jaw angles.
+2. **Hung up** — the ball crosses the mouth but runs out of speed on the shelf before reaching
+   the drop. It must not be counted as pocketed.
+3. **Rattled in** — the ball hits a jaw, drops onto the shelf and still makes it into the
+   pocket. Perfectly normal, and the reason a "bad" angle can still go in.
+
+### 9.3 Jaw collisions
+
+The facings behave like short pieces of cushion: they are struck with the same impulsive model
+as §5, with the pocket's own restitution and friction, and with the facing's own normal
+(§9.1). Two differences from a rail:
+
+- **Lower restitution.** The rubber is short and unrestrained, so the ball loses more energy.
+- **Higher friction.** The ball is rubbing along the facing's edge and the slate.
+
+There are no published measurements for `e_jaw` and `μ_jaw`; start from `e_jaw = 0.60` and
+`μ_jaw = 0.30` (against `e_cushion = 0.75` and `μ_cushion = 0.14` for a rail) and calibrate
+against the rattle behaviour the fixture in §14 checks.
+
+Because the jaw collision is an ordinary instantaneous impulse, it slots straight into the
+event-driven loop: the TOI test is a swept sphere against a line segment, and the resolution is
+the §5 impulse with the jaw's parameters. Nothing special is needed beyond the geometry.
+
+### 9.4 The shelf and the drop
+
+Once the ball is past the lip it is sliding on slate, not cloth, so the friction model changes:
+
+- `μ_slate` (slate is slipperier than cloth; use ≈ 0.1–0.2) and gravity along the shelf.
+- The shelf is effectively horizontal, so a slow ball simply runs out of speed on it.
+- The cut edge at the back of the shelf is angled 12°–15° from vertical, which stops a ball from
+  riding back up over the lip and is what makes the pocket accept balls that arrive at a poor
+  angle.
+
+**Capture condition:** the ball is pocketed when its *centre* crosses the drop line (the slate's
+cut edge). Using the centre rather than the edge of the ball is what makes a ball that is
+partly over the drop still count as pocketed, which is the real behaviour.
+
+**Speed threshold:** a ball that crosses the mouth with too little speed to reach the drop will
+stop on the shelf. The threshold follows from the shelf length and `μ_slate`:
+
+```
+v_min_to_drop = sqrt(2 · μ_slate · g · shelf_depth)
+```
+
+For a 1.75" (44 mm) corner shelf and `μ_slate = 0.15`: `v_min ≈ 0.36 m/s`. Balls slower than
+that hang up. Note that this is a *hanging* condition, not a rattle — the ball stays in the
+pocket area, which under 8-ball rules is a ball in hand, not a lost ball.
+
+### 9.5 Effective pocket size
+
+The pocket is not a target of fixed size. Dr. Dave's measurements (Pocket Effective Size and
+Center) show that the effective centre of a pocket shifts with the entry angle and speed: for a
+corner pocket the ideal aim point moves by up to ~0.6" (and ~0.3" for a side pocket) between a
+slow, shallow entry and a fast, square one.
+
+That shift is not an extra parameter — it falls out of the jaw geometry and the friction model.
+If the simulated pocket does not reproduce it, the jaw restitution or friction is wrong. This is
+exactly what the `pocket_drop` fixture (§14) checks.
+
+### 9.6 Parameters to expose
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `e_jaw` | 0.60 | jaw restitution (lower than a rail) |
+| `μ_jaw` | 0.30 | jaw friction |
+| `μ_slate` | 0.15 | friction on the pocket shelf |
+| `shelf_depth_corner` | 1.75" | WPA range 1 5/8"–1 7/8" |
+| `shelf_depth_side` | 0.25" | WPA range 0"–3/8" |
+| `pocket_angle` | 13.5° | slate cut angle from vertical |
+| `mouth_corner` | 4.56" | jaw tip to jaw tip |
+| `mouth_side` | 5.06" | jaw tip to jaw tip |
+
+### 9.7 Implementation notes
+
+- The pocket is a **region**, not a trigger volume. Do not pocket the ball when its centre
+  merely enters the mouth: that would swallow every rattle.
+- The jaw segments are part of the table's boundary geometry, so the TOI solver (§11.3) needs
+  to handle "cushion segment" and "pocket region" as different boundary types.
+- Rattling is deterministic by construction: each jaw impact is an event with an explicit time,
+  and equal-time events are broken by ball index (§11.4).
+- A ball that ends up on the shelf (hung up) must remain in the simulation as a stopped ball
+  until the rules resolve it (ball in hand), not be silently deleted.
+
+---
+
+## 10. Balls Leaving the Table
+
+### 10.1 Ball Going Off the Table
 
 When a ball is hit hard enough (or jumped) to leave the playing surface:
 
@@ -941,7 +1125,7 @@ When a ball is hit hard enough (or jumped) to leave the playing surface:
 
 **Recommendation:** For a game, option 1 is simpler and sufficient. For maximum realism, implement option 2 with a simple 3D physics model including floor and table geometry.
 
-### 9.2 Minimum Speed to Leave the Table
+### 10.2 Minimum Speed to Leave the Table
 
 A ball travelling at speed `v` across a 100" (2.54 m) table takes approximately:
 ```
@@ -985,13 +1169,13 @@ clear the rail (≈50 mm above the cloth), not merely reach it. Two routes exist
 
 Because route 1 depends on the ball's height at the rail and route 2 on the cushion condition,
 there is no single "minimum speed" to quote. Balls leaving the table is a rare event in real
-play, which is why §9.1 recommends simply removing the ball and calling the shot a foul.
+play, which is why §10.1 recommends simply removing the ball and calling the shot a foul.
 
 ---
 
-## 10. Deterministic Simulation Architecture
+## 11. Deterministic Simulation Architecture
 
-### 10.1 Fixed Timestep Simulation
+### 11.1 Fixed Timestep Simulation
 
 **References:**
 - Gaffer on Games, "Fix Your Timestep!" (2004) — https://gafferongames.com/post/fix_your_timestep/
@@ -1034,10 +1218,10 @@ shot moves `13/240 = 5.4 cm` per step — 94% of a ball diameter (5.715 cm) — 
 Two ways out:
 
 1. **Continuous (swept) collision detection** — solve for the time of impact within the step
-   rather than testing the end-of-step position (§10.3).
-2. **Event-driven simulation** — do not step at all; solve for the next event time (§10.2).
+   rather than testing the end-of-step position (§11.3).
+2. **Event-driven simulation** — do not step at all; solve for the next event time (§11.2).
 
-### 10.2 Two Architectures: Stepped vs Event-Driven
+### 11.2 Two Architectures: Stepped vs Event-Driven
 
 Section 3 gives *closed-form* trajectories for each motion state (slide / roll / spin / air).
 That is an event-driven description of the world, not a stepped one: between events a ball's
@@ -1061,7 +1245,7 @@ loop:
 | Step-size error | yes | none (closed form) |
 | Cost of a long shot | many steps | a handful of events |
 | Renderer | samples positions each frame | gets a piecewise-analytic path to interpolate |
-| Implementation | simple | needs TOI solvers (§10.3) |
+| Implementation | simple | needs TOI solvers (§11.3) |
 
 The "Renderer" row matters for the Godot side: with an event-driven core you hand the renderer a
 list of segments ("ball 7 slides in a straight line until t=1.83 s, then rolls until t=4.1 s")
@@ -1072,7 +1256,7 @@ accumulated interpolation error.
 equations the single source of truth and removes tunnelling), and keep a fixed-timestep loop only
 for continuous/ambient motion (ball-in-hand placement, cue stick animation, UI).
 
-### 10.3 Collision Detection Strategy
+### 11.3 Collision Detection Strategy
 
 **Broad phase:** Spatial partitioning (grid or BVH) to find potentially colliding pairs.
 
@@ -1109,7 +1293,7 @@ Pick the smallest positive `t`.
 > usual workaround is to solve the quadratic against the *start-of-step* positions and accept the
 > error.
 
-### 10.4 Determinism in Rust
+### 11.4 Determinism in Rust
 
 **Precision is an accuracy decision, not a determinism decision.** IEEE-754 defines `+`, `-`,
 `*`, `/` and `sqrt` exactly, and Rust maps them to correctly-rounded hardware instructions on
@@ -1159,9 +1343,9 @@ The real determinism risks are:
 
 ---
 
-## 11. State Representation & Input Model
+## 12. State Representation & Input Model
 
-### 11.1 Ball State (per ball)
+### 12.1 Ball State (per ball)
 
 ```rust
 struct BallState {
@@ -1190,9 +1374,9 @@ struct BallState {
 ```
 
 All simulation state is `f64`. The precision choice is an accuracy decision — it does not affect
-determinism (§10.4) — but it must be consistent across the whole codebase.
+determinism (§11.4) — but it must be consistent across the whole codebase.
 
-### 11.2 Game State
+### 12.2 Game State
 
 ```rust
 struct GameState {
@@ -1206,7 +1390,7 @@ struct GameState {
 }
 ```
 
-### 11.3 Input Model
+### 12.3 Input Model
 
 The input to the physics simulation is:
 
@@ -1229,7 +1413,7 @@ struct ShotInput {
 
 **Why a direction vector and not angles:** expressing the aim as degrees (or radians) forces the
 deterministic core to call `sin`/`cos` to convert it, and those calls go to the platform libm,
-which is the single largest source of cross-platform divergence (§10.4). Passing a
+which is the single largest source of cross-platform divergence (§11.4). Passing a
 pre-normalized unit vector moves the trigonometry into the UI layer, where a one-bit difference
 does not matter, and keeps the simulation core free of transcendental functions.
 
@@ -1241,9 +1425,9 @@ normalize once outside the deterministic boundary and pass vectors/coordinates.
 2. Time evolution of all balls until they settle (all stationary)
 3. Final state of all balls
 
-### 11.4 Simulation Loop
+### 12.4 Simulation Loop
 
-**Event-driven (recommended, see §10.2):**
+**Event-driven (recommended, see §11.2):**
 
 ```rust
 fn simulate_shot(input: ShotInput) -> GameState {
@@ -1311,14 +1495,14 @@ collisions at break speed.
 So:
 - with **event-driven** simulation, no timestep constraint applies at all;
 - with a **stepped** integrator, either use continuous collision detection (swept TOI within
-  each step, §10.3) or raise the rate — 1000 Hz gives 1.3 cm per step at 13 m/s, which is below
+  each step, §11.3) or raise the rate — 1000 Hz gives 1.3 cm per step at 13 m/s, which is below
   a ball diameter but still not comfortable for a fast grazing hit.
 
 ---
 
-## 12. Summary of Recommended Model
+## 13. Summary of Recommended Model
 
-### 12.1 Recommended Models by Domain
+### 13.1 Recommended Models by Domain
 
 | Domain | Recommended Model | Complexity | Accuracy |
 |---|---|---|---|
@@ -1330,7 +1514,7 @@ So:
 | Ball-slate | COR bounce (e_table = 0.5–0.7) | Low | Medium |
 | Determinism | f64, event-driven core, platform-independent libm, lockstep | Medium | N/A |
 
-### 12.2 Key Parameters (Summary)
+### 13.2 Key Parameters (Summary)
 
 | Parameter | Value |
 |---|---|
@@ -1345,12 +1529,45 @@ So:
 | Cushion sliding friction μ_cushion | 0.14 |
 | Table COR e_table | 0.60 |
 | Cue-ball friction μ_cue | 0.60 |
+| Spin decay μ_sp | 0.0117 (a 10 rad/s² decay rate) |
+| Pocket jaw COR e_jaw | 0.60 |
+| Pocket jaw friction μ_jaw | 0.30 |
+| Pocket shelf friction μ_slate | 0.15 |
 | Simulation timestep | none required (event-driven); 1/240–1/1000 s if stepped |
 | Max simulation time | 30 seconds |
 | Gravity g | 9.81 m/s² |
 | Numeric type | f64 throughout |
 
-### 12.3 What to Skip (for a game)
+### 13.3 Tuning Parameters and Calibration Order
+
+Every value in the table above is a *starting point*. Some are well determined by measurement
+(the friction coefficients, the CORs, the pocket angles) and some are not (the cushion contact
+height, the jaw restitution, the squirt curve). Put the second group in the table config so it
+can be fitted, and calibrate in this order — each step depends on the previous one:
+
+| Order | Parameter | How to fit it | Observable |
+|---|---|---|---|
+| 1 | `μ_s`, `μ_r` | Dr. Dave's constants; confirm with a rolling ball's stopping distance | how far a 2 m/s ball rolls |
+| 2 | `μ_sp` | watch a spinning ball decay | 5–15 rad/s² |
+| 3 | `ε` (cushion contact height) | slow-motion video of a cushion hit | the hop height and the rebound angle |
+| 4 | `e_cushion` | rebound speed off a cushion | speed loss on a 45° incidence |
+| 5 | `e_jaw`, `μ_jaw`, `μ_slate` | pocket outcomes on a real table | which shots rattle and which hang up |
+| 6 | squirt curve | high-speed video of off-centre hits | the deflection angle vs impact parameter |
+| 7 | `e_ball`, `μ_ball` | separation angle and throw | 85°–89° separation, 1.45° throw at a 10° cut |
+
+Two defaults deserve an explicit note:
+
+- **`ε = 0.15 R`** is Han's typical value. It sits just *above* the vertical flip threshold
+  (`ε_c ≈ 0.139 R` for `μ_cushion = 0.14`), so a cushion hit presses the ball into the slate
+  (-0.04 m/s at 2 m/s) rather than launching it. The *effective* contact height on a real K-66
+  (rounded 1/4" nose) is ≈ 0.04 R, which is *below* the threshold and gives the familiar
+  upward hop of ~6 mm. If the hop should be visible, set `ε` in the 0.04–0.10 R range rather
+  than faking it in the renderer.
+- **`e_cushion = 0.75`** is the effective ball–rail restitution (Dr. Dave's 0.6–0.9), which
+  already includes the energy lost in the cloth contact after the rail. Mathavan's 0.98 is the
+  rail rubber alone; do not use it here unless the two contacts are modelled separately.
+
+### 13.4 What to Skip (for a game)
 
 - **Full soft-body cushion physics** (Mathavan 2010) — overkill for a game
 - **Magnus effect in air** — negligible for pool ball sizes/speeds
@@ -1362,7 +1579,96 @@ So:
 
 ---
 
-## 13. References
+## 14. Validation Fixtures
+
+The equations in this document are only worth as much as the tests that pin them down.
+`tests/fixtures/` holds the acceptance criteria for the physics core: each file is a shot
+specification plus the expected outcome, derived either from an independent source (measured
+data or a published result) or from a closed-form limit of the model itself.
+
+The fixtures are generated by `tests/fixtures/generate_fixtures.py`, which computes the
+expectations from the same equations as this document and records the measured values they are
+to be compared against. Regenerating them must never change a number that has been filled in
+by hand (`squirt_curve`, `determinism_golden`) — those are marked `TO BE FILLED` / `TO BE
+CALIBRATED` and are edited in place, not overwritten.
+
+### 14.1 The fixtures
+
+| Fixture | What it pins down | Independent source |
+|---|---|---|
+| `slide_to_roll` | the **sign** of the sliding-state angular velocity | closed form (§3.3) |
+| `stun_separation_90` | the 90° rule, the normal components, the throw impulse | Kim 2024 (85°–89° separation) |
+| `cut_throw_sweep` | the 1/7 sticking constant and the Coulomb cap | Alciatore TP A-14 measured throw |
+| `cushion_rebound` | the Han cushion impulse model | Mathavan et al. 2010 invariants |
+| `draw_stop_shot` | the draw/stop behaviour and the reversal threshold | closed form (§3.3) |
+| `pocket_drop` | the pocket state machine, the rattle, the drop threshold | Dr. Dave, Pocket Effective Size and Center |
+| `squirt_curve` | the squirt calibration curve | Cross 2008 (to be transcribed) |
+| `determinism_golden` | bit-exact reproducibility of a full shot | golden value from the first implementation |
+
+Two of them are worth calling out because they are the ones that catch real bugs:
+
+- **`slide_to_roll`** is the regression test for the §3.3 sign error. It asserts that the slip
+  reaches zero at exactly `t = 2·u₀/(7·μ_s·g)` *and* that `ω_y` is positive at that instant.
+  A sign flip in the angular velocity breaks both.
+- **`cut_throw_sweep`** compares the model against measured throw. The two regimes have
+  closed forms. In the *sticking* regime (cut angles below ≈ 18.8°) the throw is
+  `atan(2·tan(cut)/(7·(1+e)))`, which gives 1.48° at a 10° cut against a measured 1.45° —
+  agreement to 0.03°. In the *sliding* regime the Coulomb cap makes the throw constant at
+  `atan(μ_ball)` = 2.86°, which matches the measured *fast*-shot throw (2.90° at a 30° cut) but
+  under-predicts the slow-shot throw (4.65°) — see the known deviation below.
+
+### 14.2 Schema
+
+```jsonc
+{
+  "id": "slide_to_roll",
+  "title": "...",
+  "purpose": "what bug this fixture is here to catch",
+  "sources": ["..."],                 // where the expected values come from
+  "setup": {
+    "balls": [ { "id": "b0", "position": [x, y], "velocity": [vx, vy],
+                 "angular_velocity": [wx, wy, wz] } ],
+    "params": { "mu_s": 0.2 }         // config overrides for this shot only
+  },
+  "expectations": [
+    { "quantity": "time_to_rolling", "expected": 0.1456, "tolerance": 1e-9, "unit": "s" }
+  ],
+  "invariants": [                     // properties that must hold, not just numbers
+    { "quantity": "rebound_angle_independence", "statement": "...", "tolerance": 1e-9 }
+  ],
+  "known_deviations": [ "..." ]       // model limitations the fixture records on purpose
+}
+```
+
+Conventions:
+
+- `tolerance` is **absolute**, in the unit of the quantity. Use a tight tolerance for closed-form
+  quantities (1e-9) and a looser one for measured comparisons (0.2°–0.5°).
+- Positions are in metres, velocities in m/s, angles in degrees in the fixture (radians internally).
+- Every fixture must be runnable without a table: the setup is the complete initial state.
+
+### 14.3 Known deviations
+
+The `cut_throw_sweep` fixture records the one place where the model is knowingly wrong: the
+tangential impulse is capped at `μ_ball·J_n`, which gives a speed-independent throw angle of
+`atan(μ_ball)` = 2.86° once the balls slip. The measured throw is strongly speed dependent (2.9° fast, 4.65° slow at a 30°
+cut) because the table's static friction during the collision raises the effective friction
+between the balls. Kim (2024) treats this; this model does not. Closing the gap means coupling
+the ball-cloth friction into the ball-ball impulse, which the 250 μs contact makes awkward.
+
+### 14.4 Determinism fixture
+
+`determinism_golden` specifies a full 16-ball break shot and a hash of the final state. The
+first implementation writes the hash into the fixture; from then on it is the golden value. The
+hash must be computed over the raw `f64` state — positions, velocities and angular velocities —
+and must not include wall-clock time, hash-map iteration order or thread scheduling.
+
+Run it on every platform you ship. A mismatch between x86-64 and wasm is almost always a
+transcendental function that leaked into the core (§11.4), not an arithmetic difference.
+
+---
+
+## 15. References
 
 1. **Kiefl, Evan (2020).** "The physics of pool/billiards." https://ekiefl.github.io/2020/04/24/pooltool-theory/
    - Comprehensive modern treatment of all five interaction domains

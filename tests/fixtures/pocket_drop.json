@@ -1,0 +1,68 @@
+{
+  "id": "pocket_drop",
+  "title": "Pocket capture conditions",
+  "purpose": "Validates the pocket state machine (doc section 9): the drop threshold, the rattle-out case and the minimum speed to reach the drop.",
+  "sources": [
+    "doc section 9",
+    "Dr. Dave, 'Pocket Effective Size and Center'"
+  ],
+  "setup": {
+    "balls": [
+      {
+        "id": "b0",
+        "position": [
+          1.0,
+          1.0
+        ],
+        "velocity": [
+          1.5,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          52.493438320209975,
+          0.0
+        ]
+      }
+    ],
+    "params": {
+      "mu_slate": 0.15,
+      "shelf_depth_corner": 0.044449999999999996,
+      "e_jaw": 0.6,
+      "mu_jaw": 0.3
+    },
+    "note": "the ball is placed on the centre line of a corner pocket and rolls straight in at 1.5 m/s"
+  },
+  "expectations": [
+    {
+      "quantity": "outcome",
+      "expected": "POCKETED",
+      "tolerance": 0,
+      "notes": "a ball entering on the centre line must drop"
+    },
+    {
+      "quantity": "minimum_speed_to_reach_drop",
+      "expected": 0.36168542962082395,
+      "tolerance": 1e-09,
+      "unit": "m/s",
+      "notes": "sqrt(2*mu_slate*g*shelf_depth); slower balls hang up on the shelf"
+    }
+  ],
+  "invariants": [
+    {
+      "quantity": "no_capture_at_the_mouth",
+      "statement": "a ball whose centre merely crosses the mouth line is NOT pocketed; the centre must cross the drop line"
+    },
+    {
+      "quantity": "effective_center_shift",
+      "statement": "the ideal aim point of a corner pocket shifts with entry angle and speed by up to ~0.6 inch (Dr. Dave)",
+      "tolerance": 0.15,
+      "unit": "in"
+    },
+    {
+      "quantity": "rattle_determinism",
+      "statement": "a ball that rattles in the jaws must produce the same outcome on every run and on every platform (no wall-clock, no hash ordering)",
+      "tolerance": 0
+    }
+  ]
+}

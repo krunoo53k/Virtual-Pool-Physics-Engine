@@ -1,0 +1,68 @@
+{
+  "id": "slide_to_roll",
+  "title": "Sliding ball reaches the rolling condition exactly at t = 2*u0/(7*mu_s*g)",
+  "purpose": "Pins the sign of the sliding-state angular velocity (doc section 4.3). A minus sign in the omega equation makes u grow instead of decaying, which this fixture catches immediately.",
+  "sources": [
+    "docs section 4.3",
+    "Kiefl 2020 (sign error in the published version)"
+  ],
+  "setup": {
+    "balls": [
+      {
+        "id": "b0",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "velocity": [
+          1.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "params": {
+      "mu_s": 0.2,
+      "mu_r": 0.01
+    }
+  },
+  "expectations": [
+    {
+      "quantity": "time_to_rolling",
+      "expected": 0.14562399883500798,
+      "tolerance": 1e-09,
+      "unit": "s",
+      "notes": "2*u0/(7*mu_s*g)"
+    },
+    {
+      "quantity": "velocity_at_transition",
+      "expected": 0.7142857142857143,
+      "tolerance": 1e-09,
+      "unit": "m/s"
+    },
+    {
+      "quantity": "omega_y_at_transition",
+      "expected": 24.996875390576175,
+      "tolerance": 1e-06,
+      "unit": "rad/s",
+      "notes": "must be POSITIVE (spin up towards forward roll)"
+    },
+    {
+      "quantity": "x_at_transition",
+      "expected": 0.12482057043000684,
+      "tolerance": 1e-09,
+      "unit": "m"
+    },
+    {
+      "quantity": "rolling_condition_residual",
+      "expected": 0.0,
+      "tolerance": 1e-06,
+      "unit": "rad/s",
+      "notes": "omega_y - v/R must vanish at the transition"
+    }
+  ]
+}

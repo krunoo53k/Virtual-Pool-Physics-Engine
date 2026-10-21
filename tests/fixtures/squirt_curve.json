@@ -1,0 +1,86 @@
+{
+  "id": "squirt_curve",
+  "title": "Squirt angle versus impact parameter (calibration target)",
+  "purpose": "The squirt model is a calibration curve, not a closed form. This fixture fixes the shape and the anchors; the amplitude is a config parameter that playtesting or measurement sets.",
+  "sources": [
+    "Cross 2008 (experimental data, to be transcribed)",
+    "Kim 2021: squirt increases almost linearly for b < 0.5R"
+  ],
+  "setup": {
+    "balls": [
+      {
+        "id": "cue",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "velocity": [
+          0.0,
+          0.0
+        ],
+        "angular_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "params": {
+      "cue_speed": 2.0,
+      "effective_end_mass": 0.012
+    },
+    "note": "the cue ball is struck at a range of impact parameters b; the squirt angle is the deflection of the resulting velocity from the cue axis"
+  },
+  "expectations": [
+    {
+      "b_over_R": 0.0,
+      "squirt_deg": 0.0,
+      "tolerance": 1e-09,
+      "notes": "a centre-ball hit has no squirt"
+    },
+    {
+      "b_over_R": 0.1,
+      "squirt_deg": null,
+      "tolerance": 0.3,
+      "notes": "TO BE CALIBRATED from Cross 2008 or high-speed video"
+    },
+    {
+      "b_over_R": 0.2,
+      "squirt_deg": null,
+      "tolerance": 0.3,
+      "notes": "TO BE CALIBRATED"
+    },
+    {
+      "b_over_R": 0.3,
+      "squirt_deg": null,
+      "tolerance": 0.3,
+      "notes": "TO BE CALIBRATED"
+    },
+    {
+      "b_over_R": 0.4,
+      "squirt_deg": null,
+      "tolerance": 0.3,
+      "notes": "TO BE CALIBRATED"
+    },
+    {
+      "b_over_R": 0.5,
+      "squirt_deg": null,
+      "tolerance": 0.3,
+      "notes": "TO BE CALIBRATED; roughly 1-5 deg at maximum english"
+    }
+  ],
+  "invariants": [
+    {
+      "quantity": "squirt_monotonic",
+      "statement": "squirt increases monotonically with the impact parameter and vanishes at b = 0"
+    },
+    {
+      "quantity": "squirt_shape",
+      "statement": "the curve is nearly linear up to b = 0.5R and flattens beyond (Kim 2021)"
+    },
+    {
+      "quantity": "squirt_direction",
+      "statement": "the ball squirts AWAY from the side of the ball that was struck"
+    }
+  ]
+}
