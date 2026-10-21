@@ -323,7 +323,9 @@ func _aim_at_the_table() -> void:
 	var cue_ball := balls[0]
 	var geometry: Dictionary = core.get_table_geometry()
 	var apex := _to_godot(Vector3(geometry["length"] / 4.0, geometry["width"] / 2.0, 0.0))
-	base_aim = (apex - cue_ball.position).normalized()
+	var direction := apex - cue_ball.position
+	direction.y = 0.0
+	base_aim = direction.normalized()
 
 
 ## The aim follows the mouse, unless the mouse is busy trimming or moving the
@@ -342,8 +344,16 @@ func _update_aim() -> void:
 
 
 ## The direction of the shot: the aim, trimmed.
+##
+## The shot is level. A cue that is tilted down would drive the ball into the
+## slate, and the slate is what launches it (§7.1) - so a level shot is not a
+## detail here, it is the difference between a break and a jump shot.
 func _aim() -> Vector3:
-	return base_aim.rotated(Vector3.UP, -trim).normalized()
+	var direction := base_aim.rotated(Vector3.UP, -trim)
+	direction.y = 0.0
+	if direction.length() < 0.0001:
+		return Vector3(1, 0, 0)
+	return direction.normalized()
 
 
 ## Where the mouse meets the bed.

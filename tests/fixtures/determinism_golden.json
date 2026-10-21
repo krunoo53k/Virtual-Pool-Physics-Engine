@@ -282,9 +282,9 @@
   "expectations": [
     {
       "quantity": "final_state_hash",
-      "expected": "a245b7defed9a324",
+      "expected": "a4122661a9fc192b",
       "tolerance": 0,
-      "notes": "the golden value: the hash of the canonical byte form of the final state of the break shot below - the raw f64 positions, velocities and angular velocities, the discrete states, the phase, the flags and the elapsed time. The generator writes null here; this value was written by hand and must survive a regeneration."
+      "notes": "the golden value: the hash of the canonical byte form of the final state of the break shot below - the raw f64 positions, velocities and angular velocities, the discrete states, the phase, the flags and the elapsed time. The generator writes null here; this value was written by hand and must survive a regeneration. It changed twice. Once when the vertical spin decay was fixed to stop at zero (see the note in the model): the balls used to run away with a backspin that never died, and the shot never came to rest. And once when the test that rejects a contact below the nose was given a tolerance: a ball that rests on the bed touches the nose at exactly the nose height, so a ball whose height came from a single-precision number was a fraction of a nanometre off and went through the rail instead of bouncing off it."
     },
     {
       "quantity": "hash_stability",

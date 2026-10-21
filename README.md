@@ -228,13 +228,12 @@ The document lists its own limitations, and they are reproduced faithfully here:
   measured throw is speed dependent and larger on slow shots. This is the one
   place where the model is knowingly wrong, and the `cut_throw_sweep` fixture
   records it.
-* **The vertical spin decay is linear.** §3.2 writes
-  `w_z(t) = w0 - (5 mu_sp g / 2R) t`, and a linear decay does not stop at
-  zero: a ball that starts with no vertical spin picks up a backspin on the
-  way, and a backspin grows instead of dying. A decay proportional to the spin
-  would not do this. The fixtures and the determinism hash pin the model as it
-  is, so it is left as it is, and `pool-core/tests/trace.rs` pins the
-  behaviour so that a fix shows up there.
+* **The vertical spin decay is linear, and stops at zero.** §3.2 writes
+  `w_z(t) = w0 - (5 mu_sp g / 2R) t`, and a linear decay has to be told where
+  zero is: it acts towards zero and stops there. Without that, a ball whose
+  spin reached zero would go on past it into a backspin, and a backspin would
+  grow instead of dying - and the ball would never come to rest, because the
+  state it reaches depends on a spin that never ends.
 * **The squirt is applied sideways.** The core applies the squirt as a *horizontal*
   deflection of `psi` whatever the direction of the contact offset is, so a shot
   with a vertical offset - a draw or a follow - leaves the line by `psi` as well.

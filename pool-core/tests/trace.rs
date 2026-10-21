@@ -252,17 +252,15 @@ fn a_rolling_ball_turns_as_far_as_it_rolls() {
 }
 
 #[test]
-fn the_vertical_spin_decay_drives_the_spin_past_zero() {
+fn the_vertical_spin_dies_at_zero_and_stays_there() {
     // The spin decay of §3.2 is linear: `w_z(t) = w0 - (5 mu_sp g / 2R) t`. A
-    // linear decay of a spin that starts at zero does not stay at zero: it
-    // goes on into the backspin, and a backspin grows instead of dying. This
-    // test pins that behaviour, so that a fix to the decay model shows up
-    // here.
+    // linear decay has to be told where zero is, or it goes on past it: a
+    // backspin would then grow instead of dying, and a ball whose spin never
+    // died would never come to rest. The decay therefore acts towards zero
+    // and stops there.
     //
-    // A decay that is proportional to the spin - `w_z(t) = w0 e^(-kt)` - would
-    // not do this, and it is what the model probably wants; but the model as
-    // written is what the fixtures and the determinism hash pin, so it is not
-    // changed here.
+    // This test pins that: the spin of a ball that is rolling dies and stays
+    // dead, and a backspin dies rather than growing.
     let cfg = TableConfig::default();
     let speed = 0.3;
     let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.635, cfg.ball.radius));
@@ -273,18 +271,36 @@ fn the_vertical_spin_decay_drives_the_spin_past_zero() {
     simulation.record();
     simulation.run_without_strike().expect("the ball rolls");
     let trace = simulation.trace().cloned().expect("the path was recorded");
-    // The ball starts with no vertical spin at all.
+
+    // The ball has no vertical spin to begin with, so it gets none.
     assert_eq!(simulation.balls()[0].angular_velocity.z, 0.0);
-    // And it turns backwards about the vertical axis on the way: the decay
-    // does not stop at zero, and a backspin grows instead of dying.
+    let rotation = trace.sample_rotation(trace.duration)[0];
+    assert!(
+        rotation.z.abs() < 1e-9,
+        "the ball turned {} about the vertical axis, which is not nothing",
+        rotation.z
+    );
+
+    // A backspin dies too: it does not grow.
+    let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.635, cfg.ball.radius));
+    ball.velocity = Vec3::new(speed, 0.0, 0.0);
+    ball.angular_velocity = Vec3::new(0.0, speed / cfg.ball.radius, -20.0);
+    let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
+    let mut simulation = pool_core::Simulation::new(&input, &cfg);
+    simulation.record();
+    simulation.run_without_strike().expect("the ball rolls");
+    let trace = simulation.trace().cloned().expect("the path was recorded");
+    let spin = simulation.balls()[0].angular_velocity.z;
+    assert!(
+        spin >= -20.0 && spin <= 0.0,
+        "the backspin ended at {spin}, which is not a backspin dying"
+    );
     let rotation = trace.sample_rotation(trace.duration)[0];
     assert!(
         rotation.z < 0.0,
-        "the ball turned {} about the vertical axis, which is not backwards",
+        "the ball turned {} about the vertical axis, which is not the backspin",
         rotation.z
     );
-    // The final spin is zero all the same, because the state change zeroes it.
-    assert_eq!(simulation.balls()[0].angular_velocity.z, 0.0);
 }
 
 #[test]

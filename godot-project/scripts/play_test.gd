@@ -33,6 +33,9 @@ func _ready() -> void:
 		before.append(ball.position)
 
 	# The break: straight into the rack, at full power.
+	print("the cue ball is at ", game.balls[0].position)
+	print("the apex is at ", game.balls[1].position)
+	print("the aim is ", game.base_aim, " and the shot is ", game._aim())
 	game.fire_now(9.0)
 
 	# The picture, if one was asked for, is taken while the balls are running.
@@ -58,7 +61,22 @@ func _ready() -> void:
 				image.save_png(screenshot)
 				print("the screenshot is at ", screenshot)
 
+	_report_the_shot()
 	_check()
+
+
+## Reports the shot the core resolved.
+func _report_the_shot() -> void:
+	var off: Array = []
+	var pocketed: Array = []
+	for index in game.balls.size():
+		var state: Dictionary = game.shot.get_ball_state(index)
+		if state.get("off_table", false):
+			off.append(index)
+		elif state.get("pocketed", false):
+			pocketed.append(index)
+	print("off the table: ", off, "   pocketed: ", pocketed)
+	print("the phase of the game is ", game.phase)
 
 
 ## Checks that the break happened.
@@ -71,7 +89,20 @@ func _check() -> void:
 	print("the cue ball is at ", game.balls[0].position)
 	print("the shot took ", game.shot.get_duration(), " s")
 
+	# The break has to be a break and not something else: it settles, and
+	# nothing leaves the table.
 	var ok := moved >= 10
+	var duration: float = game.shot.get_duration()
+	if duration > 20.0:
+		printerr("the break took ", duration, " s, which is too long")
+		ok = false
+	var off: Array = []
+	for index in game.balls.size():
+		if game.shot.get_ball_state(index).get("off_table", false):
+			off.append(index)
+	if not off.is_empty():
+		printerr("the balls left the table: ", off)
+		ok = false
 	if ok:
 		print("the break behaved")
 	else:

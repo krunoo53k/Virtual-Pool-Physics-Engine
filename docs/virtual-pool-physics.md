@@ -206,6 +206,16 @@ r(t) = r₀ + v₀ · t - ½ · μ_r · g · t² · v̂₀
 ω_z(t)  = ω₀z - (5 · μ_sp · g) / (2R) · t   (spin decay)
 ```
 
+> **The spin decay stops at zero.** The formula is linear, and a linear decay
+> has to be told where zero is: it decays *towards* zero and stops there, so
+> `ω_z(t) = sign(ω₀z) · max(0, |ω₀z| - (5 μ_sp g / 2R)·t)`. Without that, a ball
+> whose spin reached zero would go on past it into a backspin, and a backspin
+> would then *grow* instead of dying - which also means the ball never comes to
+> rest, because the state it reaches depends on a spin that never ends.
+>
+> The spin of a ball that is rolling dies as it rolls, and the segment that
+> follows starts with no spin to decay.
+
 **Validity:** `0 ≤ t ≤ |v₀| / (μ_r · g)` — until the ball stops.
 
 **Coordinate system (table frame):**
@@ -286,6 +296,9 @@ The ball rotates in place (typically around the z-axis). A phenomenological fric
 ```
 
 The ball stops spinning when `ω_z(t) = 0`, i.e., at `t = (2R · ω₀z) / (5 · μ_sp · g)`.
+
+> As in §3.2, the decay acts towards zero and stops there: the spin of a ball
+> that has died stays dead, and a backspin dies rather than growing.
 
 ### 3.5 State Transitions
 
@@ -1355,6 +1368,15 @@ for continuous/ambient motion (ball-in-hand placement, cue stick animation, UI).
      so the TOI is the usual swept-sphere-against-a-plane test: `x_c(t)` is quadratic in `t`
      (rolling friction) and the contact condition is linear in it, so the TOI is a
      **quadratic**.
+
+     > **The nose's height is a knife edge, and the test has to know it.** A ball that rests on
+     > the bed touches the nose at *exactly* the nose's height — that is what "63.5% of the
+     > diameter" means — so a test that rejects a contact below the nose is comparing against a
+     > boundary that the common case sits exactly on. With a tolerance of an ulp, a ball whose
+     > height came from a single-precision number (a game that keeps its balls in `f32` is a
+     > fraction of a nanometre off) is rejected, and the ball goes *through* the rail instead of
+     > bouncing off it. The tolerance has to be a length — a micron is far below anything that
+     > matters physically and far above the noise in the numbers.
   2. **The rail structure** — the ball's lowest point is above the nose but below the rail's
      top edge, i.e. its centre is between `h_nose + R` = 64.9 mm and roughly `h_nose + 15 mm +
      R` = 80 mm. Here the ball strikes the *upper* structure — the rubber's back and the rail's

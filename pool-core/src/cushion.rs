@@ -130,6 +130,15 @@ pub fn resolve_nose_cushion(
     )
 }
 
+/// How close to the nose a contact may be and still count as on the face, in
+/// metres.
+///
+/// A ball that rests on the bed touches the nose at exactly the nose's height,
+/// so the test that rejects a contact below the nose is on a knife edge. A
+/// micron is far below anything that matters physically and far above the
+/// noise in the numbers.
+pub const CONTACT_TOLERANCE: f64 = 1e-6;
+
 /// The regime a ball at height `z` meets (§11.3, and the `rail_regimes` block of the
 /// `cushion_rebound` fixture).
 pub fn regime_for_height(z: f64, radius: f64, cfg: &TableConfig) -> RailRegime {
@@ -224,9 +233,17 @@ pub fn time_of_impact(
             if !valid {
                 continue;
             }
-            // The contact has to be on the face, not on the extension of the plane
-            // below the nose.
-            if is_nose && z + radius * geom.sin_theta < h_nose - 1e-12 {
+            // The contact has to be on the face, not on the extension of the
+            // plane below the nose.
+            //
+            // A ball that rests on the bed touches the nose at *exactly* the
+            // nose's height - that is what the nose height means - so this
+            // comparison is on a knife edge, and a tolerance of an ulp is not
+            // enough: the height of the ball comes from the game, and a game
+            // that keeps its balls in single precision is a fraction of a
+            // nanometre off. The tolerance is a micron, which is nothing
+            // physically and everything numerically.
+            if is_nose && z + radius * geom.sin_theta < h_nose - CONTACT_TOLERANCE {
                 continue;
             }
             let candidate = (t, regime);

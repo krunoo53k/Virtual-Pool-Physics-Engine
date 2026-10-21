@@ -39,9 +39,9 @@ println!("the object ball ended at x = {}", state.balls[1].position.x);
   elapsed time and the cue stick as the renderer wants it.
 
 The model follows a research document, and the document is honest about its
-own limits: the throw is capped, the squirt is applied sideways whatever the
-direction of the contact offset, and the vertical spin decay is linear. Those
-are reproduced faithfully and documented.
+own limits: the throw is capped, and the squirt is applied sideways whatever
+the direction of the contact offset. Those are reproduced faithfully and
+documented.
 
 ## Where to go next
 

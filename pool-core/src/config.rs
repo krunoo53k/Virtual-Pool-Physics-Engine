@@ -164,6 +164,12 @@ pub struct SlateConfig {
     /// behaviour the `cushion_rebound` fixture pins untouched (a 2 m/s cushion hit
     /// rebounds at 0.27 m/s) and keeps a break-speed hit to a couple of centimetres
     /// instead of the half metre the uncorrected model would give.
+    ///
+    /// It also has to be small enough that the hop does not carry the ball over
+    /// the rail: a ball whose centre rises above the top of the rail has left the
+    /// table. The centre starts a radius above the bed, so the hop may be at most
+    /// `rail_top_height - radius` = 22.7 mm, which is a rebound of
+    /// `sqrt(2 g h)` = 0.67 m/s. The default is below that.
     pub max_cushion_rebound: f64,
 }
 
@@ -172,7 +178,7 @@ impl Default for SlateConfig {
         SlateConfig {
             e_table: 0.60,
             settle_speed: 0.02,
-            max_cushion_rebound: 0.75,
+            max_cushion_rebound: 0.65,
         }
     }
 }

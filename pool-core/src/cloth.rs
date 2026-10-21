@@ -116,9 +116,23 @@ pub fn advance_spinning(ball: &mut BallState, dt: f64, p: &ClothParams) {
     decay_spin(ball, dt, p);
 }
 
+/// The rate at which the vertical spin decays, rad/s^2: `5 mu_sp g / (2R)`.
+pub fn spin_decay_rate(p: &ClothParams) -> f64 {
+    5.0 * p.mu_sp * p.g / (2.0 * p.radius)
+}
+
 /// Decays the vertical spin: `w_z(t) = w0 - (5 mu_sp g / 2R) t` (§3.2, §3.4).
+///
+/// The spin decays *towards* zero and stops there. A decay that simply
+/// subtracted would go on past zero, and a backspin would then grow instead
+/// of dying - and a ball whose spin never died would never come to rest.
 pub fn decay_spin(ball: &mut BallState, dt: f64, p: &ClothParams) {
-    ball.angular_velocity.z -= (5.0 * p.mu_sp * p.g / (2.0 * p.radius)) * dt;
+    let rate = spin_decay_rate(p) * dt;
+    if ball.angular_velocity.z > 0.0 {
+        ball.angular_velocity.z = (ball.angular_velocity.z - rate).max(0.0);
+    } else if ball.angular_velocity.z < 0.0 {
+        ball.angular_velocity.z = (ball.angular_velocity.z + rate).min(0.0);
+    }
 }
 
 /// Advances an airborne ball by `dt` under gravity (§7.1).

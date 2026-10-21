@@ -17,7 +17,7 @@ use pool_godot::{frame, shot};
 /// The hash of the shot, pinned.
 ///
 /// The same value is in `godot-project/scripts/smoke_test.gd`.
-const HASH: &str = "97539e5ba64c0c9a";
+const HASH: &str = "c4a38fea1e512ddd";
 
 /// The cue ball and the fifteen object balls, in the core's frame.
 ///

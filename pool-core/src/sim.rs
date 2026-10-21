@@ -520,7 +520,16 @@ impl<'a> Simulation<'a> {
     fn angular_acceleration(&self, ball: &BallState, kind: SegmentKind, a: Vec3) -> Vec3 {
         let radius = self.cfg.ball.radius;
         let g = self.cfg.simulation.gravity;
-        let decay = 5.0 * self.cfg.cloth.mu_sp * g / (2.0 * radius);
+        // The vertical spin decays towards zero, and stops there (§3.2). A
+        // constant decay would carry it past zero, and a backspin would then
+        // grow instead of dying.
+        let spin = if ball.angular_velocity.z > 0.0 {
+            -cloth::spin_decay_rate(&self.cloth)
+        } else if ball.angular_velocity.z < 0.0 {
+            cloth::spin_decay_rate(&self.cloth)
+        } else {
+            0.0
+        };
         match kind {
             SegmentKind::Sliding => {
                 let u = cloth::slip_velocity(ball.velocity, ball.angular_velocity, radius);
@@ -530,11 +539,11 @@ impl<'a> Simulation<'a> {
                 };
                 let spin_up =
                     Vec3::Z.cross(u_hat) * (5.0 * self.cfg.cloth.mu_s * g / (2.0 * radius));
-                spin_up + Vec3::new(0.0, 0.0, -decay)
+                spin_up + Vec3::new(0.0, 0.0, spin)
             }
-            SegmentKind::Rolling => Vec3::Z.cross(a) / radius + Vec3::new(0.0, 0.0, -decay),
+            SegmentKind::Rolling => Vec3::Z.cross(a) / radius + Vec3::new(0.0, 0.0, spin),
             SegmentKind::Shelf => Vec3::Z.cross(a) / radius,
-            SegmentKind::Spinning => Vec3::new(0.0, 0.0, -decay),
+            SegmentKind::Spinning => Vec3::new(0.0, 0.0, spin),
             SegmentKind::Stationary | SegmentKind::Airborne => Vec3::ZERO,
         }
     }
@@ -781,8 +790,24 @@ impl<'a> Simulation<'a> {
                     continue;
                 }
                 let z = ball.position.z + ball.velocity.z * t + accel.z * (0.5 * t * t);
-                // Only a ball that clears the rail leaves the table.
-                if z - ball.radius <= self.cfg.cushion.rail_top_height {
+                // A ball leaves the table in two ways: it hops over the rail,
+                // or it goes through it. The second one is a ball that is on
+                // the bed and past the rail, which cannot happen - so a ball
+                // that is there has gone through, and it is off the table.
+                let over_the_rail = z - ball.radius > self.cfg.cushion.rail_top_height;
+                let through_the_rail = z <= self.cfg.ball.radius + 1e-9;
+                if !over_the_rail && !through_the_rail {
+                    continue;
+                }
+                // A ball that crosses a rail where there is no cushion is
+                // heading for a pocket, and the pocket is what happens to it.
+                let p = ball.position + ball.velocity * t + accel * (0.5 * t * t);
+                let along = p.x * rail.tangent.x + p.y * rail.tangent.y;
+                let on_cushion = rail
+                    .cushion_spans
+                    .iter()
+                    .any(|(lo, hi)| along >= *lo - 1e-9 && along <= *hi + 1e-9);
+                if !on_cushion {
                     continue;
                 }
                 out.push(SimEvent {
