@@ -292,7 +292,7 @@ fn the_vertical_spin_dies_at_zero_and_stays_there() {
     let trace = simulation.trace().cloned().expect("the path was recorded");
     let spin = simulation.balls()[0].angular_velocity.z;
     assert!(
-        spin >= -20.0 && spin <= 0.0,
+        (-20.0..=0.0).contains(&spin),
         "the backspin ended at {spin}, which is not a backspin dying"
     );
     let rotation = trace.sample_rotation(trace.duration)[0];
