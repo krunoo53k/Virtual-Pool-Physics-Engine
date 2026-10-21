@@ -865,11 +865,18 @@ v_ball = (1 + e_cue) · M_cue · V_cue / (m_ball + M_cue)
 
 **Angular velocity (spin) from offset hit:**
 
-For a horizontal stroke (θ = 0), taking the shot direction as +x̂:
+For a horizontal stroke (θ = 0), taking the shot direction as +x̂, with +ŷ lateral and +ẑ up:
 - **Topspin (follow):** Hit above center → `ω_y > 0` (this is the rolling condition of §3.2)
 - **Backspin (draw):** Hit below center → `ω_y < 0`
-- **Sidespin (english):** Hit the +ŷ (right) side → `ω_z < 0` (clockwise seen from above);
-  hit the −ŷ (left) side → `ω_z > 0`
+- **Sidespin (english):** Hit the +ŷ side → `ω_z < 0` (clockwise seen from above);
+  hit the −ŷ side → `ω_z > 0`
+
+> **Which side is +ŷ?** The shooter's right hand is `direction × up`, so for a shot along +x̂
+> the shooter's right is **−ŷ** and the shooter's **left** is **+ŷ**. Read that way, the line
+> above says: *left english* → `ω_z < 0`, *right english* → `ω_z > 0` — which is what §4.4.2
+> means by "right english", and the sign the implementation follows. The core measures the
+> contact offset along `up × direction` (§6.1), which is that same +ŷ, so a **positive**
+> `contact_offset_x` is a strike on the shooter's **left**.
 
 The spin magnitude for a tip that grips the ball (no slip at the end of contact) follows from the
 torque of the impulse about the ball's centre, `τ = r_c × J`, with `|r_c| = b` and
