@@ -25,6 +25,8 @@ println!("the object ball ended at x = {}", state.balls[1].position.x);
 |---|---|
 | `pool-core/` | the library: the physics core, the table configuration and the state model |
 | `pool-cli/` | the headless tuning harness: it fires parameterised shots and writes CSV |
+| `pool-visual/` | the visual simulation: it turns a shot into a page you can watch |
+| `demos/` | the gallery: one page per scene, and the index that links them |
 | `docs/virtual-pool-physics.md` | the research document the model follows |
 | `tests/fixtures/` | the validation fixtures: the acceptance criteria of the core |
 
@@ -43,6 +45,7 @@ Inside `pool-core/src`:
 | `cue.rs` | the cue strike, the squirt curve and the miscue limit of §6 |
 | `quartic.rs` | the deterministic root finder used by the time-of-impact solvers |
 | `sim.rs` | the event loop: the heart of the engine |
+| `trace.rs` | the path of a shot: the segments a renderer interpolates (§11.2) |
 | `hash.rs` | the canonical byte form of the state and its hash, for the determinism check |
 | `json.rs` | a small, exactly-rounding JSON reader and writer |
 
@@ -102,6 +105,46 @@ The calibration order is the one of §13.3: `mu_s` and `mu_r`, then `mu_sp`, the
 the nose height, then `e_cushion`, then the pocket parameters, then the squirt
 curve, then the ball-ball constants.
 
+## Seeing the physics
+
+The core never integrates anything, so the path of a shot is a *list of segments*:
+between two events every ball is on a parabola. `pool-core/src/trace.rs` is that
+list, and `pool-visual` puts it on the screen.
+
+```sh
+pool-visual list                          # the demo scenes
+pool-visual shot --scene break            # writes break.html
+pool-visual shot --scene trio             # the draw, the stun and the follow
+pool-visual trace --scene cut             # the same shot, as raw JSON
+pool-visual demos                         # the whole gallery, into demos/
+pool-visual shot --scene custom --cue 0.6,0.635 --object 1.4,0.635 --cue-speed 3
+```
+
+The page is a single file: no server, no network, no build step. It opens from
+the disk in any browser. The table on it is drawn from the core's own
+`TableGeometry`, so the picture and the model cannot drift apart, and the balls
+are placed by evaluating the same closed-form segments the core does - the
+trails are the model's trajectory, not a resampling of it.
+
+The page has the shot on a timeline, the events as colour-coded ticks, the event
+log with a click on every entry to jump to it, the trails of the balls, and a dial
+for the cue ball's spin. Space plays and pauses, the arrow keys step from event
+to event.
+
+The gallery in [`demos/`](demos/) holds one page per scene and an index that
+links them; `pool-visual demos` regenerates the lot.
+
+The demo scenes:
+
+| Scene | What it shows |
+|---|---|
+| `break` | a full rack, the cue ball into the head ball: the burst and the drops |
+| `trio` | one shot at three spins - the cue ball goes three different ways |
+| `cut` | three cut angles: the throw of the object ball off the line of centres |
+| `english` | three amounts of side spin: the launch line is not the aim line |
+| `cushion` | four incidence angles into the same rail |
+| `jump` | an elevated cue: the ball hops off the slate |
+
 ## What the model does and does not do
 
 The document lists its own limitations, and they are reproduced faithfully here:
@@ -111,6 +154,13 @@ The document lists its own limitations, and they are reproduced faithfully here:
   measured throw is speed dependent and larger on slow shots. This is the one
   place where the model is knowingly wrong, and the `cut_throw_sweep` fixture
   records it.
+* **The squirt is applied sideways.** The core applies the squirt as a *horizontal*
+  deflection of `psi` whatever the direction of the contact offset is, so a shot
+  with a vertical offset - a draw or a follow - leaves the line by `psi` as well.
+  §6.1 describes the deflection as the resultant of the normal force and the
+  friction of the tip sliding on the ball, which for a vertical offset is
+  vertical. The `english` scene shows the squirt as it is; the `trio` scene makes
+  up for it in the aim, the way a player does.
 * **The hop over-predicts at break speed.** The rigid cushion model scales the hop
   with `v^2`. `TableConfig::slate.max_cushion_rebound` is the compliant-contact
   correction the document asks for: it leaves the behaviour the fixture pins (a

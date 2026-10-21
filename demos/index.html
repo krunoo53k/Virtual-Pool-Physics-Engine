@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual Pool &mdash; the demos</title>
+<style>
+:root { --bg:#0f1319; --panel:#181e26; --line:#2a3340; --text:#e7edf4; --dim:#8a97a5; --accent:#4ea1ff; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); padding:28px;
+font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+h1 { font-size:16px; margin:0 0 4px; }
+p.lead { color:var(--dim); margin:0 0 22px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
+.card { display:block; text-decoration:none; color:inherit; background:var(--panel);
+border:1px solid var(--line); border-radius:8px; padding:14px; }
+.card:hover { border-color:var(--accent); }
+.card h2 { font-size:13px; margin:0 0 4px; color:var(--accent); }
+.card .sub { color:var(--dim); font-size:11px; margin:0 0 10px; }
+.card ul { margin:0; padding-left:16px; color:var(--dim); font-size:11px; }
+.card li b { color:var(--text); font-weight:600; }
+</style>
+</head>
+<body>
+  <h1>Virtual Pool &mdash; the demos</h1>
+<p class="lead">Every page is one shot of the physics core, replayed from the path it recorded.</p>
+  <div class="grid">
+    <a class="card" href="break.html">
+      <h2>The break</h2>
+      <p class="sub">a full rack, the cue ball into the head ball</p>
+      <ul>
+        <li><b>break</b> &mdash; cue speed 6.0 m/s</li>
+      </ul>
+    </a>
+    <a class="card" href="trio.html">
+      <h2>Draw, stun, follow</h2>
+      <p class="sub">one shot, three spins - the cue ball goes three different ways (the aim makes up for the model's squirt)</p>
+      <ul>
+        <li><b>draw</b> &mdash; bottom spin, -0.45 R</li>
+        <li><b>stun</b> &mdash; centre ball, no spin</li>
+        <li><b>follow</b> &mdash; top spin, +0.45 R</li>
+      </ul>
+    </a>
+    <a class="card" href="cut.html">
+      <h2>The cut and the throw</h2>
+      <p class="sub">three cut angles, the same shot - watch the object ball's path</p>
+      <ul>
+        <li><b>cut 15°</b> &mdash; cut angle 15°, 0.5 m</li>
+        <li><b>cut 30°</b> &mdash; cut angle 30°, 0.5 m</li>
+        <li><b>cut 45°</b> &mdash; cut angle 45°, 0.5 m</li>
+      </ul>
+    </a>
+    <a class="card" href="english.html">
+      <h2>The squirt</h2>
+      <p class="sub">three amounts of side spin - the launch line is not the aim line</p>
+      <ul>
+        <li><b>left english</b> &mdash; side spin -0.4 R</li>
+        <li><b>centre</b> &mdash; no side spin</li>
+        <li><b>right english</b> &mdash; side spin +0.4 R</li>
+      </ul>
+    </a>
+    <a class="card" href="cushion.html">
+      <h2>The cushion</h2>
+      <p class="sub">four incidence angles into the same rail</p>
+      <ul>
+        <li><b>20° incidence</b> &mdash; 20° from the normal</li>
+        <li><b>35° incidence</b> &mdash; 35° from the normal</li>
+        <li><b>50° incidence</b> &mdash; 50° from the normal</li>
+        <li><b>65° incidence</b> &mdash; 65° from the normal</li>
+      </ul>
+    </a>
+    <a class="card" href="jump.html">
+      <h2>The hop</h2>
+      <p class="sub">an elevated cue drives the ball into the slate</p>
+      <ul>
+        <li><b>jump</b> &mdash; 10° elevation, cue speed 4.0 m/s</li>
+      </ul>
+    </a>
+  </div>
+</body>
+</html>

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["pool-core", "pool-cli"]
+members = ["pool-core", "pool-cli", "pool-visual"]
 
 [workspace.package]
 version = "0.1.0"

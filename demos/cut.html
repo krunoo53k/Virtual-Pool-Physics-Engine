@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual Pool &mdash; physics viewer</title>
+<style>
+  :root {
+    --bg:#0f1319; --panel:#181e26; --panel2:#1e252f; --line:#2a3340;
+    --text:#e7edf4; --dim:#8a97a5; --accent:#4ea1ff; --felt:#1d6b4b;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  .app { display:grid; grid-template-columns:minmax(0,1fr) 320px; grid-template-rows:auto minmax(0,1fr) auto;
+         gap:12px; padding:12px; height:100vh; }
+  header { grid-column:1/3; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0; letter-spacing:.4px; font-weight:600; }
+  header .sub { color:var(--dim); font-size:11px; }
+  header .tag { margin-left:auto; font-size:10px; padding:2px 9px; border:1px solid var(--line);
+               border-radius:999px; color:var(--dim); }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+           padding:10px; display:flex; flex-direction:column; gap:8px; min-height:0; }
+  .canvas-wrap { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+  canvas#table { max-width:100%; max-height:100%; border-radius:4px; }
+  .transport { display:flex; gap:12px; align-items:center; }
+  .transport .scrub { flex:1; position:relative; height:24px; display:flex; align-items:center; }
+  .transport input[type=range] { width:100%; accent-color:var(--accent); position:relative; z-index:2; }
+  .ticks { position:absolute; inset:0; pointer-events:none; }
+  .tick { position:absolute; bottom:1px; width:2px; height:7px; border-radius:1px; opacity:.85; }
+  button, select {
+    background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:5px;
+    padding:5px 10px; cursor:pointer; font:inherit; font-size:12px;
+  }
+  button:hover, select:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:#06101c; border-color:var(--accent); }
+  aside { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px;
+          overflow:auto; display:flex; flex-direction:column; gap:10px; }
+  .grp { border:1px solid var(--line); border-radius:6px; padding:9px; }
+  .grp h2 { font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--dim);
+            margin:0 0 8px; font-weight:600; }
+  .shots { display:flex; flex-direction:column; gap:5px; }
+  .shots button { text-align:left; }
+  .shots button small { display:block; color:var(--dim); font-size:10px; }
+  .shots button.on small { color:#0b2338; }
+  .toggles { display:flex; flex-wrap:wrap; gap:6px; }
+  .read { display:flex; justify-content:space-between; font-size:11px; padding:2px 0;
+          border-bottom:1px dotted #253040; gap:8px; }
+  .read b { font-weight:600; text-align:right; }
+  table.balls { width:100%; border-collapse:collapse; font-size:11px; }
+  table.balls th { text-align:left; color:var(--dim); font-weight:600; padding:1px 0; font-size:10px; }
+  table.balls td { padding:1px 0; }
+  table.balls td.n { text-align:right; }
+  .swatch { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px;
+            vertical-align:middle; border:1px solid rgba(255,255,255,.25); }
+  .evlog { max-height:220px; overflow:auto; font-size:11px; }
+  .ev { display:flex; gap:7px; padding:2px 0; color:var(--dim); cursor:pointer; }
+  .ev:hover { color:var(--text); }
+  .ev .t { color:var(--accent); width:58px; flex:none; }
+  .ev .k { color:var(--text); }
+  .dial-row { display:flex; gap:10px; align-items:center; }
+  canvas#dial { background:#0c1015; border:1px solid var(--line); border-radius:6px; }
+  .desc { color:var(--dim); font-size:11px; margin:0 0 8px; }
+  .note { color:var(--dim); font-size:10px; margin-top:8px; }
+  @media (max-width:900px) { .app { grid-template-columns:1fr; grid-template-rows:auto auto auto auto; height:auto; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="title">Virtual Pool</h1>
+    <span class="sub" id="subtitle"></span>
+    <span class="tag" id="tag"></span>
+  </header>
+
+  <div class="stage">
+    <div class="canvas-wrap"><canvas id="table" width="1280" height="680"></canvas></div>
+    <div class="transport">
+      <button id="play">pause</button>
+      <button id="end" title="jump to the end">&#9197;</button>
+      <select id="speed">
+        <option value="0.1">0.1&times;</option>
+        <option value="0.25">0.25&times;</option>
+        <option value="0.5">0.5&times;</option>
+        <option value="1">1&times;</option>
+        <option value="2" selected>2&times;</option>
+        <option value="4">4&times;</option>
+        <option value="8">8&times;</option>
+        <option value="16">16&times;</option>
+      </select>
+      <div class="scrub">
+        <input type="range" id="scrub" min="0" max="1000" value="0">
+        <div class="ticks" id="ticks"></div>
+      </div>
+      <span id="clock" style="color:var(--dim);width:120px;text-align:right">t = 0.000 s</span>
+    </div>
+  </div>
+
+  <aside>
+    <div class="grp">
+      <h2>shots</h2>
+      <div class="shots" id="shots"></div>
+      <p class="desc" id="description" style="margin-top:8px"></p>
+    </div>
+    <div class="grp">
+      <h2>display</h2>
+      <div class="toggles">
+        <button id="t-trails" class="on">trails</button>
+        <button id="t-vectors">velocity</button>
+        <button id="t-overlay">overlay</button>
+      </div>
+      <div class="note">space plays and pauses &middot; &larr; and &rarr; step from event to event</div>
+    </div>
+    <div class="grp">
+      <h2>cue ball</h2>
+      <div class="dial-row">
+        <canvas id="dial" width="120" height="120"></canvas>
+        <div style="flex:1">
+          <div class="read"><span>speed</span><b id="d-speed">0.00 m/s</b></div>
+          <div class="read"><span>state</span><b id="d-state">&mdash;</b></div>
+          <div class="read"><span>&omega;<sub>z</sub></span><b id="d-wz">0.0 rad/s</b></div>
+          <div class="read"><span>&omega;<sub>y</sub></span><b id="d-wy">0.0 rad/s</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="grp">
+      <h2>balls</h2>
+      <table class="balls">
+        <thead><tr><th>ball</th><th style="text-align:right">speed</th><th style="text-align:right">state</th></tr></thead>
+        <tbody id="ballrows"></tbody>
+      </table>
+    </div>
+    <div class="grp">
+      <h2>events</h2>
+      <div class="evlog" id="evlog"></div>
+    </div>
+  </aside>
+</div>
+
+<script id="pool-document" type="application/json">{"title":"The cut and the throw","subtitle":"three cut angles, the same shot - watch the object ball's path","model_version":"1.4","config":{"ball":{"radius":0.028575,"mass":0.17,"inertia_factor":0.4},"cloth":{"mu_s":0.2,"mu_r":0.01,"mu_sp":0.0117},"ball_ball":{"e_ball":0.95,"mu_ball":0.05},"cushion":{"e_cushion":0.75,"mu_cushion":0.14,"nose_height":0.0363,"nose_tip_radius":0.00635,"rail_top_height":0.0513,"e_rail_structure":0.5,"mu_rail_structure":0.2},"slate":{"e_table":0.6,"settle_speed":0.02,"max_cushion_rebound":0.75},"table":{"length":2.54,"width":1.27,"mouth_corner":0.11582399999999998,"mouth_side":0.12852399999999997,"corner_cut_angle_deg":142,"side_cut_angle_deg":103,"pocket_angle_deg":13.5,"shelf_depth_corner":0.044449999999999996,"shelf_depth_side":0.00635,"drop_radius":0.00635,"e_jaw":0.6,"mu_jaw":0.3,"mu_slate":0.15},"cue":{"e_cue":0.75,"mu_cue":0.6,"cue_mass":0.454,"cue_end_mass":0.012,"cue_length":1.45,"squirt_scale":1,"squirt_curve":[[0,0],[0.1,0.55],[0.2,1.1],[0.3,1.65],[0.4,2.15],[0.5,2.6],[0.7,3.1],[0.9,3.4],[1,3.5]]},"simulation":{"gravity":9.81,"max_sim_time":30,"max_events":200000}},"geometry":{"length":2.54,"width":1.27,"ball_radius":0.028575,"cushion":{"epsilon":0.007724999999999999,"theta":0.27374741756372384,"cos_theta":0.9627645774586023,"rail_top_height":0.0513},"rails":[{"label":"bottom","normal":[0,-1],"tangent":[1,0],"line":0,"spans":[[0.08189993582415066,1.205738],[1.334262,2.4581000641758495]]},{"label":"top","normal":[0,1],"tangent":[1,0],"line":1.27,"spans":[[0.08189993582415066,1.205738],[1.334262,2.4581000641758495]]},{"label":"left","normal":[-1,0],"tangent":[0,1],"line":0,"spans":[[0.08189993582415066,1.1881000641758495]]},{"label":"right","normal":[1,0],"tangent":[0,1],"line":2.54,"spans":[[0.08189993582415066,1.1881000641758495]]}],"pockets":[{"label":"bottom-left corner","kind":"corner","mouth_centre":[0.04094996791207533,0.04094996791207533],"centreline":[-0.7071067811865475,-0.7071067811865475],"width":0.11582399999999998,"facing_angle":0.33161255787892263,"shelf_depth":0.044449999999999996,"jaws":[{"tip":[0.08189993582415066,0],"end":[-0.07797737433864972,-0.07797737433864972],"normal":[-0.4383711467890774,0.898794046299167]},{"tip":[0,0.08189993582415066],"end":[-0.07797737433864972,-0.07797737433864972],"normal":[-0.898794046299167,0.4383711467890774]}]},{"label":"bottom-right corner","kind":"corner","mouth_centre":[2.4990500320879248,0.04094996791207533],"centreline":[0.7071067811865475,-0.7071067811865475],"width":0.11582399999999998,"facing_angle":0.33161255787892263,"shelf_depth":0.044449999999999996,"jaws":[{"tip":[2.4581000641758495,0],"end":[2.6179773743386496,-0.07797737433864967],"normal":[-0.4383711467890774,-0.898794046299167]},{"tip":[2.54,0.08189993582415066],"end":[2.6179773743386496,-0.07797737433864967],"normal":[-0.898794046299167,-0.4383711467890774]}]},{"label":"top-left corner","kind":"corner","mouth_centre":[0.04094996791207533,1.2290500320879247],"centreline":[-0.7071067811865475,0.7071067811865475],"width":0.11582399999999998,"facing_angle":0.33161255787892263,"shelf_depth":0.044449999999999996,"jaws":[{"tip":[0.08189993582415066,1.27],"end":[-0.07797737433864964,1.3479773743386496],"normal":[0.4383711467890774,0.898794046299167]},{"tip":[0,1.1881000641758495],"end":[-0.07797737433864964,1.3479773743386496],"normal":[0.898794046299167,0.4383711467890774]}]},{"label":"top-right corner","kind":"corner","mouth_centre":[2.4990500320879248,1.2290500320879247],"centreline":[0.7071067811865475,0.7071067811865475],"width":0.11582399999999998,"facing_angle":0.33161255787892263,"shelf_depth":0.044449999999999996,"jaws":[{"tip":[2.4581000641758495,1.27],"end":[2.6179773743386496,1.3479773743386496],"normal":[0.4383711467890774,-0.898794046299167]},{"tip":[2.54,1.1881000641758495],"end":[2.6179773743386496,1.3479773743386496],"normal":[0.898794046299167,-0.4383711467890774]}]},{"label":"bottom side","kind":"side","mouth_centre":[1.27,0],"centreline":[0,-1],"width":0.12852399999999997,"facing_angle":0.6719517620178169,"shelf_depth":0.00635,"jaws":[{"tip":[1.334262,0],"end":[1.27,-0.08078840627312993],"normal":[-0.7826081568524139,0.6225146366376195]},{"tip":[1.205738,0],"end":[1.27,-0.08078840627312993],"normal":[-0.7826081568524139,-0.6225146366376195]}]},{"label":"top side","kind":"side","mouth_centre":[1.27,1.27],"centreline":[0,1],"width":0.12852399999999997,"facing_angle":0.6719517620178169,"shelf_depth":0.00635,"jaws":[{"tip":[1.205738,1.27],"end":[1.27,1.35078840627313],"normal":[0.7826081568524139,-0.6225146366376195]},{"tip":[1.334262,1.27],"end":[1.27,1.35078840627313],"normal":[0.7826081568524139,0.6225146366376195]}]}]},"shot_count":3,"shots":[{"name":"cut 15°","note":"cut angle 15°, 0.5 m","description":"A 15 degree cut. The object ball leaves along the line of centres, but the friction of the collision throws it a little to one side - and the throw is a property of the contact, not of the aim.","duration":10.267955862870435,"events":[{"t":0.4635347238558247,"kind":"state","a":0,"b":0,"detail":0},{"t":0.7057343421184324,"kind":"cushion","a":0,"b":3,"detail":0},{"t":0.7687345973118751,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8065347504279406,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8292148422975799,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8428228974193634,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8509877304924336,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8558866303362757,"kind":"slate","a":0,"b":0,"detail":0},{"t":1.2154372967576945,"kind":"state","a":0,"b":0,"detail":0},{"t":3.7805525961685857,"kind":"cushion","a":0,"b":2,"detail":0},{"t":3.8031487836480236,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8167064961356862,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8248411236282838,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8297219001238423,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.940539036318227,"kind":"state","a":0,"b":0,"detail":0},{"t":5.841089708025724,"kind":"state","a":0,"b":0,"detail":0},{"t":10.267955862870435,"kind":"state","a":0,"b":0,"detail":0}],"balls":[{"number":0,"segments":[{"t0":0,"t1":0.4635347238558247,"kind":"slide","p":[0.7,0.45,0.028575],"v":[3.183092948717949,0,0],"a":[-1.9620000000000002,-0,-0],"w":[0,0,0],"wa":[0,171.65354330708664,-10.041732283464569],"pocket":"on-table"},{"t0":0.4635347238558247,"t1":0.7057343421184324,"kind":"roll","p":[1.9646920951354834,0.45,0.028575],"v":[2.2736378205128207,0,0],"a":[-0.0981,-0,-0],"w":[0,79.56737779572425,-4.654691601049869],"wa":[0,-3.4330708661417324,-10.041732283464569],"pocket":"on-table"},{"t0":0.7057343421184324,"t1":0.7687345973118751,"kind":"air","p":[2.5124890021991204,0.45,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.30901625172383623],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.7687345973118751,"t1":0.8065347504279406,"kind":"air","p":[2.415292802358058,0.45227539213089674,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.18540975103430174],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8065347504279406,"t1":0.8292148422975799,"kind":"air","p":[2.356975082453421,0.4536406274094348,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.11124585062058077],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8292148422975799,"t1":0.8428228974193634,"kind":"air","p":[2.3219844505106386,0.4544597685765576,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.06674751037234825],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8428228974193634,"t1":0.8509877304924336,"kind":"air","p":[2.300990071344969,0.45495125327683134,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.04004850622340895],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8509877304924336,"t1":0.8558866303362757,"kind":"air","p":[2.2883934438455675,0.45524614409699554,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.024029103734045494],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8558866303362757,"t1":1.2154372967576945,"kind":"slide","p":[2.2808354673459266,0.4554230785890941,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0],"a":[1.9619779438854945,-0.009303102001402391,-0],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[-0.813919685162064,-171.651613638276,-10.041732283464569],"pocket":"on-table"},{"t0":1.2154372967576945,"t1":3.7805525961685857,"kind":"roll","p":[1.852943087593007,0.467807700925175,0.028575],"v":[-0.8373600962801689,0.0327722525871474,0],"a":[0.09802495383511084,-0.0038364600381588505,-0],"w":[-1.146885479865176,-29.303940377258755,-7.655106483920924],"wa":[0.13425931892069468,3.430444578656547,-10.041732283464569],"pocket":"on-table"},{"t0":3.7805525961685857,"t1":3.8031487836480236,"kind":"air","p":[0.027510997800879622,0.5392507059036876,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.11083429958664238],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8031487836480236,"t1":3.8167064961356862,"kind":"air","p":[0.03626851700604675,0.537312238945983,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.06650057975198555],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8167064961356862,"t1":3.8248411236282838,"kind":"air","p":[0.04152302852914702,0.5361491587713603,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.03990034785119126],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8248411236282838,"t1":3.8297219001238423,"kind":"air","p":[0.04467573544300715,0.5354513106665867,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.023940208710714273],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8297219001238423,"t1":3.940539036318227,"kind":"slide","p":[0.04656735959132323,0.5350326018037225,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0],"a":[-1.9598950292864978,0.09085963998431283,-0],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[7.949224845521683,171.46938138989483,-10.041732283464569],"pocket":"on-table"},{"t0":3.940539036318227,"t1":5.841089708025724,"kind":"roll","p":[0.07748215496374206,0.5260837918510244,0.028575],"v":[0.17037627611684897,-0.0757185410838456,0],"a":[-0.08964574249618884,0.039840316920263116,-0],"w":[2.6498177107207557,5.962424361044583,-25.368583745235366],"wa":[-1.3942368126076332,-3.1372088362620767,-10.041732283464569],"pocket":"on-table"},{"t0":5.841089708025724,"t1":10.267955862870435,"kind":"spin","p":[0.23938652797219168,0.4541303297922172,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,-44.4534047816808],"wa":[0,0,-10.041732283464569],"pocket":"on-table"},{"t0":10.267955862870435,"t1":10.267955862870435,"kind":"rest","p":[0.23938652797219168,0.4541303297922172,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,0],"wa":[0,0,0],"pocket":"on-table"}]},{"number":1,"segments":[{"t0":0,"t1":10.267955862870435,"kind":"rest","p":[1.182962913144534,0.5794095225512603,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,0],"wa":[0,0,0],"pocket":"on-table"}]}],"final":[{"number":0,"x":0.23938652797219168,"y":0.4541303297922172,"pocketed":false},{"number":1,"x":1.182962913144534,"y":0.5794095225512603,"pocketed":false}]},{"name":"cut 30°","note":"cut angle 30°, 0.5 m","description":"A 30 degree cut. The object ball leaves along the line of centres, but the friction of the collision throws it a little to one side - and the throw is a property of the contact, not of the aim.","duration":10.267955862870435,"events":[{"t":0.4635347238558247,"kind":"state","a":0,"b":0,"detail":0},{"t":0.7057343421184324,"kind":"cushion","a":0,"b":3,"detail":0},{"t":0.7687345973118751,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8065347504279406,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8292148422975799,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8428228974193634,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8509877304924336,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8558866303362757,"kind":"slate","a":0,"b":0,"detail":0},{"t":1.2154372967576945,"kind":"state","a":0,"b":0,"detail":0},{"t":3.7805525961685857,"kind":"cushion","a":0,"b":2,"detail":0},{"t":3.8031487836480236,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8167064961356862,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8248411236282838,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8297219001238423,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.940539036318227,"kind":"state","a":0,"b":0,"detail":0},{"t":5.841089708025724,"kind":"state","a":0,"b":0,"detail":0},{"t":10.267955862870435,"kind":"state","a":0,"b":0,"detail":0}],"balls":[{"number":0,"segments":[{"t0":0,"t1":0.4635347238558247,"kind":"slide","p":[0.7,0.45,0.028575],"v":[3.183092948717949,0,0],"a":[-1.9620000000000002,-0,-0],"w":[0,0,0],"wa":[0,171.65354330708664,-10.041732283464569],"pocket":"on-table"},{"t0":0.4635347238558247,"t1":0.7057343421184324,"kind":"roll","p":[1.9646920951354834,0.45,0.028575],"v":[2.2736378205128207,0,0],"a":[-0.0981,-0,-0],"w":[0,79.56737779572425,-4.654691601049869],"wa":[0,-3.4330708661417324,-10.041732283464569],"pocket":"on-table"},{"t0":0.7057343421184324,"t1":0.7687345973118751,"kind":"air","p":[2.5124890021991204,0.45,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.30901625172383623],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.7687345973118751,"t1":0.8065347504279406,"kind":"air","p":[2.415292802358058,0.45227539213089674,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.18540975103430174],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8065347504279406,"t1":0.8292148422975799,"kind":"air","p":[2.356975082453421,0.4536406274094348,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.11124585062058077],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8292148422975799,"t1":0.8428228974193634,"kind":"air","p":[2.3219844505106386,0.4544597685765576,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.06674751037234825],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8428228974193634,"t1":0.8509877304924336,"kind":"air","p":[2.300990071344969,0.45495125327683134,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.04004850622340895],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8509877304924336,"t1":0.8558866303362757,"kind":"air","p":[2.2883934438455675,0.45524614409699554,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.024029103734045494],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8558866303362757,"t1":1.2154372967576945,"kind":"slide","p":[2.2808354673459266,0.4554230785890941,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0],"a":[1.9619779438854945,-0.009303102001402391,-0],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[-0.813919685162064,-171.651613638276,-10.041732283464569],"pocket":"on-table"},{"t0":1.2154372967576945,"t1":3.7805525961685857,"kind":"roll","p":[1.852943087593007,0.467807700925175,0.028575],"v":[-0.8373600962801689,0.0327722525871474,0],"a":[0.09802495383511084,-0.0038364600381588505,-0],"w":[-1.146885479865176,-29.303940377258755,-7.655106483920924],"wa":[0.13425931892069468,3.430444578656547,-10.041732283464569],"pocket":"on-table"},{"t0":3.7805525961685857,"t1":3.8031487836480236,"kind":"air","p":[0.027510997800879622,0.5392507059036876,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.11083429958664238],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8031487836480236,"t1":3.8167064961356862,"kind":"air","p":[0.03626851700604675,0.537312238945983,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.06650057975198555],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8167064961356862,"t1":3.8248411236282838,"kind":"air","p":[0.04152302852914702,0.5361491587713603,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.03990034785119126],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8248411236282838,"t1":3.8297219001238423,"kind":"air","p":[0.04467573544300715,0.5354513106665867,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.023940208710714273],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8297219001238423,"t1":3.940539036318227,"kind":"slide","p":[0.04656735959132323,0.5350326018037225,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0],"a":[-1.9598950292864978,0.09085963998431283,-0],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[7.949224845521683,171.46938138989483,-10.041732283464569],"pocket":"on-table"},{"t0":3.940539036318227,"t1":5.841089708025724,"kind":"roll","p":[0.07748215496374206,0.5260837918510244,0.028575],"v":[0.17037627611684897,-0.0757185410838456,0],"a":[-0.08964574249618884,0.039840316920263116,-0],"w":[2.6498177107207557,5.962424361044583,-25.368583745235366],"wa":[-1.3942368126076332,-3.1372088362620767,-10.041732283464569],"pocket":"on-table"},{"t0":5.841089708025724,"t1":10.267955862870435,"kind":"spin","p":[0.23938652797219168,0.4541303297922172,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,-44.4534047816808],"wa":[0,0,-10.041732283464569],"pocket":"on-table"},{"t0":10.267955862870435,"t1":10.267955862870435,"kind":"rest","p":[0.23938652797219168,0.4541303297922172,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,0],"wa":[0,0,0],"pocket":"on-table"}]},{"number":1,"segments":[{"t0":0,"t1":10.267955862870435,"kind":"rest","p":[1.1330127018922194,0.7,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,0],"wa":[0,0,0],"pocket":"on-table"}]}],"final":[{"number":0,"x":0.23938652797219168,"y":0.4541303297922172,"pocketed":false},{"number":1,"x":1.1330127018922194,"y":0.7,"pocketed":false}]},{"name":"cut 45°","note":"cut angle 45°, 0.5 m","description":"A 45 degree cut. The object ball leaves along the line of centres, but the friction of the collision throws it a little to one side - and the throw is a property of the contact, not of the aim.","duration":10.267955862870435,"events":[{"t":0.4635347238558247,"kind":"state","a":0,"b":0,"detail":0},{"t":0.7057343421184324,"kind":"cushion","a":0,"b":3,"detail":0},{"t":0.7687345973118751,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8065347504279406,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8292148422975799,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8428228974193634,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8509877304924336,"kind":"slate","a":0,"b":0,"detail":0},{"t":0.8558866303362757,"kind":"slate","a":0,"b":0,"detail":0},{"t":1.2154372967576945,"kind":"state","a":0,"b":0,"detail":0},{"t":3.7805525961685857,"kind":"cushion","a":0,"b":2,"detail":0},{"t":3.8031487836480236,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8167064961356862,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8248411236282838,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.8297219001238423,"kind":"slate","a":0,"b":0,"detail":0},{"t":3.940539036318227,"kind":"state","a":0,"b":0,"detail":0},{"t":5.841089708025724,"kind":"state","a":0,"b":0,"detail":0},{"t":10.267955862870435,"kind":"state","a":0,"b":0,"detail":0}],"balls":[{"number":0,"segments":[{"t0":0,"t1":0.4635347238558247,"kind":"slide","p":[0.7,0.45,0.028575],"v":[3.183092948717949,0,0],"a":[-1.9620000000000002,-0,-0],"w":[0,0,0],"wa":[0,171.65354330708664,-10.041732283464569],"pocket":"on-table"},{"t0":0.4635347238558247,"t1":0.7057343421184324,"kind":"roll","p":[1.9646920951354834,0.45,0.028575],"v":[2.2736378205128207,0,0],"a":[-0.0981,-0,-0],"w":[0,79.56737779572425,-4.654691601049869],"wa":[0,-3.4330708661417324,-10.041732283464569],"pocket":"on-table"},{"t0":0.7057343421184324,"t1":0.7687345973118751,"kind":"air","p":[2.5124890021991204,0.45,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.30901625172383623],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.7687345973118751,"t1":0.8065347504279406,"kind":"air","p":[2.415292802358058,0.45227539213089674,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.18540975103430174],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8065347504279406,"t1":0.8292148422975799,"kind":"air","p":[2.356975082453421,0.4536406274094348,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.11124585062058077],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8292148422975799,"t1":0.8428228974193634,"kind":"air","p":[2.3219844505106386,0.4544597685765576,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.06674751037234825],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8428228974193634,"t1":0.8509877304924336,"kind":"air","p":[2.300990071344969,0.45495125327683134,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.04004850622340895],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8509877304924336,"t1":0.8558866303362757,"kind":"air","p":[2.2883934438455675,0.45524614409699554,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0.024029103734045494],"a":[0,0,-9.81],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[0,0,0],"pocket":"on-table"},{"t0":0.8558866303362757,"t1":1.2154372967576945,"kind":"slide","p":[2.2808354673459266,0.4554230785890941,0.028575],"v":[-1.5427905735083236,0.036117189111538064,0],"a":[1.9619779438854945,-0.009303102001402391,-0],"w":[-0.8542401146516444,32.413511698695245,-4.044594949375762],"wa":[-0.813919685162064,-171.651613638276,-10.041732283464569],"pocket":"on-table"},{"t0":1.2154372967576945,"t1":3.7805525961685857,"kind":"roll","p":[1.852943087593007,0.467807700925175,0.028575],"v":[-0.8373600962801689,0.0327722525871474,0],"a":[0.09802495383511084,-0.0038364600381588505,-0],"w":[-1.146885479865176,-29.303940377258755,-7.655106483920924],"wa":[0.13425931892069468,3.430444578656547,-10.041732283464569],"pocket":"on-table"},{"t0":3.7805525961685857,"t1":3.8031487836480236,"kind":"air","p":[0.027510997800879622,0.5392507059036876,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.11083429958664238],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8031487836480236,"t1":3.8167064961356862,"kind":"air","p":[0.03626851700604675,0.537312238945983,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.06650057975198555],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8167064961356862,"t1":3.8248411236282838,"kind":"air","p":[0.04152302852914702,0.5361491587713603,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.03990034785119126],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8248411236282838,"t1":3.8297219001238423,"kind":"air","p":[0.04467573544300715,0.5354513106665867,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0.023940208710714273],"a":[0,0,-9.81],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[0,0,0],"pocket":"on-table"},{"t0":3.8297219001238423,"t1":3.940539036318227,"kind":"slide","p":[0.04656735959132323,0.5350326018037225,0.028575],"v":[0.3875662305039882,-0.08578734618255994,0],"a":[-1.9598950292864978,0.09085963998431283,-0],"w":[1.7689073783747937,-13.039321429606265,-24.255787731151123],"wa":[7.949224845521683,171.46938138989483,-10.041732283464569],"pocket":"on-table"},{"t0":3.940539036318227,"t1":5.841089708025724,"kind":"roll","p":[0.07748215496374206,0.5260837918510244,0.028575],"v":[0.17037627611684897,-0.0757185410838456,0],"a":[-0.08964574249618884,0.039840316920263116,-0],"w":[2.6498177107207557,5.962424361044583,-25.368583745235366],"wa":[-1.3942368126076332,-3.1372088362620767,-10.041732283464569],"pocket":"on-table"},{"t0":5.841089708025724,"t1":10.267955862870435,"kind":"spin","p":[0.23938652797219168,0.4541303297922172,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,-44.4534047816808],"wa":[0,0,-10.041732283464569],"pocket":"on-table"},{"t0":10.267955862870435,"t1":10.267955862870435,"kind":"rest","p":[0.23938652797219168,0.4541303297922172,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,0],"wa":[0,0,0],"pocket":"on-table"}]},{"number":1,"segments":[{"t0":0,"t1":10.267955862870435,"kind":"rest","p":[1.0535533905932737,0.8035533905932737,0.028575],"v":[0,0,0],"a":[0,0,0],"w":[0,0,0],"wa":[0,0,0],"pocket":"on-table"}]}],"final":[{"number":0,"x":0.23938652797219168,"y":0.4541303297922172,"pocketed":false},{"number":1,"x":1.0535533905932737,"y":0.8035533905932737,"pocketed":false}]}]}</script>
+<script>
+"use strict";
+const DOC = JSON.parse(document.getElementById("pool-document").textContent);
+const G = DOC.geometry;
+const SHOTS = DOC.shots;
+
+const COLORS = {
+  0:"#f4f2e8", 1:"#f2c230", 2:"#2f6fd0", 3:"#cf2f2f", 4:"#7b3fa0",
+  5:"#e2701a", 6:"#1f8a4c", 7:"#8a2b2b", 8:"#151515", 9:"#f2c230", 10:"#2f6fd0",
+  11:"#cf2f2f", 12:"#7b3fa0", 13:"#e2701a", 14:"#1f8a4c", 15:"#8a2b2b"
+};
+const EVENT_COLOR = {
+  "ball-ball":"#7ee08a", "cushion":"#ffd166", "jaw":"#ff9f43", "slate":"#c792ea",
+  "state":"#7f8c98", "pocket-enter":"#ff7a7a", "pocket-drop":"#ff4d4d",
+  "pocket-exit":"#ff9f9f", "off-table":"#ff2e63"
+};
+
+const canvas = document.getElementById("table");
+const ctx = canvas.getContext("2d");
+const dial = document.getElementById("dial");
+const dctx = dial.getContext("2d");
+// The table never changes, so it is drawn once and blitted every frame.
+const tableCache = document.createElement("canvas");
+const tctx = tableCache.getContext("2d");
+
+let shotIndex = 0;
+let time = 0;
+let playing = true;
+let speed = 1;
+let showTrails = true;
+let showVectors = false;
+let overlay = false;
+let metrics = null;
+let dpr = 1;
+const trailCache = new Map();
+
+document.getElementById("title").textContent = DOC.title;
+document.getElementById("subtitle").textContent = DOC.subtitle || "";
+document.getElementById("tag").textContent = "model " + DOC.model_version + " · " + DOC.shot_count + " shots";
+
+/* ------------------------------------------------------------------ maths */
+
+/** The position of a ball inside a segment, exactly like the core does it. */
+function positionAt(segment, t) {
+  let dt = t - segment.t0;
+  const span = segment.t1 - segment.t0;
+  if (dt < 0) dt = 0; else if (dt > span) dt = span;
+  const h = 0.5 * dt * dt;
+  return [ segment.p[0] + (segment.v[0]*dt + segment.a[0]*h),
+           segment.p[1] + (segment.v[1]*dt + segment.a[1]*h),
+           segment.p[2] + (segment.v[2]*dt + segment.a[2]*h) ];
+}
+
+function velocityAt(segment, t) {
+  let dt = t - segment.t0;
+  const span = segment.t1 - segment.t0;
+  if (dt < 0) dt = 0; else if (dt > span) dt = span;
+  return [ segment.v[0] + segment.a[0]*dt, segment.v[1] + segment.a[1]*dt, segment.v[2] + segment.a[2]*dt ];
+}
+
+function angularAt(segment, t) {
+  let dt = t - segment.t0;
+  const span = segment.t1 - segment.t0;
+  if (dt < 0) dt = 0; else if (dt > span) dt = span;
+  return [ segment.w[0] + segment.wa[0]*dt, segment.w[1] + segment.wa[1]*dt, segment.w[2] + segment.wa[2]*dt ];
+}
+
+/** The segment of a ball's path that covers the time `t`, or null. */
+function segmentAt(segments, t) {
+  let lo = 0, hi = segments.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (segments[mid].t0 <= t) lo = mid + 1; else hi = mid;
+  }
+  if (lo === 0) return null;
+  const s = segments[lo - 1];
+  return (t <= s.t1 + 1e-12) ? s : null;
+}
+
+/** The state of a ball at the time `t`, or null when it was out of play. */
+function sampleBall(ball, t) {
+  const s = segmentAt(ball.segments, t);
+  if (!s) return null;
+  return { p: positionAt(s, t), v: velocityAt(s, t), w: angularAt(s, t), kind: s.kind, pocket: s.pocket };
+}
+
+/* ----------------------------------------------------------------- layout */
+
+function computeMetrics() {
+  const pad = 0.075;
+  const w = G.length + 2 * pad;
+  const h = G.width + 2 * pad;
+  // The contexts are scaled by the device pixel ratio, so the layout is in CSS
+  // pixels and the scale is a CSS-pixel scale.
+  const cssWidth = canvas.width / dpr;
+  const cssHeight = canvas.height / dpr;
+  const scale = Math.min(cssWidth / w, cssHeight / h);
+  return { scale, ox: (cssWidth - w * scale) / 2, oy: (cssHeight - h * scale) / 2,
+           cssWidth, cssHeight };
+}
+const TX = x => metrics.ox + x * metrics.scale;
+const TY = y => metrics.oy + (G.width - y) * metrics.scale;
+
+/* ------------------------------------------------------------------ table */
+
+function drawTable() {
+  const s = metrics.scale;
+  tctx.clearRect(0, 0, tableCache.width, tableCache.height);
+  tctx.fillStyle = "#12161c";
+  tctx.fillRect(0, 0, tableCache.width, tableCache.height);
+
+  // The slate: everything outside the bed.
+  tctx.fillStyle = "#6b4f33";
+  tctx.fillRect(TX(-0.075), TY(G.width + 0.075), (G.length + 0.15) * s, (G.width + 0.15) * s);
+  tctx.fillStyle = "#5a4229";
+  tctx.fillRect(TX(-0.075), TY(G.width + 0.075), (G.length + 0.15) * s, 0.02 * s);
+
+  // The bed.
+  const grad = tctx.createLinearGradient(0, TY(G.width), 0, TY(0));
+  grad.addColorStop(0, "#226e4d");
+  grad.addColorStop(1, "#17573c");
+  tctx.fillStyle = grad;
+  tctx.fillRect(TX(0), TY(G.width), G.length * s, G.width * s);
+
+  // The pockets: the shelf behind the mouth line and the hole behind it.
+  for (const p of G.pockets) {
+    const tipA = p.jaws[0].tip, tipB = p.jaws[1].tip, throat = p.jaws[1].end;
+    tctx.beginPath();
+    tctx.moveTo(TX(tipA[0]), TY(tipA[1]));
+    tctx.lineTo(TX(tipB[0]), TY(tipB[1]));
+    tctx.lineTo(TX(throat[0]), TY(throat[1]));
+    tctx.closePath();
+    tctx.fillStyle = "#0c0f12";
+    tctx.fill();
+    const drop = [ p.mouth_centre[0] + p.centreline[0] * (p.shelf_depth + 0.02),
+                   p.mouth_centre[1] + p.centreline[1] * (p.shelf_depth + 0.02) ];
+    tctx.beginPath();
+    tctx.arc(TX(drop[0]), TY(drop[1]), 0.055 * s, 0, Math.PI * 2);
+    tctx.fillStyle = "#080a0c";
+    tctx.fill();
+  }
+
+  // The cushion noses: a rubber band on the outside of every nose line.
+  tctx.lineCap = "butt";
+  for (const rail of G.rails) {
+    for (const span of rail.spans) {
+      const a = [ rail.normal[0] * rail.line + rail.tangent[0] * span[0],
+                  rail.normal[1] * rail.line + rail.tangent[1] * span[0] ];
+      const b = [ rail.normal[0] * rail.line + rail.tangent[0] * span[1],
+                  rail.normal[1] * rail.line + rail.tangent[1] * span[1] ];
+      tctx.beginPath();
+      tctx.moveTo(TX(a[0]), TY(a[1]));
+      tctx.lineTo(TX(b[0]), TY(b[1]));
+      tctx.strokeStyle = "#1d6b4b";
+      tctx.lineWidth = 0.05 * s;
+      tctx.stroke();
+      tctx.beginPath();
+      tctx.moveTo(TX(a[0]), TY(a[1]));
+      tctx.lineTo(TX(b[0]), TY(b[1]));
+      tctx.strokeStyle = "#2c8f66";
+      tctx.lineWidth = 0.016 * s;
+      tctx.stroke();
+    }
+  }
+
+  // The pocket facings: the jaws, drawn as rubber.
+  tctx.strokeStyle = "#1d6b4b";
+  tctx.lineWidth = 0.016 * s;
+  for (const p of G.pockets) {
+    for (const jaw of p.jaws) {
+      tctx.beginPath();
+      tctx.moveTo(TX(jaw.tip[0]), TY(jaw.tip[1]));
+      tctx.lineTo(TX(jaw.end[0]), TY(jaw.end[1]));
+      tctx.stroke();
+    }
+  }
+
+  // The spots.
+  tctx.fillStyle = "rgba(255,255,255,.13)";
+  for (const spot of [[ G.length / 4, G.width / 2 ], [ G.length * 0.75, G.width / 2 ]]) {
+    tctx.beginPath();
+    tctx.arc(TX(spot[0]), TY(spot[1]), 0.008 * s, 0, Math.PI * 2);
+    tctx.fill();
+  }
+}
+
+/* ------------------------------------------------------------------ balls */
+
+function drawBall(x, y, r, number, alpha, z) {
+  const height = z || 0;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const px = TX(x), py = TY(y), pr = r * metrics.scale * (1 - height * 1.1);
+  // The shadow: it stays on the bed and it fades as the ball rises.
+  ctx.globalAlpha = alpha * Math.max(0, 0.38 - height * 3.0);
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.ellipse(px + height * 14, py + height * 10, r * metrics.scale, r * metrics.scale * 0.9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(px - pr * 0.35, py - pr * 0.4, pr * 0.1, px, py, pr);
+  g.addColorStop(0, "#ffffff");
+  g.addColorStop(0.22, COLORS[number]);
+  g.addColorStop(1, "#000000");
+  ctx.beginPath();
+  ctx.arc(px, py, pr, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  if (number >= 9) {
+    // The stripe of the nine ball and up.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = "#f4f2e8";
+    ctx.fillRect(px - pr, py - pr * 0.42, pr * 2, pr * 0.84);
+    ctx.restore();
+  }
+  ctx.strokeStyle = "rgba(0,0,0,.55)";
+  ctx.lineWidth = Math.max(1, pr * 0.06);
+  ctx.beginPath();
+  ctx.arc(px, py, pr, 0, Math.PI * 2);
+  ctx.stroke();
+  if (number !== 0) {
+    ctx.fillStyle = (number === 8 || number > 8) ? "#f4f2e8" : "#14181d";
+    ctx.font = (pr * 1.05).toFixed(1) + "px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(number), px, py);
+  }
+  ctx.restore();
+}
+
+/* ----------------------------------------------------------------- trails */
+
+function trailFor(shot, ballIndex) {
+  const key = shot.name + "#" + ballIndex;
+  if (trailCache.has(key)) return trailCache.get(key);
+  const segments = shot.balls[ballIndex].segments;
+  const points = [];
+  for (const s of segments) {
+    const span = s.t1 - s.t0;
+    const steps = Math.max(2, Math.min(30, Math.ceil(span * 90)));
+    for (let i = 0; i <= steps; i++) {
+      const t = s.t0 + span * i / steps;
+      points.push({ t, p: positionAt(s, t) });
+    }
+  }
+  trailCache.set(key, points);
+  return points;
+}
+
+function drawTrail(points, until, colour, width, alpha) {
+  if (points.length < 2) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = width;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  let started = false;
+  for (const pt of points) {
+    if (pt.t > until) break;
+    if (!started) { ctx.moveTo(TX(pt.p[0]), TY(pt.p[1])); started = true; }
+    else ctx.lineTo(TX(pt.p[0]), TY(pt.p[1]));
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ frame */
+
+function drawFrame() {
+  const shot = SHOTS[shotIndex];
+  ctx.drawImage(tableCache, 0, 0, metrics.cssWidth, metrics.cssHeight);
+
+  if (overlay) {
+    // The path of every ball of every other shot, so the shots can be compared.
+    SHOTS.forEach((other, index) => {
+      if (index === shotIndex) return;
+      other.balls.forEach((ball, ballIndex) => {
+        drawTrail(trailFor(other, ballIndex), time, COLORS[ball.number] || "#8899aa", 1.1, 0.3);
+      });
+    });
+  }
+
+  if (showTrails) {
+    shot.balls.forEach((ball, index) => {
+      const colour = index === 0 ? "rgba(244,242,232,.5)" : COLORS[ball.number];
+      drawTrail(trailFor(shot, index), time, colour || "#888", 1.4, index === 0 ? 0.75 : 0.4);
+    });
+  }
+
+  const radius = G.ball_radius;
+  shot.balls.forEach((ball, index) => {
+    const state = sampleBall(ball, time);
+    if (!state) return;
+    if (state.pocket === "pocketed" || state.pocket === "off-table") return;
+    drawBall(state.p[0], state.p[1], radius, ball.number, 1, state.p[2] - G.ball_radius);
+    if (showVectors) {
+      const speed = Math.hypot(state.v[0], state.v[1]);
+      if (speed > 0.01) {
+        const k = 0.08 / Math.max(speed, 0.4);
+        ctx.strokeStyle = "rgba(78,161,255,.9)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(TX(state.p[0]), TY(state.p[1]));
+        ctx.lineTo(TX(state.p[0] + state.v[0] * k), TY(state.p[1] + state.v[1] * k));
+        ctx.stroke();
+      }
+    }
+  });
+
+  // The impact markers of the events that have happened.
+  for (const ev of shot.events) {
+    if (ev.t > time) break;
+    const fade = Math.max(0, 1 - (time - ev.t) / 0.35);
+    if (fade <= 0) continue;
+    const colour = EVENT_COLOR[ev.kind] || "#ffffff";
+    for (const idx of [ev.a, ev.b]) {
+      const ball = shot.balls[idx];
+      if (!ball) continue;
+      const st = sampleBall(ball, ev.t);
+      if (!st) continue;
+      ctx.save();
+      ctx.globalAlpha = fade * 0.9;
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(TX(st.p[0]), TY(st.p[1]), radius * metrics.scale * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+/* ------------------------------------------------------------------- dial */
+
+function drawDial(shot) {
+  const w = dial.width, h = dial.height, cx = w / 2, cy = h / 2, r = w * 0.36;
+  dctx.clearRect(0, 0, w, h);
+  dctx.fillStyle = "#0c1015";
+  dctx.fillRect(0, 0, w, h);
+  const state = sampleBall(shot.balls[0], time);
+  dctx.strokeStyle = "#2a3340";
+  dctx.lineWidth = 1;
+  dctx.beginPath();
+  dctx.arc(cx, cy, r, 0, Math.PI * 2);
+  dctx.stroke();
+
+  const speed = state ? Math.hypot(state.v[0], state.v[1]) : 0;
+  const wz = state ? state.w[2] : 0;
+  const wy = state ? state.w[1] : 0;
+
+  // The direction of travel.
+  if (state && speed > 0.005) {
+    const ux = state.v[0] / speed, uy = state.v[1] / speed;
+    dctx.strokeStyle = "#7ee08a";
+    dctx.lineWidth = 2;
+    dctx.beginPath();
+    dctx.moveTo(cx, cy);
+    dctx.lineTo(cx + ux * r * 0.9, cy - uy * r * 0.9);
+    dctx.stroke();
+    dctx.beginPath();
+    dctx.arc(cx + ux * r * 0.9, cy - uy * r * 0.9, 3, 0, Math.PI * 2);
+    dctx.fillStyle = "#7ee08a";
+    dctx.fill();
+  }
+
+  // The side spin: a curved arrow around the ball.
+  if (Math.abs(wz) > 0.5) {
+    const dir = wz > 0 ? 1 : -1;
+    dctx.strokeStyle = "#ffd166";
+    dctx.lineWidth = 2;
+    dctx.beginPath();
+    dctx.arc(cx, cy, r * 0.62, dir > 0 ? -0.6 : Math.PI - 0.6, dir > 0 ? Math.PI - 0.6 : Math.PI + 0.6, dir < 0);
+    dctx.stroke();
+    const a = dir > 0 ? Math.PI - 0.6 : Math.PI + 0.6;
+    const ex = cx + Math.cos(a) * r * 0.62, ey = cy + Math.sin(a) * r * 0.62;
+    dctx.fillStyle = "#ffd166";
+    dctx.beginPath();
+    dctx.arc(ex, ey, 3, 0, Math.PI * 2);
+    dctx.fill();
+  }
+
+  // The top and bottom spin: a dot above or below the centre.
+  if (Math.abs(wy) > 0.5) {
+    dctx.fillStyle = "#4ea1ff";
+    dctx.beginPath();
+    dctx.arc(cx, cy + (wy > 0 ? -r * 0.55 : r * 0.55), 4, 0, Math.PI * 2);
+    dctx.fill();
+  }
+
+  dctx.fillStyle = "#8a97a5";
+  dctx.font = "10px ui-monospace, monospace";
+  dctx.textAlign = "center";
+  dctx.fillText(state ? state.kind : "-", cx, h - 6);
+}
+
+/* --------------------------------------------------------------- readouts */
+
+function updateReadouts() {
+  const shot = SHOTS[shotIndex];
+  document.getElementById("clock").textContent = "t = " + time.toFixed(3) + " s";
+  document.getElementById("scrub").value = String(shot.duration > 0 ? Math.round(time / shot.duration * 1000) : 0);
+
+  let done = 0;
+  for (const ev of shot.events) { if (ev.t <= time) done++; else break; }
+  document.getElementById("d-speed").textContent = "0.00 m/s";
+  document.getElementById("d-state").textContent = "—";
+  document.getElementById("d-wz").textContent = "0.0 rad/s";
+  document.getElementById("d-wy").textContent = "0.0 rad/s";
+
+  const rows = [];
+  shot.balls.forEach((ball, index) => {
+    const st = sampleBall(ball, time);
+    const speed = st ? Math.hypot(st.v[0], st.v[1]) : 0;
+    const label = index === 0 ? "cue" : String(ball.number);
+    const state = st ? (st.pocket === "pocketed" ? "pocketed" : st.pocket === "off-table" ? "off table" : st.kind) : "—";
+    rows.push('<tr><td><span class="swatch" style="background:' + (COLORS[ball.number] || "#888") + '"></span>' +
+              label + "</td><td class=\"n\">" + speed.toFixed(2) + "</td><td class=\"n\">" + state + "</td></tr>");
+    if (index === 0 && st) {
+      document.getElementById("d-speed").textContent = speed.toFixed(2) + " m/s";
+      document.getElementById("d-state").textContent = st.kind;
+      document.getElementById("d-wz").textContent = st.w[2].toFixed(1) + " rad/s";
+      document.getElementById("d-wy").textContent = st.w[1].toFixed(1) + " rad/s";
+    }
+  });
+  document.getElementById("ballrows").innerHTML = rows.join("");
+  drawDial(shot);
+}
+
+/* --------------------------------------------------------------- controls */
+
+function selectShot(index) {
+  shotIndex = Math.max(0, Math.min(SHOTS.length - 1, index));
+  time = 0;
+  trailCache.clear();
+  const buttons = document.querySelectorAll("#shots button");
+  buttons.forEach((b, i) => b.classList.toggle("on", i === shotIndex));
+  document.getElementById("description").textContent = SHOTS[shotIndex].description || "";
+  buildTicks();
+  buildEventLog();
+}
+
+function buildShots() {
+  const host = document.getElementById("shots");
+  host.innerHTML = "";
+  SHOTS.forEach((shot, index) => {
+    const b = document.createElement("button");
+    b.innerHTML = shot.name + "<small>" + (shot.note || "") + "</small>";
+    b.onclick = () => selectShot(index);
+    host.appendChild(b);
+  });
+}
+
+function buildTicks() {
+  const shot = SHOTS[shotIndex];
+  const host = document.getElementById("ticks");
+  host.innerHTML = "";
+  if (shot.duration <= 0) return;
+  for (const ev of shot.events) {
+    const tick = document.createElement("div");
+    tick.className = "tick";
+    tick.style.left = (ev.t / shot.duration * 100) + "%";
+    tick.style.background = EVENT_COLOR[ev.kind] || "#ffffff";
+    host.appendChild(tick);
+  }
+}
+
+function buildEventLog() {
+  const shot = SHOTS[shotIndex];
+  const host = document.getElementById("evlog");
+  host.innerHTML = shot.events.map((ev, i) =>
+    '<div class="ev" data-i="' + i + '"><span class="t">' + ev.t.toFixed(3) + 's</span><span class="k">' +
+    eventText(shot, ev) + "</span></div>").join("");
+  host.querySelectorAll(".ev").forEach(row => {
+    row.onclick = () => {
+      time = SHOTS[shotIndex].events[Number(row.dataset.i)].t;
+      playing = false;
+      document.getElementById("play").textContent = "play";
+    };
+  });
+}
+
+/** What an event did, in words. The event carries ball *indices*, not numbers. */
+function eventText(shot, ev) {
+  const number = index => (shot.balls[index] ? shot.balls[index].number : index);
+  const rail = index => (G.rails[index] ? G.rails[index].label : index);
+  const pocket = index => (G.pockets[index] ? G.pockets[index].label : index);
+  switch (ev.kind) {
+    case "ball-ball": return "ball " + number(ev.a) + " hits ball " + number(ev.b);
+    case "cushion": return "ball " + number(ev.a) + " on the " + rail(ev.b) + " rail";
+    case "jaw": return "ball " + number(ev.a) + " on the " + pocket(ev.b) + " jaw";
+    case "slate": return "ball " + number(ev.a) + " lands on the slate";
+    case "state": return "ball " + number(ev.a) + " changes its motion";
+    case "pocket-enter": return "ball " + number(ev.a) + " enters the " + pocket(ev.b);
+    case "pocket-drop": return "ball " + number(ev.a) + " drops in the " + pocket(ev.b);
+    case "pocket-exit": return "ball " + number(ev.a) + " rattles out of the " + pocket(ev.b);
+    case "off-table": return "ball " + number(ev.a) + " leaves the table";
+    default: return ev.kind;
+  }
+}
+
+document.getElementById("play").onclick = () => {
+  playing = !playing;
+  document.getElementById("play").textContent = playing ? "pause" : "play";
+};
+document.getElementById("end").onclick = () => {
+  time = SHOTS[shotIndex].duration;
+  playing = false;
+  document.getElementById("play").textContent = "play";
+};
+document.getElementById("speed").onchange = e => { speed = Number(e.target.value); };
+document.getElementById("scrub").oninput = e => {
+  time = Number(e.target.value) / 1000 * SHOTS[shotIndex].duration;
+};
+document.getElementById("t-trails").onclick = e => {
+  showTrails = !showTrails;
+  e.target.classList.toggle("on", showTrails);
+};
+document.getElementById("t-vectors").onclick = e => {
+  showVectors = !showVectors;
+  e.target.classList.toggle("on", showVectors);
+};
+document.getElementById("t-overlay").onclick = e => {
+  overlay = !overlay;
+  e.target.classList.toggle("on", overlay);
+};
+window.addEventListener("keydown", e => {
+  const shot = SHOTS[shotIndex];
+  if (e.code === "Space") {
+    e.preventDefault();
+    document.getElementById("play").click();
+  } else if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
+    e.preventDefault();
+    const forward = e.code === "ArrowRight";
+    const times = shot.events.map(ev => ev.t);
+    let next = forward ? times.find(t => t > time + 1e-9) : [...times].reverse().find(t => t < time - 1e-9);
+    time = next === undefined ? (forward ? shot.duration : 0) : next;
+    playing = false;
+    document.getElementById("play").textContent = "play";
+  }
+});
+
+/* ------------------------------------------------------------------ loop */
+
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  const wrap = canvas.parentElement;
+  const width = Math.max(320, wrap.clientWidth);
+  const height = Math.max(240, Math.floor(width * (G.width + 0.15) / (G.length + 0.15)));
+  canvas.style.width = width + "px";
+  canvas.style.height = height + "px";
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  tableCache.width = canvas.width;
+  tableCache.height = canvas.height;
+  tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  metrics = computeMetrics();
+  drawTable();
+}
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const shot = SHOTS[shotIndex];
+  if (playing) {
+    time += dt * speed;
+    if (time >= shot.duration) { time = shot.duration; playing = false; document.getElementById("play").textContent = "play"; }
+  }
+  drawFrame();
+  updateReadouts();
+  requestAnimationFrame(loop);
+}
+
+buildShots();
+selectShot(0);
+window.addEventListener("resize", resize);
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

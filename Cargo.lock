@@ -21,3 +21,10 @@ version = "0.1.0"
 dependencies = [
  "libm",
 ]
+
+[[package]]
+name = "pool-visual"
+version = "0.1.0"
+dependencies = [
+ "pool-core",
+]
