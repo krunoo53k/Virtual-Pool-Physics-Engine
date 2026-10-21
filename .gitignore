@@ -26,3 +26,9 @@ rustc-ice-*.txt
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# The Godot project's own files: the built extension and the editor's cache.
+godot-project/bin/*.so
+godot-project/bin/*.dll
+godot-project/bin/*.dylib
+godot-project/.godot/

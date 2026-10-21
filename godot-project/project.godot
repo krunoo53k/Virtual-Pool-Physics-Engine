@@ -1,0 +1,17 @@
+; The Godot project of the virtual pool game.
+;
+; The physics is not in here: it is in the Rust extension in `pool-godot`, and
+; this project is the game around it.
+
+config_version=5
+
+[application]
+
+config/name="Virtual Pool"
+config/description="A deterministic 8-ball pool game on the virtual pool physics core."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6", "Forward Plus")
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
