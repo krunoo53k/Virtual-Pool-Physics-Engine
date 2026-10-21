@@ -13,8 +13,13 @@ G = 9.81
 E_BALL = 0.95         # ball-ball COR
 MU_BALL = 0.05        # ball-ball friction
 MU_S = 0.20            # ball-cloth sliding friction
+MU_CUSHION = 0.14      # cushion sliding friction
 MU_R = 0.01            # ball-cloth rolling friction
-EPS_R = 0.15           # cushion contact height above the ball centre, in R
+NOSE_APEX = 0.0363       # nose apex above the bed, m (63.5% of ball diameter)
+NOSE_ARC_R = 0.00635     # nose tip radius, m (1/4")
+DELTA = NOSE_APEX - NOSE_ARC_R - R      # vertical offset: ball centre -> nose arc centre
+EPS_R = (R * DELTA/(R + NOSE_ARC_R))/R  # derived contact height above the ball centre, in R
+SIN_T = DELTA/(R + NOSE_ARC_R)          # tilt of the contact normal (sin theta)
 I = (2/5)*M*R*R
 
 OUT = os.path.dirname(os.path.abspath(__file__))
@@ -54,8 +59,14 @@ def ball_ball(pA, pB, vA, vB, wA=0.0, wB=0.0, e=E_BALL, mu=MU_BALL):
                 n=n, t=t, sticking=(M*abs(u_t)/7 <= mu*J_n))
 
 
-def cushion3(v, w, sin_t, e=0.75, mu=0.14):
-    """Doc section 6.1/6.3, in 3D. v, w are 3-vectors; the rail normal is +x."""
+def cushion3(v, w, sin_t=None, e=0.75, mu=0.14):
+    """Doc section 5.1/5.3, in 3D. v, w are 3-vectors; the rail normal is +x.
+
+    sin_t defaults to the value derived from the nose profile geometry
+    (line of centres), which is how the simulator is meant to work.
+    """
+    if sin_t is None:
+        sin_t = SIN_T
     th = math.asin(sin_t); ct = math.cos(th)
     # local frame: x = towards the rail, y = along the rail, z = up
     y = (0.0, 1.0, 0.0)
@@ -249,14 +260,21 @@ def fixture_cushion():
     v0 = 2.0
     v = (v0, 0.0, 0.0); w = (0.0, v0/R, 0.0)
     e_table = 0.60
-    for eps_R in (0.04, 0.10, 0.139, 0.15, 0.27, 0.40):
+    # the first row is the reference profile: eps is derived from the nose geometry
+    for label, eps_R in (("WPA reference nose (derived)", EPS_R),
+                         ("flat face at 0.10R", 0.10),
+                         ("flip threshold", MU_CUSHION/math.sqrt(1+MU_CUSHION**2)),
+                         ("flat face at 0.15R", 0.15),
+                         ("nose apex taken as contact height", 0.27),
+                         ("Mathavan geometry", 0.40)):
         r = cushion3(v, w, eps_R)
         vz = r["v"][2]
         # if the ball is pressed into the slate it rebounds with e_table; if it is launched
         # upward it simply flies its ballistic arc
         up = vz if vz > 0 else e_table*abs(vz)
         flip.append({
-            "eps_over_R": eps_R,
+            "profile": label,
+            "eps_over_R": round(eps_R, 6),
             "rebound_vz": round(vz, 6),
             "direction": "up" if vz > 0 else "down",
             "hop_height_mm": round((up**2)/(2*G)*1000, 3),
@@ -272,7 +290,9 @@ def fixture_cushion():
         "setup": {
             "balls": [{"id": "b0", "position": [0.5, 0.5],
                        "velocity": [2.0, 0.0], "angular_velocity": [0.0, 2.0/R, 0.0]}],
-            "params": {"eps_over_R": EPS_R, "e_cushion": 0.75, "mu_cushion": 0.14},
+            "params": {"nose_apex_height": NOSE_APEX, "nose_arc_radius": NOSE_ARC_R,
+                       "e_cushion": 0.75, "mu_cushion": MU_CUSHION,
+                       "derived_eps_over_R": EPS_R},
             "note": "the incoming velocity makes `incidence_angle` with the rail normal (+x); "
                     "the ball is rolling, so omega = (k x v)/R",
         },
@@ -291,8 +311,14 @@ def fixture_cushion():
              "statement": "the outgoing vertical velocity changes sign at "
                           "eps_c/R = mu_cushion/sqrt(1 + mu_cushion^2) = 0.139 for "
                           "mu_cushion = 0.14; above it the ball is pressed into the slate, "
-                          "below it the ball is launched upward",
+                          "below it the ball is launched upward. The WPA reference profile "
+                          "derives eps = 0.039 R and must therefore launch the ball upward",
              "tolerance": 1e-9, "unit": "m/s"},
+            {"quantity": "eps_derived_from_nose_geometry",
+             "statement": "the contact height comes from the line of centres: "
+                          "eps = R*(apex - arc_radius - R)/(R + arc_radius), so it is an "
+                          "output of the profile rather than a tuned input",
+             "tolerance": 1e-9, "unit": "m"},
         ],
     }
 

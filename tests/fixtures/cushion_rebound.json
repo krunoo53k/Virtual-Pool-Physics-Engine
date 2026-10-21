@@ -26,67 +26,69 @@
       }
     ],
     "params": {
-      "eps_over_R": 0.15,
+      "nose_apex_height": 0.0363,
+      "nose_arc_radius": 0.00635,
       "e_cushion": 0.75,
-      "mu_cushion": 0.14
+      "mu_cushion": 0.14,
+      "derived_eps_over_R": 0.03937007874015742
     },
     "note": "the incoming velocity makes `incidence_angle` with the rail normal (+x); the ball is rolling, so omega = (k x v)/R"
   },
   "expectations": [
     {
       "incidence_angle": 10,
-      "rebound_speed": 1.493731,
-      "rebound_angle": 10.1974,
-      "rebound_vz": -0.046642,
+      "rebound_speed": 1.513687,
+      "rebound_angle": 10.0276,
+      "rebound_vz": 0.338891,
       "sticking": false
     },
     {
       "incidence_angle": 20,
-      "rebound_speed": 1.496101,
-      "rebound_angle": 20.6797,
-      "rebound_vz": -0.064811,
+      "rebound_speed": 1.515898,
+      "rebound_angle": 20.3306,
+      "rebound_vz": 0.302625,
       "sticking": false
     },
     {
       "incidence_angle": 30,
-      "rebound_speed": 1.508825,
-      "rebound_angle": 31.5831,
-      "rebound_vz": -0.090288,
+      "rebound_speed": 1.527703,
+      "rebound_angle": 31.0509,
+      "rebound_vz": 0.247689,
       "sticking": false
     },
     {
       "incidence_angle": 40,
-      "rebound_speed": 1.541524,
-      "rebound_angle": 42.7824,
-      "rebound_vz": -0.116549,
+      "rebound_speed": 1.558139,
+      "rebound_angle": 42.0934,
+      "rebound_vz": 0.181623,
       "sticking": false
     },
     {
       "incidence_angle": 50,
-      "rebound_speed": 1.601126,
-      "rebound_angle": 53.8907,
-      "rebound_vz": -0.135744,
+      "rebound_speed": 1.613994,
+      "rebound_angle": 53.1185,
+      "rebound_vz": 0.113638,
       "sticking": false
     },
     {
       "incidence_angle": 60,
-      "rebound_speed": 1.687738,
-      "rebound_angle": 64.4171,
-      "rebound_vz": -0.139786,
+      "rebound_speed": 1.695931,
+      "rebound_angle": 63.6741,
+      "rebound_vz": 0.053466,
       "sticking": false
     },
     {
       "incidence_angle": 70,
-      "rebound_speed": 1.793241,
-      "rebound_angle": 73.9896,
-      "rebound_vz": -0.1215,
+      "rebound_speed": 1.796936,
+      "rebound_angle": 73.3978,
+      "rebound_vz": 0.010138,
       "sticking": false
     },
     {
       "incidence_angle": 80,
-      "rebound_speed": 1.903127,
-      "rebound_angle": 82.4824,
-      "rebound_vz": -0.075691,
+      "rebound_speed": 1.903739,
+      "rebound_angle": 82.147,
+      "rebound_vz": -0.009157,
       "sticking": false
     },
     {
@@ -99,36 +101,42 @@
   ],
   "vertical_flip": [
     {
-      "eps_over_R": 0.04,
-      "rebound_vz": 0.349328,
+      "profile": "WPA reference nose (derived)",
+      "eps_over_R": 0.03937,
+      "rebound_vz": 0.351552,
       "direction": "up",
-      "hop_height_mm": 6.22
+      "hop_height_mm": 6.299
     },
     {
+      "profile": "flat face at 0.10R",
       "eps_over_R": 0.1,
       "rebound_vz": 0.136854,
       "direction": "up",
       "hop_height_mm": 0.955
     },
     {
-      "eps_over_R": 0.139,
-      "rebound_vz": -0.001245,
+      "profile": "flip threshold",
+      "eps_over_R": 0.138648,
+      "rebound_vz": 0.0,
       "direction": "down",
       "hop_height_mm": 0.0
     },
     {
+      "profile": "flat face at 0.15R",
       "eps_over_R": 0.15,
       "rebound_vz": -0.040085,
       "direction": "down",
       "hop_height_mm": 0.029
     },
     {
+      "profile": "nose apex taken as contact height",
       "eps_over_R": 0.27,
       "rebound_vz": -0.455624,
       "direction": "down",
       "hop_height_mm": 3.809
     },
     {
+      "profile": "Mathavan geometry",
       "eps_over_R": 0.4,
       "rebound_vz": -0.871521,
       "direction": "down",
@@ -150,9 +158,15 @@
     },
     {
       "quantity": "vertical_flip_threshold",
-      "statement": "the outgoing vertical velocity changes sign at eps_c/R = mu_cushion/sqrt(1 + mu_cushion^2) = 0.139 for mu_cushion = 0.14; above it the ball is pressed into the slate, below it the ball is launched upward",
+      "statement": "the outgoing vertical velocity changes sign at eps_c/R = mu_cushion/sqrt(1 + mu_cushion^2) = 0.139 for mu_cushion = 0.14; above it the ball is pressed into the slate, below it the ball is launched upward. The WPA reference profile derives eps = 0.039 R and must therefore launch the ball upward",
       "tolerance": 1e-09,
       "unit": "m/s"
+    },
+    {
+      "quantity": "eps_derived_from_nose_geometry",
+      "statement": "the contact height comes from the line of centres: eps = R*(apex - arc_radius - R)/(R + arc_radius), so it is an output of the profile rather than a tuned input",
+      "tolerance": 1e-09,
+      "unit": "m"
     }
   ]
 }

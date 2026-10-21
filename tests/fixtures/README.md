@@ -13,7 +13,7 @@ The physics these fixtures pin down is specified in
 | `slide_to_roll.json` | the sign of the sliding-state angular velocity (doc §3.3) |
 | `stun_separation_90.json` | the 90° rule, the ball-ball normal components and the throw impulse |
 | `cut_throw_sweep.json` | the 1/7 sticking constant and the Coulomb cap on the tangential impulse |
-| `cushion_rebound.json` | the Han cushion impulse model and the vertical flip |
+| `cushion_rebound.json` | the cushion impulse model, the derived contact height and the vertical flip |
 | `draw_stop_shot.json` | the draw/stop behaviour and the analytic reversal threshold |
 | `pocket_drop.json` | the pocket state machine, the rattle and the drop threshold |
 | `squirt_curve.json` | the squirt calibration curve (anchors still to be measured) |
@@ -69,6 +69,23 @@ Conventions:
 - Every fixture is runnable without a table: `setup` is the complete initial state.
 - `params` overrides the table config for that shot only; anything not listed uses the
   defaults in §13.2 of the document.
+
+## The cushion fixture derives its contact height
+
+`cushion_rebound.json` does not take a contact height as an input. It takes the nose profile
+(`nose_apex_height`, `nose_arc_radius`) and derives the contact height from the line of centres,
+exactly as the simulator is meant to:
+
+```
+delta = apex_height - arc_radius - R
+eps   = R * delta / (R + arc_radius)          # contact height above the ball's centre
+theta = asin(delta / (R + arc_radius))         # tilt of the contact normal
+```
+
+For the WPA reference profile that gives `eps = 0.039 R` — below the vertical flip threshold of
+`0.139 R`, so the cushion *launches* the ball upward and it hops. The `vertical_flip` block in
+the fixture lists the other profiles (flat face, apex-as-contact, Mathavan's geometry) so the
+threshold is pinned from both sides.
 
 ## Notes for the test author
 
