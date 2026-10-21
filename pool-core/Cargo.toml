@@ -1,10 +1,15 @@
 [package]
 name = "pool-core"
 description = "Deterministic, event-driven 8-ball pool physics core"
+readme = "README.md"
+keywords = ["pool", "billiards", "physics", "deterministic", "simulation"]
+categories = ["game-development", "simulation"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 
 [dependencies]
 libm = { workspace = true }
