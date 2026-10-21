@@ -37,58 +37,58 @@
   "expectations": [
     {
       "incidence_angle": 10,
-      "rebound_speed": 1.513687,
-      "rebound_angle": 10.0276,
-      "rebound_vz": 0.338891,
+      "rebound_speed": 1.514896,
+      "rebound_angle": 10.2735,
+      "rebound_vz": 0.340009,
       "sticking": false
     },
     {
       "incidence_angle": 20,
-      "rebound_speed": 1.515898,
-      "rebound_angle": 20.3306,
-      "rebound_vz": 0.302625,
+      "rebound_speed": 1.520055,
+      "rebound_angle": 20.7326,
+      "rebound_vz": 0.306614,
       "sticking": false
     },
     {
       "incidence_angle": 30,
-      "rebound_speed": 1.527703,
-      "rebound_angle": 31.0509,
-      "rebound_vz": 0.247689,
+      "rebound_speed": 1.53485,
+      "rebound_angle": 31.4705,
+      "rebound_vz": 0.255044,
       "sticking": false
     },
     {
       "incidence_angle": 40,
-      "rebound_speed": 1.558139,
-      "rebound_angle": 42.0934,
-      "rebound_vz": 0.181623,
+      "rebound_speed": 1.56654,
+      "rebound_angle": 42.4116,
+      "rebound_vz": 0.191327,
       "sticking": false
     },
     {
       "incidence_angle": 50,
-      "rebound_speed": 1.613994,
-      "rebound_angle": 53.1185,
-      "rebound_vz": 0.113638,
+      "rebound_speed": 1.621187,
+      "rebound_angle": 53.2917,
+      "rebound_vz": 0.123556,
       "sticking": false
     },
     {
       "incidence_angle": 60,
-      "rebound_speed": 1.695931,
-      "rebound_angle": 63.6741,
-      "rebound_vz": 0.053466,
+      "rebound_speed": 1.700303,
+      "rebound_angle": 63.7353,
+      "rebound_vz": 0.061299,
       "sticking": false
     },
     {
       "incidence_angle": 70,
-      "rebound_speed": 1.796936,
-      "rebound_angle": 73.3978,
-      "rebound_vz": 0.010138,
+      "rebound_speed": 1.798586,
+      "rebound_angle": 73.4077,
+      "rebound_vz": 0.01453,
       "sticking": false
     },
     {
       "incidence_angle": 80,
-      "rebound_speed": 1.903739,
-      "rebound_angle": 82.147,
-      "rebound_vz": -0.009157,
+      "rebound_speed": 1.903975,
+      "rebound_angle": 82.1465,
+      "rebound_vz": -0.007899,
       "sticking": false
     },
     {
@@ -143,6 +143,44 @@
       "hop_height_mm": 13.937
     }
   ],
+  "lifted_ball_contacts": [
+    {
+      "case": "resting on the bed",
+      "ball_centre_height_mm": 28.575,
+      "delta_mm": 1.375,
+      "eps_over_R": 0.03937,
+      "normal_tilt_deg": 2.256,
+      "rebound_vz": 0.351552,
+      "normal": "away_and_down"
+    },
+    {
+      "case": "lifted 5 mm",
+      "ball_centre_height_mm": 33.575,
+      "delta_mm": -3.625,
+      "eps_over_R": -0.10379,
+      "normal_tilt_deg": -5.958,
+      "rebound_vz": 0.846037,
+      "normal": "away_and_up"
+    },
+    {
+      "case": "lifted 20 mm (popped by a ball-ball collision)",
+      "ball_centre_height_mm": 48.575,
+      "delta_mm": -18.625,
+      "eps_over_R": -0.53329,
+      "normal_tilt_deg": -32.228,
+      "rebound_vz": 1.499047,
+      "normal": "away_and_up"
+    },
+    {
+      "case": "lifted 30 mm",
+      "ball_centre_height_mm": 58.575,
+      "delta_mm": -28.625,
+      "eps_over_R": -0.81961,
+      "normal_tilt_deg": -55.046,
+      "rebound_vz": 1.482662,
+      "normal": "away_and_up"
+    }
+  ],
   "invariants": [
     {
       "quantity": "rebound_angle_independence",
@@ -164,7 +202,19 @@
     },
     {
       "quantity": "eps_derived_from_nose_geometry",
-      "statement": "the contact height comes from the line of centres: eps = R*(apex - arc_radius - R)/(R + arc_radius), so it is an output of the profile rather than a tuned input",
+      "statement": "the contact height comes from the line of centres: eps = R*(apex - arc_radius - z_c)/(R + arc_radius), where z_c is the ball's centre height at the contact, so it is an output of the profile and of the ball's state rather than a tuned input",
+      "tolerance": 1e-09,
+      "unit": "m"
+    },
+    {
+      "quantity": "eps_independent_of_approach_angle",
+      "statement": "eps depends only on z_c: the nose is a cylinder along the rail, so the contact normal has no component along the rail and a 40 degree approach gives the same eps as a square hit at the same z_c",
+      "tolerance": 1e-09,
+      "unit": "m"
+    },
+    {
+      "quantity": "normal_flips_for_a_lifted_ball",
+      "statement": "with the ball's centre 20 mm above the bed, eps is negative (-0.533 R) and the normal points away from the rail and UP, so the cushion pushes the ball up as well as back",
       "tolerance": 1e-09,
       "unit": "m"
     }

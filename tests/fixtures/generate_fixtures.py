@@ -17,7 +17,8 @@ MU_CUSHION = 0.14      # cushion sliding friction
 MU_R = 0.01            # ball-cloth rolling friction
 NOSE_APEX = 0.0363       # nose apex above the bed, m (63.5% of ball diameter)
 NOSE_ARC_R = 0.00635     # nose tip radius, m (1/4")
-DELTA = NOSE_APEX - NOSE_ARC_R - R      # vertical offset: ball centre -> nose arc centre
+Z_ARC = NOSE_APEX - NOSE_ARC_R          # nose arc centre height above the bed
+DELTA = Z_ARC - R                        # vertical offset: ball centre -> nose arc centre
 EPS_R = (R * DELTA/(R + NOSE_ARC_R))/R  # derived contact height above the ball centre, in R
 SIN_T = DELTA/(R + NOSE_ARC_R)          # tilt of the contact normal (sin theta)
 I = (2/5)*M*R*R
@@ -59,18 +60,23 @@ def ball_ball(pA, pB, vA, vB, wA=0.0, wB=0.0, e=E_BALL, mu=MU_BALL):
                 n=n, t=t, sticking=(M*abs(u_t)/7 <= mu*J_n))
 
 
-def cushion3(v, w, sin_t=None, e=0.75, mu=0.14):
+def cushion3(v, w, sin_t=None, e=0.75, mu=0.14, z_c=None):
     """Doc section 5.1/5.3, in 3D. v, w are 3-vectors; the rail normal is +x.
 
     sin_t defaults to the value derived from the nose profile geometry
-    (line of centres), which is how the simulator is meant to work.
+    (line of centres), which is how the simulator is meant to work. z_c is
+    the ball's centre height at the contact; the default (R) is a ball
+    resting on the bed.
     """
+    if z_c is None:
+        z_c = R
     if sin_t is None:
         sin_t = SIN_T
     th = math.asin(sin_t); ct = math.cos(th)
     # local frame: x = towards the rail, y = along the rail, z = up
     y = (0.0, 1.0, 0.0)
-    rc = (R*ct, 0.0, R*math.sin(th))
+    # contact point relative to the ball's centre: along the line of centres
+    rc = (R*ct, 0.0, z_c - Z_ARC)
     tangent = (math.sin(th), 0.0, -ct)
     nhat = (-ct, 0.0, -math.sin(th))
 
@@ -279,6 +285,29 @@ def fixture_cushion():
             "direction": "up" if vz > 0 else "down",
             "hop_height_mm": round((up**2)/(2*G)*1000, 3),
         })
+    # a ball that is not resting on the bed when it reaches the rail: the contact
+    # geometry, and therefore the sign of the vertical impulse, changes
+    lifted = []
+    v0 = 2.0
+    for label, z_c in (("resting on the bed", R),
+                       ("lifted 5 mm", R + 0.005),
+                       ("lifted 20 mm (popped by a ball-ball collision)", R + 0.020),
+                       ("lifted 30 mm", R + 0.030)):
+        z_arc = Z_ARC
+        delta = z_arc - z_c
+        sin_t = delta/(R + NOSE_ARC_R)
+        r = cushion3((v0, 0.0, 0.0), (0.0, v0/R, 0.0), sin_t=sin_t, z_c=z_c)
+        lifted.append({
+            "case": label,
+            "ball_centre_height_mm": round(z_c*1000, 3),
+            "delta_mm": round(delta*1000, 4),
+            "eps_over_R": round(R*delta/(R + NOSE_ARC_R)/R, 5),
+            "normal_tilt_deg": round(math.degrees(math.asin(sin_t)), 3),
+            "rebound_vz": round(r["v"][2], 6),
+            # the normal's vertical component is -sin(tilt): a positive tilt points down
+            "normal": "away_and_down" if math.degrees(math.asin(sin_t)) > 0 else "away_and_up",
+        })
+
     return {
         "id": "cushion_rebound",
         "title": "Cushion rebound for a rolling, spinless ball",
@@ -298,6 +327,7 @@ def fixture_cushion():
         },
         "expectations": rows,
         "vertical_flip": flip,
+        "lifted_ball_contacts": lifted,
         "invariants": [
             {"quantity": "rebound_angle_independence",
              "statement": "the rebound angle is identical for incident speeds of 1, 2 and 4 m/s "
@@ -316,8 +346,19 @@ def fixture_cushion():
              "tolerance": 1e-9, "unit": "m/s"},
             {"quantity": "eps_derived_from_nose_geometry",
              "statement": "the contact height comes from the line of centres: "
-                          "eps = R*(apex - arc_radius - R)/(R + arc_radius), so it is an "
-                          "output of the profile rather than a tuned input",
+                          "eps = R*(apex - arc_radius - z_c)/(R + arc_radius), where z_c is "
+                          "the ball's centre height at the contact, so it is an output of the "
+                          "profile and of the ball's state rather than a tuned input",
+             "tolerance": 1e-9, "unit": "m"},
+            {"quantity": "eps_independent_of_approach_angle",
+             "statement": "eps depends only on z_c: the nose is a cylinder along the rail, so "
+                          "the contact normal has no component along the rail and a 40 degree "
+                          "approach gives the same eps as a square hit at the same z_c",
+             "tolerance": 1e-9, "unit": "m"},
+            {"quantity": "normal_flips_for_a_lifted_ball",
+             "statement": "with the ball's centre 20 mm above the bed, eps is negative "
+                          "(-0.533 R) and the normal points away from the rail and UP, so the "
+                          "cushion pushes the ball up as well as back",
              "tolerance": 1e-9, "unit": "m"},
         ],
     }

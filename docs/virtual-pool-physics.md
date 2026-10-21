@@ -525,6 +525,39 @@ than chosen:
 For the WPA reference profile (`h_apex = 36.3 mm`, `r_n = 6.35 mm`, `R = 28.575 mm`):
 `Δ = 1.375 mm`, `ε = 1.12 mm = 0.039 R`, `θ = 2.26°`.
 
+**Derive this per contact, from the ball's actual height.** `Δ` is the vertical offset between the
+ball's centre at the moment of contact and the nose arc's centre, so it is
+
+```
+Δ = (h_apex - r_n) - z_c          z_c = the ball's centre height at the contact
+```
+
+For a ball resting on the bed `z_c = R` and that is the value above. But a ball is not always on
+the bed when it reaches the rail: the §4.5 vertical impulse can pop the cue ball a centimetre or
+so after a hard collision, and it may still be airborne when it arrives. Then `Δ` shrinks, `ε`
+goes negative, and the normal tilts *upward* — the cushion pushes the ball up and away instead
+of down and away:
+
+| Ball centre height at contact | `Δ` | `ε` | Normal (local frame, +x towards the rail) |
+|---|---|---|---|
+| `z_c = R` (on the bed) | +1.375 mm | +0.039 R | (-0.999, -0.039) away and **down** |
+| `z_c = R + 5 mm` | -3.625 mm | -0.104 R | (-0.995, +0.104) away and **up** |
+| `z_c = R + 20 mm` | -18.625 mm | -0.533 R | (-0.846, +0.533) away and **up** |
+
+A cached `ε` would apply the wrong-signed vertical impulse on exactly those shots. The
+re-derivation is free: the normal has to be computed anyway to resolve the collision, and `ε`
+and `θ` are one subtraction and one `asin` away from it.
+
+**Two things the approach angle does *not* change.** The nose is a cylinder *along the rail*, so
+the contact normal has no component along the rail, and `ε` depends only on `z_c`: a ball
+arriving at 40° contacts the nose at the same height as a square hit at the same `z_c`. What
+obliquity changes is the tangential slip `s_y` and the position of the contact along the rail —
+both of which are already computed per contact.
+
+**Validity.** The ball contacts the nose bulge while its centre is below
+`z_arc + (R + r_n)` = 64.9 mm; above that the ball's lowest point is above the nose apex and it
+clears the cushion entirely (over the rail).
+
 This is worth stating explicitly, because it removes a free parameter. `ε` used to be a
 calibration knob and the entire vertical behaviour of a cushion hit hinged on where you put it.
 With the arc geometry there is nothing to choose: the profile gives `ε`, and the impulse model
@@ -1305,11 +1338,25 @@ for continuous/ambient motion (ball-in-hand placement, cue stick animation, UI).
 **Narrow phase:** Time-of-impact (TOI) tests rather than overlap tests:
 - **Ball-ball:** solve for the first `t` at which the centres are `2R` apart (§ below)
 - **Ball-cushion:** solve for the first `t` at which the ball surface meets the cushion
-  profile. This is a swept sphere against the nose *arc* (a cylinder of radius `r_n` whose
-  axis is vertical, at the rail line, with its arc centre at `h_apex - r_n`), not a ray against
-  a plane: the ball touches the rounded face, and the contact normal is the line of centres.
-  At the TOI the contact point gives `Δ`, and from it `ε` and `θ` follow (§5.1) — the impulse
-  direction is a *consequence* of the contact geometry, not an input.
+  profile. This is a swept sphere against the nose *arc* — a cylinder of radius `r_n` whose
+  **axis runs along the rail** (the x–z arc of radius `r_n` extruded along y, centred on the
+  rail line at height `h_apex - r_n`), not a ray against a plane and **not** a vertical
+  cylinder. The ball touches the rounded face, and the contact normal is the line of centres,
+  which therefore has no component along the rail: `ε` and `θ` depend only on the ball's height
+  `z_c` at the contact, never on the approach angle (§5.1).
+
+  Two paths, because the degree of the time-of-impact equation differs:
+
+  - **On the bed** (`z_c = R`): the contact condition collapses to a constant horizontal
+    distance, `(x_c(t) - x_rail)² = (R + r_n)² - Δ²`. With `x_c(t)` quadratic in `t` (rolling
+    friction), the TOI is a **quadratic**. This is the overwhelming majority of contacts.
+  - **Airborne** (`z_c ≠ R`): `x_c(t)` and `z_c(t)` are both quadratic (gravity), so
+    `(x_c(t) - x_rail)² + (z_c(t) - z_arc)² = (R + r_n)²` is a **quartic**.
+
+  In both paths the contact point gives `Δ = (h_apex - r_n) - z_c`, and from it `ε` and `θ`
+  follow (§5.1) — the impulse direction is a *consequence* of the contact geometry, not an
+  input, and it is re-derived per contact so that a lifted or airborne ball gets the correct
+  normal.
 - **Ball-pocket:** point-in-circle/polygon test, with the pocket's cut angle (§2.3)
 - **Ball-off-table:** boundary check on the ball's centre against the rail line
 
