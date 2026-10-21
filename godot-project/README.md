@@ -3,6 +3,8 @@
 The game. The physics is not here: it is in the Rust extension in
 [`../pool-godot`](../pool-godot), and this project is the game around it.
 
+![the table](docs/table.png)
+
 ## How it fits together
 
 The core is the **only** physics in the game. Godot never simulates the balls:
@@ -18,6 +20,34 @@ the shot ends                  →  PoolShot.get_final_state()    →  the rules
 
 `preview_cue_strike` and `simulate` call the *same* strike in the core, so the
 line the game draws is the line the ball takes, squirt included.
+
+The table is built from `PoolCore.get_table_geometry()` — the rails, the
+pockets and the cushion all come from the model, so the cushion stops exactly
+where the model says the pocket begins.
+
+![the break](docs/break.png)
+
+## The controls
+
+| | |
+|---|---|
+| the mouse | aims |
+| **S** | draws the cue back; a flick forward lets it go |
+| **E** | holds the english: the mouse then moves the tip on the cue ball |
+| **B** | holds the fine aim: the mouse then trims the angle |
+
+While **B** or **E** is held the mouse stops aiming and only trims or moves
+the tip, so the two never fight.
+
+The power of the shot is how far the cue is drawn back, up to 30 cm, and the
+flick decides how much of that power the shot gets: a full draw with a lazy
+flick is a soft shot, and a full draw with a hard flick is a break.
+
+The english is the one sign that is easy to get wrong. The core measures the
+contact offset along `up x direction`, which is the shooter's **left**, so a
+tip dragged to the shooter's right is a **negative** offset, and right english
+throws the object ball to the shooter's left. The tests in
+`../pool-godot/tests/mapping.rs` pin that with the physics.
 
 ## Building
 
@@ -40,38 +70,36 @@ With Godot 4.6 or later:
 godot --path godot-project
 ```
 
-Headless, as the smoke test:
+The tests, all headless and all with an exit code:
 
 ```sh
-godot --headless --path godot-project
+godot --headless --path godot-project scenes/smoke_test.tscn   # the data survives the trip
+godot --headless --path godot-project scenes/play_test.tscn    # a break, and the balls move
+godot --headless --path godot-project scenes/input_test.tscn   # the mouse and the keys do what they say
 ```
 
-The smoke test fires the shot that `pool-godot/tests/headless.rs` describes,
-checks the hash against the value both sides pin, and exits with 1 if it does
-not match.
+And a picture, if you want one:
+
+```sh
+godot --path godot-project -- --screenshot /tmp/table.png
+```
 
 ## The frame
 
-The core works in a right handed frame with `x` along the table, `y` across it
-and `z` up. Godot has `y` up, so the extension converts once, in
-`pool-godot/src/frame.rs`:
+The core works in a right handed frame with `x` along the table, `y` across
+it and `z` up. Godot has `y` up, so the extension converts once, in
+`../pool-godot/src/frame.rs`:
 
 ```
 core (x, y, z)  ->  Godot (x, z, -y)
 ```
 
 One of the two in-plane axes has to change sign for the frame to stay right
-handed, and that keeps the sense of the spin - so a ball that rolls to the
+handed, and that keeps the sense of the spin — so a ball that rolls to the
 left rolls to the left on the screen.
-
-The english follows the same rule, and it is the one that is easy to get
-wrong: the core measures the contact offset along `up x direction`, which is
-the shooter's **left**, so a tip dragged to the shooter's right is a
-**negative** `contact_offset_x`. The tests in `pool-godot/tests/mapping.rs`
-pin that with the physics: right english throws the object ball to the
-shooter's left.
 
 ## What is not here yet
 
-This is the plumbing: the extension, the frame and the smoke test. The table,
-the balls, the cue and the rules are the next milestones.
+The rules. The shot resolves and the balls come to rest, but nothing decides
+who won: no 8-ball rules, no fouls beyond the ones the core reports, no
+ball-in-hand and no opponent. The next milestone.

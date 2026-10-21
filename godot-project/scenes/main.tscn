@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://c5iwa41cn5t7d"]
 
-[ext_resource type="Script" path="res://scripts/smoke_test.gd" id="1_smoke"]
+[ext_resource type="Script" uid="uid://7gc68b23jnib" path="res://scripts/main.gd" id="1_main"]
 
-[node name="Main" type="Node3D"]
-script = ExtResource("1_smoke")
+[node name="Main" type="Node3D" unique_id=2114754196]
+script = ExtResource("1_main")
