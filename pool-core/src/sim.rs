@@ -226,10 +226,15 @@ impl<'a> Simulation<'a> {
 
     /// Applies the cue strike to the cue ball (§6.2).
     fn apply_cue_strike(&mut self, input: &ShotInput) {
-        let strike = cue::strike(input, self.cfg);
         if self.balls.is_empty() {
             return;
         }
+        // There is nothing to strike if the cue ball is already in a pocket or off
+        // the table.
+        if self.balls[0].is_pocketed || self.balls[0].is_off_table {
+            return;
+        }
+        let strike = cue::strike(input, self.cfg);
         {
             let ball = &mut self.balls[0];
             ball.velocity = strike.velocity;
