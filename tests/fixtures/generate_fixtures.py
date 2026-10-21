@@ -8,6 +8,7 @@ cannot drift away from the document.
 import json, math, os
 
 R = 0.028575          # ball radius, m
+D = 2*R                # ball diameter, m
 M = 0.170             # ball mass, kg
 G = 9.81
 E_BALL = 0.95         # ball-ball COR
@@ -15,12 +16,12 @@ MU_BALL = 0.05        # ball-ball friction
 MU_S = 0.20            # ball-cloth sliding friction
 MU_CUSHION = 0.14      # cushion sliding friction
 MU_R = 0.01            # ball-cloth rolling friction
-NOSE_APEX = 0.0363       # nose apex above the bed, m (63.5% of ball diameter)
-NOSE_ARC_R = 0.00635     # nose tip radius, m (1/4")
-Z_ARC = NOSE_APEX - NOSE_ARC_R          # nose arc centre height above the bed
-DELTA = Z_ARC - R                        # vertical offset: ball centre -> nose arc centre
-EPS_R = (R * DELTA/(R + NOSE_ARC_R))/R  # derived contact height above the ball centre, in R
-SIN_T = DELTA/(R + NOSE_ARC_R)          # tilt of the contact normal (sin theta)
+NOSE_H = 0.0363          # nose (contact) height above the bed, m (63.5% of ball diameter)
+NOSE_TIP_R = 0.00635     # nose tip radius, m (1/4") - shape only, not the impulse direction
+EPS = NOSE_H - R         # derived contact height above the ball's centre, m
+EPS_R = EPS/R            # ... in units of R
+SIN_T = EPS/R            # sin(theta): tilt of the contact normal from the horizontal
+COS_T = math.sqrt(1 - SIN_T**2)
 I = (2/5)*M*R*R
 
 OUT = os.path.dirname(os.path.abspath(__file__))
@@ -75,8 +76,9 @@ def cushion3(v, w, sin_t=None, e=0.75, mu=0.14, z_c=None):
     th = math.asin(sin_t); ct = math.cos(th)
     # local frame: x = towards the rail, y = along the rail, z = up
     y = (0.0, 1.0, 0.0)
-    # contact point relative to the ball's centre: along the line of centres
-    rc = (R*ct, 0.0, z_c - Z_ARC)
+    # contact point relative to the ball's centre: R*sin(theta) above the centre,
+    # on the inclined contact face
+    rc = (R*ct, 0.0, R*math.sin(th))
     tangent = (math.sin(th), 0.0, -ct)
     nhat = (-ct, 0.0, -math.sin(th))
 
@@ -266,20 +268,20 @@ def fixture_cushion():
     v0 = 2.0
     v = (v0, 0.0, 0.0); w = (0.0, v0/R, 0.0)
     e_table = 0.60
-    # the first row is the reference profile: eps is derived from the nose geometry
-    for label, eps_R in (("WPA reference nose (derived)", EPS_R),
-                         ("flat face at 0.10R", 0.10),
-                         ("flip threshold", MU_CUSHION/math.sqrt(1+MU_CUSHION**2)),
-                         ("flat face at 0.15R", 0.15),
-                         ("nose apex taken as contact height", 0.27),
-                         ("Mathavan geometry", 0.40)):
+    # nose heights as fractions of the ball diameter; the WPA spec is 0.635 D
+    for label, frac_d in (("0.500 D (at the ball's centre)", 0.500),
+                          ("0.570 D (the vertical flip)",
+                           0.5*(1 + MU_CUSHION/math.sqrt(1+MU_CUSHION**2))),
+                          ("0.635 D (the WPA spec)", 0.635),
+                          ("0.700 D (centre of percussion)", 0.700)):
+        eps_R = frac_d*D/R - 1.0
         r = cushion3(v, w, eps_R)
         vz = r["v"][2]
         # if the ball is pressed into the slate it rebounds with e_table; if it is launched
         # upward it simply flies its ballistic arc
         up = vz if vz > 0 else e_table*abs(vz)
         flip.append({
-            "profile": label,
+            "nose_height_over_D": frac_d,
             "eps_over_R": round(eps_R, 6),
             "rebound_vz": round(vz, 6),
             "direction": "up" if vz > 0 else "down",
@@ -287,25 +289,24 @@ def fixture_cushion():
         })
     # a ball that is not resting on the bed when it reaches the rail: the contact
     # geometry, and therefore the sign of the vertical impulse, changes
-    lifted = []
+    regimes = []
     v0 = 2.0
+    rail_top = NOSE_H + 0.015          # rail top edge, ~15 mm above the nose
     for label, z_c in (("resting on the bed", R),
-                       ("lifted 5 mm", R + 0.005),
                        ("lifted 20 mm (popped by a ball-ball collision)", R + 0.020),
-                       ("lifted 30 mm", R + 0.030)):
-        z_arc = Z_ARC
-        delta = z_arc - z_c
-        sin_t = delta/(R + NOSE_ARC_R)
-        r = cushion3((v0, 0.0, 0.0), (0.0, v0/R, 0.0), sin_t=sin_t, z_c=z_c)
-        lifted.append({
+                       ("lifted 40 mm", R + 0.040)):
+        lowest = z_c - R
+        if lowest > rail_top:
+            regime = "clear of the rail"
+        elif lowest > NOSE_H:
+            regime = "rail structure"
+        else:
+            regime = "nose rubber"
+        regimes.append({
             "case": label,
             "ball_centre_height_mm": round(z_c*1000, 3),
-            "delta_mm": round(delta*1000, 4),
-            "eps_over_R": round(R*delta/(R + NOSE_ARC_R)/R, 5),
-            "normal_tilt_deg": round(math.degrees(math.asin(sin_t)), 3),
-            "rebound_vz": round(r["v"][2], 6),
-            # the normal's vertical component is -sin(tilt): a positive tilt points down
-            "normal": "away_and_down" if math.degrees(math.asin(sin_t)) > 0 else "away_and_up",
+            "lowest_point_mm": round(lowest*1000, 3),
+            "regime": regime,
         })
 
     return {
@@ -319,15 +320,16 @@ def fixture_cushion():
         "setup": {
             "balls": [{"id": "b0", "position": [0.5, 0.5],
                        "velocity": [2.0, 0.0], "angular_velocity": [0.0, 2.0/R, 0.0]}],
-            "params": {"nose_apex_height": NOSE_APEX, "nose_arc_radius": NOSE_ARC_R,
+            "params": {"nose_height": NOSE_H, "nose_tip_radius": NOSE_TIP_R,
                        "e_cushion": 0.75, "mu_cushion": MU_CUSHION,
-                       "derived_eps_over_R": EPS_R},
+                       "derived_eps_over_R": EPS_R,
+                       "derived_tilt_deg": math.degrees(math.asin(SIN_T))},
             "note": "the incoming velocity makes `incidence_angle` with the rail normal (+x); "
                     "the ball is rolling, so omega = (k x v)/R",
         },
         "expectations": rows,
         "vertical_flip": flip,
-        "lifted_ball_contacts": lifted,
+        "rail_regimes": regimes,
         "invariants": [
             {"quantity": "rebound_angle_independence",
              "statement": "the rebound angle is identical for incident speeds of 1, 2 and 4 m/s "
@@ -344,22 +346,29 @@ def fixture_cushion():
                           "below it the ball is launched upward. The WPA reference profile "
                           "derives eps = 0.039 R and must therefore launch the ball upward",
              "tolerance": 1e-9, "unit": "m/s"},
-            {"quantity": "eps_derived_from_nose_geometry",
-             "statement": "the contact height comes from the line of centres: "
-                          "eps = R*(apex - arc_radius - z_c)/(R + arc_radius), where z_c is "
-                          "the ball's centre height at the contact, so it is an output of the "
-                          "profile and of the ball's state rather than a tuned input",
+            {"quantity": "eps_derived_from_nose_height",
+             "statement": "the contact height comes from the specified nose height: "
+                          "eps = h_nose - R, so it is an output of the table spec rather than "
+                          "a tuned input",
              "tolerance": 1e-9, "unit": "m"},
             {"quantity": "eps_independent_of_approach_angle",
-             "statement": "eps depends only on z_c: the nose is a cylinder along the rail, so "
-                          "the contact normal has no component along the rail and a 40 degree "
-                          "approach gives the same eps as a square hit at the same z_c",
+             "statement": "eps depends only on the nose height: the contact normal has no "
+                          "component along the rail, so a 40 degree approach gives the same "
+                          "eps and the same normal tilt as a square hit",
              "tolerance": 1e-9, "unit": "m"},
-            {"quantity": "normal_flips_for_a_lifted_ball",
-             "statement": "with the ball's centre 20 mm above the bed, eps is negative "
-                          "(-0.533 R) and the normal points away from the rail and UP, so the "
-                          "cushion pushes the ball up as well as back",
-             "tolerance": 1e-9, "unit": "m"},
+            {"quantity": "nose_height_changes_the_rebound",
+             "statement": "the specified nose height is what sets the vertical impulse: at "
+                          "0.500 D the cushion launches the ball upward (+0.49 m/s at 2 m/s) "
+                          "and at 0.635 D it presses the ball into the slate (-0.44 m/s). "
+                          "Reproducing both is the check that the contact height is the "
+                          "nose height",
+             "tolerance": 1e-9, "unit": "m/s"},
+            {"quantity": "rail_regimes_are_distinct",
+             "statement": "the solver must branch on the regime: nose rubber below "
+                          "h_nose, rail structure between h_nose and the rail top (~15 mm "
+                          "higher), and no contact above the rail top. The rubber model must "
+                          "not be extrapolated into the rail structure",
+             "tolerance": 0},
         ],
     }
 

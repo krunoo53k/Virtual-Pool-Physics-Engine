@@ -72,20 +72,28 @@ Conventions:
 
 ## The cushion fixture derives its contact height
 
-`cushion_rebound.json` does not take a contact height as an input. It takes the nose profile
-(`nose_apex_height`, `nose_arc_radius`) and derives the contact height from the line of centres,
-exactly as the simulator is meant to:
+`cushion_rebound.json` does not take a contact height as an input. It takes the **nose height**
+(`nose_height`, the height above the bed at which the cushion acts on a ball resting on the
+bed — the WPA specifies 63.5% of the ball diameter) and derives everything else, exactly as the
+simulator is meant to:
 
 ```
-delta = apex_height - arc_radius - R
-eps   = R * delta / (R + arc_radius)          # contact height above the ball's centre
-theta = asin(delta / (R + arc_radius))         # tilt of the contact normal
+eps   = h_nose - R                             # contact height above the ball's centre
+theta = asin(eps / R)                          # tilt of the contact normal
 ```
 
-For the WPA reference profile that gives `eps = 0.039 R` — below the vertical flip threshold of
-`0.139 R`, so the cushion *launches* the ball upward and it hops. The `vertical_flip` block in
-the fixture lists the other profiles (flat face, apex-as-contact, Mathavan's geometry) so the
-threshold is pinned from both sides.
+For the WPA reference profile that gives `eps = 0.270 R` and `theta = 15.7°`, which is above
+the vertical flip threshold of `0.139 R` (a nose height of 0.57 D), so the cushion presses the
+ball into the slate and the slate's rebound makes it hop ~3.8 mm.
+
+The `vertical_flip` block sweeps the nose height through the three reference heights Dr. Dave
+discusses — 0.500 D (the cushion *launches* the ball, +0.49 m/s), 0.635 D (the WPA spec, presses
+it in, −0.46 m/s) and 0.700 D (drives it down hard, −0.87 m/s) — plus the flip between them.
+Reproducing all three is the check that the contact height really is the nose height.
+
+The `rail_regimes` block records which surface a ball meets depending on its height: the nose
+rubber, the rail structure above it, or nothing at all. The solver must branch on that rather
+than extrapolating the rubber model upward.
 
 ## Notes for the test author
 

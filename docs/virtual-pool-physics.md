@@ -1,7 +1,7 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.3
+> **Version:** 1.4
 > **Date:** 2026-10-21
 > **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, ball-cue and ball-pocket interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
 >
@@ -22,6 +22,19 @@
 > WPA reference profile this gives `ε = 0.039 R`, below the flip threshold, so the standard case
 > is the cushion launching the ball into the familiar few-millimetre hop. The TOI specification
 > was updated to match (§11.3).
+>
+> **Revision note (1.4) — corrects 1.3.** The 1.3 reading of "nose height" was wrong: it took
+> the specified height to be the *apex* of the nose bulge, which put the contact at 29.7 mm and
+> made the specified nose height have no effect on the rebound at all — and the WPA specifies
+> 0.635 D precisely because the height changes the rebound. The specification and the
+> manufacturers define the nose height as the height at which the cushion *makes contact*
+> (36.3 mm), so `ε = h_nose - R = 0.270 R` and the contact normal is tilted 15.7°. The model
+> now reproduces Dr. Dave's account of all three reference heights (0.5 D launches the ball,
+> 0.635 D presses it into the slate, 0.7 D drives it down hard), which is the check the 1.3
+> reading failed. The standard case is therefore "pressed into the slate, hop from the slate
+> rebound" again. Also: the rail is now treated as three surfaces (nose rubber, rail structure
+> above it, clear of the rail) with the band between the nose and the rail top named (§11.3),
+> and a spurious `cos θ` was removed from the vertical-impulse formula.
 
 ---
 
@@ -502,75 +515,54 @@ two typographical errors in the original identified, is given by Kiefl (2020) an
 (away from the playing surface); `+z` is up; `ŷ` runs along the rail. The incoming velocity makes
 an angle `φ` with the x-axis.
 
-**Geometry — the nose arc, not a fudge factor:**
+**Geometry — the nose height is the contact height:**
 
-The cushion is not a flat wall. It is a rubber profile whose nose is a circular arc of radius
-`r_n` (1/4" = 6.35 mm on a K-66) with its apex at `h_apex` above the bed (63.5% of the ball
-diameter ≈ 36.3 mm). A ball resting on the bed has its centre at height `R`, so the vertical
-offset between the ball's centre and the nose arc's centre is
+The cushion's nose height is the one physical input the model needs: the height above the bed at
+which the cushion acts on a ball resting on the bed. The WPA specifies it as 63.5% of the ball
+diameter (36.3 mm for a 2.25" ball), and the manufacturers describe it in exactly those terms —
+"the point of the rubber cushion where the ball would make contact".
 
-```
-Δ = h_apex - r_n - R
-```
-
-For a sphere against a cylinder the contact normal is the **line of centres**, so the contact
-height above the ball's centre and the tilt of the normal are *derived* from the profile rather
-than chosen:
+A ball resting on the bed has its centre at height `R`, so the contact sits `ε` above the
+ball's centre and the contact normal is tilted from the horizontal by
 
 ```
-ε = R · Δ/(R + r_n)                             (contact height above the ball's centre)
-θ = arcsin(Δ/(R + r_n)) = arcsin(ε/R)           (tilt of the normal from the horizontal)
+ε = h_nose - R
+θ = arcsin(ε/R)
 ```
 
-For the WPA reference profile (`h_apex = 36.3 mm`, `r_n = 6.35 mm`, `R = 28.575 mm`):
-`Δ = 1.375 mm`, `ε = 1.12 mm = 0.039 R`, `θ = 2.26°`.
+For the WPA profile: `ε = 7.73 mm = 0.270 R`, `θ = 15.7°`. The contact surface near the nose is
+then modelled as a plane inclined `θ` from the vertical, which is what makes a resting ball
+contact at the specified height.
 
-**Derive this per contact, from the ball's actual height.** `Δ` is the vertical offset between the
-ball's centre at the moment of contact and the nose arc's centre, so it is
+**Why this reading, and not the other one.** There are two ways to read "nose height":
 
-```
-Δ = (h_apex - r_n) - z_c          z_c = the ball's centre height at the contact
-```
+- **As the contact height** (above). This is how the specification and the manufacturers use
+  it, and Dr. Dave's explanation of *why* the WPA chose 0.635 D is built on it.
+- **As the apex of a small-radius bulge.** On that reading a ball touches the rounded face well
+  below the apex — for a 1/4" nose arc whose apex is at 36.3 mm the contact would land at
+  29.7 mm, i.e. `ε = 0.039 R`, and the contact normal would be nearly horizontal.
 
-For a ball resting on the bed `z_c = R` and that is the value above. But a ball is not always on
-the bed when it reaches the rail: the §4.5 vertical impulse can pop the cue ball a centimetre or
-so after a hard collision, and it may still be airborne when it arrives. Then `Δ` shrinks, `ε`
-goes negative, and the normal tilts *upward* — the cushion pushes the ball up and away instead
-of down and away:
+The second reading is self-defeating: if the contact lands at 29.7 mm whatever the nose height
+is, then the specified nose height has **no effect on the rebound at all** — and the WPA's
+careful choice of 0.635 D, which exists precisely because the height changes the rebound, would
+be meaningless. The first reading predicts the right behaviour at all three reference heights:
 
-| Ball centre height at contact | `Δ` | `ε` | Normal (local frame, +x towards the rail) |
-|---|---|---|---|
-| `z_c = R` (on the bed) | +1.375 mm | +0.039 R | (-0.999, -0.039) away and **down** |
-| `z_c = R + 5 mm` | -3.625 mm | -0.104 R | (-0.995, +0.104) away and **up** |
-| `z_c = R + 20 mm` | -18.625 mm | -0.533 R | (-0.846, +0.533) away and **up** |
+| Nose height | `ε` | `θ` | Model's vertical impulse (2 m/s square hit) | Dr. Dave on this height |
+|---|---|---|---|---|
+| 0.500 D (at the ball's centre) | 0 | 0° | **+0.49 m/s up** — the ball is launched, and the launch scales with speed | "rebounding balls would slide more and would **hop significantly** if they come into the cushion with topspin (especially at fast speed)" |
+| **0.635 D (the WPA spec)** | +0.270 R | 15.7° | −0.46 m/s (pressed into the slate) → a 3.8 mm hop after the slate rebound | "a good compromise … good rebound performance **without too much ball hop or cloth wear**" |
+| 0.700 D (centre of percussion) | +0.400 R | 23.6° | −0.87 m/s — driven down hard, 13.9 mm hop | "would tend to **drive a rebounding ball down into the table**, which would tend to slow the ball more, accelerate cloth wear … and cause the rebounding ball to hop" |
 
-A cached `ε` would apply the wrong-signed vertical impulse on exactly those shots. The
-re-derivation is free: the normal has to be computed anyway to resolve the collision, and `ε`
-and `θ` are one subtraction and one `asin` away from it.
+Three independent qualitative statements about three different heights, matched by one model.
+That is the strongest available check on the cushion geometry, and it is why `h_nose` — a
+measured, specified dimension — is the model's input and `ε` and `θ` are derived from it.
 
-**Two things the approach angle does *not* change.** The nose is a cylinder *along the rail*, so
-the contact normal has no component along the rail, and `ε` depends only on `z_c`: a ball
-arriving at 40° contacts the nose at the same height as a square hit at the same `z_c`. What
-obliquity changes is the tangential slip `s_y` and the position of the contact along the rail —
-both of which are already computed per contact.
-
-**Validity.** The ball contacts the nose bulge while its centre is below
-`z_arc + (R + r_n)` = 64.9 mm; above that the ball's lowest point is above the nose apex and it
-clears the cushion entirely (over the rail).
-
-This is worth stating explicitly, because it removes a free parameter. `ε` used to be a
-calibration knob and the entire vertical behaviour of a cushion hit hinged on where you put it.
-With the arc geometry there is nothing to choose: the profile gives `ε`, and the impulse model
-follows. The table config therefore carries the *physical* numbers (`h_apex`, `r_n`) and `ε` is
-an output. (If a rail is modelled as a flat face instead of an arc, `ε` becomes an input again,
-and it is still the contact height that matters: for a face whose contact sits at `R + ε`,
-`θ = arcsin(ε/R)`.)
-
-The contact point relative to the ball's centre is `r_c = R·(cos θ, 0, sin θ)`, so the cushion's
-**normal** impulse acts along `n̂ = (-cos θ, 0, -sin θ)` — **i.e. it points away from the rail and
-downwards**. Because the contact is above the ball's centre, the *normal* impulse presses the
-ball into the slate rather than lifting it. (The friction impulse pulls the other way; see
-below.)
+**Per contact.** The contact height for a ball whose centre is at `z_c` is `z_c + R·sin θ`: the
+contact moves up the face as the ball rises. The plane idealisation keeps the normal's tilt at
+`θ`; the real nose profile is steepest at the tip and flattens upward, so the true tilt for a
+lifted ball is *smaller* and the model over-drives it downward. What matters more is *which*
+part of the rail the ball meets: see §11.3 for the three regimes (nose rubber, rail structure,
+clear of the rail).
 
 The **tangential** impulse is a separate story: it acts along the contact tangent
 `t̂ = (sin θ, 0, -cos θ)`, and it opposes the slip — the ball's own contact-point surface
@@ -582,7 +574,7 @@ rolling ball the Coulomb limit always binds (sticking would need
 vertical velocity is
 
 ```
-v_z' = (1 + e_cushion)·v_n·cos θ·(μ_cushion·cos θ - sin θ)
+v_z' = (1 + e_cushion)·v_n·(μ_cushion·cos θ - sin θ)
 ```
 
 which changes sign at `tan θ = μ_cushion`, i.e. at an effective contact height of
@@ -591,27 +583,18 @@ which changes sign at `tan θ = μ_cushion`, i.e. at an effective contact height
 ε_c/R = μ_cushion / sqrt(1 + μ_cushion²) ≈ 0.139 R   (μ_cushion = 0.14)
 ```
 
-| Nose profile | Derived `ε` | Net vertical velocity, 2 m/s square hit |
-|---|---|---|
-| WPA reference (apex 36.3 mm, 1/4" nose arc) | **0.039 R** | **+0.35 m/s** (up) — the ball hops ~6 mm |
-| Han's flat-face range (ε = 0.15 R) | 0.15 R | -0.04 m/s (down) — pressed into the slate |
-| Nose *apex* taken as the contact height | 0.27 R | -0.46 m/s (down) |
-| Mathavan's geometry | 0.40 R | -0.87 m/s (down) |
-
-**The standard case is the first row.** A real K-66 has a rounded nose, the ball touches it just
-above its own centre, `ε = 0.039 R` is *below* the 0.139 R flip, and the friction term wins:
-the cushion launches the ball slightly upward and it hops a few millimetres. The
-"pressed into the slate, and the slate's rebound lifts it" story belongs to tall, square-faced
-cushions (§8.1). A *stun* ball (no spin) is always pressed into the slate, because its slip at
-the contact is small enough for the sticking branch to apply.
+That threshold corresponds to a nose height of `1.139 R = 0.57 D` — well below the specified
+0.635 D, so a standard cushion always presses the ball into the slate. (A cushion whose nose sat
+at the ball's centre height would launch the ball instead; that is the 0.500 D row of the table
+above.)
 
 **Caveat — the hop scales as v².** `h = v_z'²/(2g)` with `v_z' ∝ v`, so a 5 m/s cushion hit
-predicts ≈ 39 mm of hop against the ≈ 6 mm of a 2 m/s hit. Real cushion deformation limits
+predicts ≈ 24 mm of hop against the ≈ 3.8 mm of a 2 m/s hit. Real cushion deformation limits
 this: the rubber compresses, the contact is not rigid, and the ball is not launched as cleanly.
-The rigid-arc model therefore over-predicts the hop at break speeds. It is the right model to
-ship (the geometry is sound and the low-speed behaviour is right), but the high-speed hop is
-where it will want a calibration factor or a compliant-contact correction — see the
-`cushion_rebound` fixture (§14), which pins both ends.
+The rigid model therefore over-predicts the hop at break speeds. It is the right model to ship
+(the geometry is sound and the low-speed behaviour is right), but the high-speed hop is where it
+will want a calibration factor or a compliant-contact correction — see the `cushion_rebound`
+fixture (§14), which pins both ends.
 
 **Impulse model:**
 
@@ -723,15 +706,17 @@ fn resolve_cushion_collision(ball: &mut Ball, n_rail: Vec3, e_cushion: f64,
     let x = n_rail;
     let y = Vec3::Z.cross(x);
 
-    // The contact geometry comes from the nose profile, not from a tuned epsilon.
-    // delta = vertical offset between the ball's centre and the nose arc's centre.
-    let delta = nose.apex_height - nose.arc_radius - ball.radius;
-    let sin_t = delta / (ball.radius + nose.arc_radius);
+    // The contact geometry comes from the specified nose height, not from a tuned epsilon.
+    // The nose height is the height at which the cushion makes contact with a ball
+    // resting on the bed, so the contact sits epsilon above the ball's centre.
+    let epsilon = nose.height - ball.radius;
+    let sin_t = epsilon / ball.radius;
     let cos_t = (1.0 - sin_t * sin_t).sqrt();
 
     // Contact point relative to the ball's centre, the contact tangent and the contact normal.
-    // The normal is the line of centres, so it points away from the rail and *downwards*;
-    // the friction impulse along the tangent can point the other way (section 5.1).
+    // The contact face is inclined theta from the vertical, so the normal points away from
+    // the rail and *downwards*; the friction impulse along the tangent can point the other
+    // way (section 5.1).
     let r_c = x * (ball.radius * cos_t) + Vec3::Z * (ball.radius * sin_t);
     let tangent = x * sin_t - Vec3::Z * cos_t;
     let n_hat = -x * cos_t - Vec3::Z * sin_t;
@@ -768,11 +753,12 @@ fn resolve_cushion_collision(ball: &mut Ball, n_rail: Vec3, e_cushion: f64,
 ```
 
 ```rust
-/// The physical shape of a cushion nose. Both numbers come from the table spec;
-/// everything else in the cushion model is derived from them.
+/// The physical shape of a cushion nose. `height` is the height at which the cushion makes
+/// contact with a ball resting on the bed - the WPA specifies 63.5% of the ball diameter,
+/// 36.3 mm. Everything else in the cushion model is derived from it.
 struct NoseProfile {
-    apex_height: f64,   // nose apex above the bed, m (36.3 mm for a WPA table)
-    arc_radius: f64,   // radius of the nose tip, m (6.35 mm = 1/4")
+    height: f64,        // nose (contact) height above the bed, m
+    tip_radius: f64,    // radius of the nose tip, m (6.35 mm = 1/4") - shape only
 }
 ```
 
@@ -784,11 +770,14 @@ The K-66 cushion profile has:
 - Radius at nose tip: ~1/4" (6.35 mm)
 
 These three numbers are the *input* to the cushion model. The nose height is above the ball's
-radius (R = 28.575 mm), but the ball does not touch the apex — it touches the rounded face, and
-the contact normal is the line of centres (§5.1). For this profile the derived contact height
-above the ball's centre is `ε = 1.12 mm = 0.039 R`, below the 0.139 R flip, so a rolling ball is
-launched slightly upward and hops a few millimetres. See §8.1 for the magnitudes and for what
-changes with a taller cushion.
+radius (R = 28.575 mm), so the cushion contacts the ball 7.73 mm above its centre and the
+contact normal is tilted 15.7° from the horizontal (§5.1). The nose height is the height at
+which the ball makes contact — that is what the specification measures and what the
+manufacturers mean — so the tip radius is a *shape* parameter (it rounds the transition to the
+slate and it draws the rail) rather than something that sets the impulse direction.
+
+For this profile the cushion presses the ball into the slate and the ball hops a few
+millimetres off it. See §8.1 for the magnitudes and for what changes with a taller cushion.
 
 ---
 
@@ -980,35 +969,35 @@ When the ball lands back on the table:
 
 A cushion hit can make the ball hop. Two vertical effects act at the contact (§5.1): the
 cushion's **normal** impulse presses the ball into the slate, and the cushion's **friction**
-impulse lifts it. Which one wins is set by the effective contact height `ε`, with the flip
-threshold at
+impulse lifts it. Which one wins is set by the contact height, with the flip threshold at
 
 ```
 ε_c/R = μ_cushion / sqrt(1 + μ_cushion²) ≈ 0.139 R   (μ_cushion = 0.14)
 ```
 
-For a rolling ball the Coulomb limit always binds, so the outgoing vertical velocity is
+which corresponds to a nose height of 0.57 D — below the specified 0.635 D, so a standard
+cushion always presses the ball in. For a rolling ball the Coulomb limit always binds, so the
+outgoing vertical velocity is
 
 ```
-v_z' = (1 + e_cushion)·v_n·cos θ·(μ_cushion·cos θ - sin θ)
+v_z' = (1 + e_cushion)·v_n·(μ_cushion·cos θ - sin θ)
 ```
 
 For a 2 m/s square cushion hit:
 
-| Nose profile | Derived `ε` | `v_z'` | What happens |
+| Nose height | `ε` | `v_z'` | What happens |
 |---|---|---|---|
-| **WPA reference (apex 36.3 mm, 1/4" nose arc)** | **0.039 R** | **+0.35 m/s** (up) | the cushion launches the ball; it rises `v_z'²/(2g)` ≈ **6 mm** |
-| Flat face at `ε = 0.15 R` (Han's range) | 0.15 R | -0.04 m/s (down) | pressed into the slate; the slate rebound (§7.2) gives +0.02 m/s, i.e. a ~0.03 mm hop |
-| Nose *apex* taken as the contact height | 0.27 R | -0.46 m/s (down) | pressed in; the slate rebound gives +0.27 m/s, i.e. a ~4 mm hop |
-| Mathavan's geometry | 0.40 R | -0.87 m/s (down) | pressed in harder; ~14 mm hop after the rebound |
+| 0.500 D (at the ball's centre) | 0 | **+0.49 m/s** (up) | the cushion launches the ball; it rises ≈ 12 mm, and the launch scales with speed |
+| **0.635 D (the WPA spec)** | **0.270 R** | **−0.46 m/s** (down) | pressed into the slate; the slate rebound (§7.2) gives +0.27 m/s, i.e. a **3.8 mm hop** |
+| 0.700 D (centre of percussion) | 0.400 R | −0.87 m/s (down) | driven into the slate hard; a 13.9 mm hop after the rebound |
 
-The *standard* case is the first row: a rounded nose puts the contact just above the ball's
-centre, below the flip, so the friction term wins and the ball hops. The slate-rebound story
-belongs to tall, square-faced cushions. If the hop is missing, the nose geometry is wrong; if
-the ball is kicked up too much, it is too low.
+So the standard case is the middle row: the cushion presses the ball into the slate, and the
+slate's rebound is what makes it hop. The "the rails pop the ball into the air" complaint
+corresponds to a low cushion — one whose nose sits at or below the ball's centre height — and
+that is a mounting problem, not a physics feature.
 
-**The hop scales as v².** A 5 m/s cushion hit predicts ≈ 39 mm against the ≈ 6 mm of a 2 m/s
-hit, but real cushion deformation limits how cleanly the ball is launched. The rigid-arc model
+**The hop scales as v².** A 5 m/s cushion hit predicts ≈ 24 mm against the ≈ 3.8 mm of a 2 m/s
+hit, but real cushion deformation limits how cleanly the ball is launched. The rigid model
 over-predicts the high-speed hop; treat it as the calibration point it is.
 
 **If the ball was pressed into the slate**, the rebound is
@@ -1337,26 +1326,33 @@ for continuous/ambient motion (ball-in-hand placement, cue stick animation, UI).
 
 **Narrow phase:** Time-of-impact (TOI) tests rather than overlap tests:
 - **Ball-ball:** solve for the first `t` at which the centres are `2R` apart (§ below)
-- **Ball-cushion:** solve for the first `t` at which the ball surface meets the cushion
-  profile. This is a swept sphere against the nose *arc* — a cylinder of radius `r_n` whose
-  **axis runs along the rail** (the x–z arc of radius `r_n` extruded along y, centred on the
-  rail line at height `h_apex - r_n`), not a ray against a plane and **not** a vertical
-  cylinder. The ball touches the rounded face, and the contact normal is the line of centres,
-  which therefore has no component along the rail: `ε` and `θ` depend only on the ball's height
-  `z_c` at the contact, never on the approach angle (§5.1).
+- **Ball-cushion:** solve for the first `t` at which the ball surface meets the cushion. The
+  boundary is the rail profile, and the rail has to be treated as **three different surfaces**
+  depending on how high the ball hits it:
 
-  Two paths, because the degree of the time-of-impact equation differs:
+  1. **The nose rubber** — the ball's contact height is at or below the nose height
+     (`h_nose`, 36.3 mm). This is the overwhelmingly common case, and it is the cushion model
+     of §5.1: a swept sphere against the inclined contact face, with the normal tilted `θ` from
+     the horizontal and `ε = h_nose - R`. The face is a *plane* inclined `θ` from the vertical,
+     so the TOI is the usual swept-sphere-against-a-plane test: `x_c(t)` is quadratic in `t`
+     (rolling friction) and the contact condition is linear in it, so the TOI is a
+     **quadratic**.
+  2. **The rail structure** — the ball's lowest point is above the nose but below the rail's
+     top edge, i.e. its centre is between `h_nose + R` = 64.9 mm and roughly `h_nose + 15 mm +
+     R` = 80 mm. Here the ball strikes the *upper* structure — the rubber's back and the rail's
+     wood face — which is a different surface with a different restitution (wood is stiffer and
+     less bouncy than K-66 rubber) and a different normal. Model it as its own boundary type
+     with its own `e` and `μ`; do **not** extrapolate the rubber model up into it.
+  3. **Clear of the rail** — the ball's centre is above ~80 mm, so its lowest point is above
+     the rail's top edge and it sails over the table (§10.2).
 
-  - **On the bed** (`z_c = R`): the contact condition collapses to a constant horizontal
-    distance, `(x_c(t) - x_rail)² = (R + r_n)² - Δ²`. With `x_c(t)` quadratic in `t` (rolling
-    friction), the TOI is a **quadratic**. This is the overwhelming majority of contacts.
-  - **Airborne** (`z_c ≠ R`): `x_c(t)` and `z_c(t)` are both quadratic (gravity), so
-    `(x_c(t) - x_rail)² + (z_c(t) - z_arc)² = (R + r_n)²` is a **quartic**.
+  Note that 64.9 mm is "the ball clears the **nose**", not "the ball clears the **rail**" — the
+  rail's top edge is ~15 mm higher than the nose, and the band in between is regime 2. The
+  solver must branch on the regime rather than run one model through all three.
 
-  In both paths the contact point gives `Δ = (h_apex - r_n) - z_c`, and from it `ε` and `θ`
-  follow (§5.1) — the impulse direction is a *consequence* of the contact geometry, not an
-  input, and it is re-derived per contact so that a lifted or airborne ball gets the correct
-  normal.
+  For an airborne ball in regime 1, `z_c(t)` is quadratic as well as `x_c(t)`, so the contact
+  condition against the inclined face is a **quartic**. In regime 1 on the bed it is a
+  quadratic.
 - **Ball-pocket:** point-in-circle/polygon test, with the pocket's cut angle (§2.3)
 - **Ball-off-table:** boundary check on the ball's centre against the rail line
 
@@ -1618,9 +1614,10 @@ So:
 | Sliding friction μ_s | 0.20 |
 | Rolling friction μ_r | 0.01 |
 | Cushion COR e_cushion | 0.75 |
-| Cushion nose apex height h_apex | 36.3 mm (63.5% of ball dia) |
-| Cushion nose arc radius r_n | 6.35 mm (1/4") |
-| → derived contact height ε | 0.039 R (= 1.12 mm) — an output, not an input (§5.1) |
+| Cushion nose (contact) height h_nose | 36.3 mm (63.5% of ball dia) |
+| → derived contact height ε | 0.270 R (= 7.73 mm) — an output, not an input (§5.1) |
+| → derived contact tilt θ | 15.7° |
+| Cushion nose tip radius | 6.35 mm (1/4") — shape only, not the impulse direction |
 | Cushion sliding friction μ_cushion | 0.14 |
 | Table COR e_table | 0.60 |
 | Cue-ball friction μ_cue | 0.60 |
@@ -1644,7 +1641,7 @@ can be fitted, and calibrate in this order — each step depends on the previous
 |---|---|---|---|
 | 1 | `μ_s`, `μ_r` | Dr. Dave's constants; confirm with a rolling ball's stopping distance | how far a 2 m/s ball rolls |
 | 2 | `μ_sp` | watch a spinning ball decay | 5–15 rad/s² |
-| 3 | `h_apex`, `r_n` (nose geometry) | slow-motion video of a cushion hit | the hop height and the rebound angle |
+| 3 | `h_nose` (cushion nose height) | slow-motion video of a cushion hit | the hop height and the rebound angle |
 | 4 | `e_cushion` | rebound speed off a cushion | speed loss on a 45° incidence |
 | 5 | `e_jaw`, `μ_jaw`, `μ_slate` | pocket outcomes on a real table | which shots rattle and which hang up |
 | 6 | squirt curve | high-speed video of off-centre hits | the deflection angle vs impact parameter |
@@ -1652,12 +1649,11 @@ can be fitted, and calibrate in this order — each step depends on the previous
 
 Two defaults deserve an explicit note:
 
-- **`ε` is derived, not tuned.** The table config carries the nose profile (`h_apex = 36.3 mm`,
-  `r_n = 6.35 mm`), and the contact height `ε = 0.039 R` falls out of the line-of-centres
-  geometry (§5.1). That is *below* the vertical flip threshold (`ε_c ≈ 0.139 R`), so the real
-  case is the cushion launching the ball upward into the familiar ~6 mm hop — no renderer fudge
-  needed, and nothing to drift out of sync with the physics. If the hop is missing or too big,
-  the nose geometry is wrong, not a magic number.
+- **`ε` is derived, not tuned.** The table config carries the nose height
+  (`h_nose = 36.3 mm`), and the contact height `ε = h_nose - R = 0.270 R` and the contact tilt
+  `θ = 15.7°` follow from it (§5.1). Nothing to drift out of sync with the physics, and the
+  model's predictions reproduce Dr. Dave's qualitative account of the rebound at 0.5 D, 0.635 D
+  and 0.7 D. If the hop is missing or too big, the nose height is wrong, not a magic number.
 - **`e_cushion = 0.75`** is the effective ball–rail restitution (Dr. Dave's 0.6–0.9), which
   already includes the energy lost in the cloth contact after the rail. Mathavan's 0.98 is the
   rail rubber alone; do not use it here unless the two contacts are modelled separately.

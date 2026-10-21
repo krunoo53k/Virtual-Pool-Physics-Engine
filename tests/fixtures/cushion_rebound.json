@@ -26,69 +26,70 @@
       }
     ],
     "params": {
-      "nose_apex_height": 0.0363,
-      "nose_arc_radius": 0.00635,
+      "nose_height": 0.0363,
+      "nose_tip_radius": 0.00635,
       "e_cushion": 0.75,
       "mu_cushion": 0.14,
-      "derived_eps_over_R": 0.03937007874015742
+      "derived_eps_over_R": 0.27034120734908135,
+      "derived_tilt_deg": 15.684571679006801
     },
     "note": "the incoming velocity makes `incidence_angle` with the rail normal (+x); the ball is rolling, so omega = (k x v)/R"
   },
   "expectations": [
     {
       "incidence_angle": 10,
-      "rebound_speed": 1.514896,
-      "rebound_angle": 10.2735,
-      "rebound_vz": 0.340009,
+      "rebound_speed": 1.375087,
+      "rebound_angle": 11.1801,
+      "rebound_vz": -0.45663,
       "sticking": false
     },
     {
       "incidence_angle": 20,
-      "rebound_speed": 1.520055,
-      "rebound_angle": 20.7326,
-      "rebound_vz": 0.306614,
+      "rebound_speed": 1.387965,
+      "rebound_angle": 22.5568,
+      "rebound_vz": -0.454966,
       "sticking": false
     },
     {
       "incidence_angle": 30,
-      "rebound_speed": 1.53485,
-      "rebound_angle": 31.4705,
-      "rebound_vz": 0.255044,
+      "rebound_speed": 1.417565,
+      "rebound_angle": 34.1479,
+      "rebound_vz": -0.448275,
       "sticking": false
     },
     {
       "incidence_angle": 40,
-      "rebound_speed": 1.56654,
-      "rebound_angle": 42.4116,
-      "rebound_vz": 0.191327,
+      "rebound_speed": 1.471766,
+      "rebound_angle": 45.6972,
+      "rebound_vz": -0.431309,
       "sticking": false
     },
     {
       "incidence_angle": 50,
-      "rebound_speed": 1.621187,
-      "rebound_angle": 53.2917,
-      "rebound_vz": 0.123556,
+      "rebound_speed": 1.554395,
+      "rebound_angle": 56.7417,
+      "rebound_vz": -0.397895,
       "sticking": false
     },
     {
       "incidence_angle": 60,
-      "rebound_speed": 1.700303,
-      "rebound_angle": 63.7353,
-      "rebound_vz": 0.061299,
+      "rebound_speed": 1.661865,
+      "rebound_angle": 66.826,
+      "rebound_vz": -0.341934,
       "sticking": false
     },
     {
       "incidence_angle": 70,
-      "rebound_speed": 1.798586,
-      "rebound_angle": 73.4077,
-      "rebound_vz": 0.01453,
+      "rebound_speed": 1.783026,
+      "rebound_angle": 75.6981,
+      "rebound_vz": -0.258437,
       "sticking": false
     },
     {
       "incidence_angle": 80,
-      "rebound_speed": 1.903975,
-      "rebound_angle": 82.1465,
-      "rebound_vz": -0.007899,
+      "rebound_speed": 1.901697,
+      "rebound_angle": 83.3598,
+      "rebound_vz": -0.144491,
       "sticking": false
     },
     {
@@ -101,84 +102,52 @@
   ],
   "vertical_flip": [
     {
-      "profile": "WPA reference nose (derived)",
-      "eps_over_R": 0.03937,
-      "rebound_vz": 0.351552,
+      "nose_height_over_D": 0.5,
+      "eps_over_R": 0.0,
+      "rebound_vz": 0.49,
       "direction": "up",
-      "hop_height_mm": 6.299
+      "hop_height_mm": 12.238
     },
     {
-      "profile": "flat face at 0.10R",
-      "eps_over_R": 0.1,
-      "rebound_vz": 0.136854,
-      "direction": "up",
-      "hop_height_mm": 0.955
-    },
-    {
-      "profile": "flip threshold",
+      "nose_height_over_D": 0.5693239222672031,
       "eps_over_R": 0.138648,
       "rebound_vz": 0.0,
-      "direction": "down",
+      "direction": "up",
       "hop_height_mm": 0.0
     },
     {
-      "profile": "flat face at 0.15R",
-      "eps_over_R": 0.15,
-      "rebound_vz": -0.040085,
-      "direction": "down",
-      "hop_height_mm": 0.029
-    },
-    {
-      "profile": "nose apex taken as contact height",
+      "nose_height_over_D": 0.635,
       "eps_over_R": 0.27,
       "rebound_vz": -0.455624,
       "direction": "down",
       "hop_height_mm": 3.809
     },
     {
-      "profile": "Mathavan geometry",
+      "nose_height_over_D": 0.7,
       "eps_over_R": 0.4,
       "rebound_vz": -0.871521,
       "direction": "down",
       "hop_height_mm": 13.937
     }
   ],
-  "lifted_ball_contacts": [
+  "rail_regimes": [
     {
       "case": "resting on the bed",
       "ball_centre_height_mm": 28.575,
-      "delta_mm": 1.375,
-      "eps_over_R": 0.03937,
-      "normal_tilt_deg": 2.256,
-      "rebound_vz": 0.351552,
-      "normal": "away_and_down"
-    },
-    {
-      "case": "lifted 5 mm",
-      "ball_centre_height_mm": 33.575,
-      "delta_mm": -3.625,
-      "eps_over_R": -0.10379,
-      "normal_tilt_deg": -5.958,
-      "rebound_vz": 0.846037,
-      "normal": "away_and_up"
+      "lowest_point_mm": 0.0,
+      "regime": "nose rubber"
     },
     {
       "case": "lifted 20 mm (popped by a ball-ball collision)",
       "ball_centre_height_mm": 48.575,
-      "delta_mm": -18.625,
-      "eps_over_R": -0.53329,
-      "normal_tilt_deg": -32.228,
-      "rebound_vz": 1.499047,
-      "normal": "away_and_up"
+      "lowest_point_mm": 20.0,
+      "regime": "nose rubber"
     },
     {
-      "case": "lifted 30 mm",
-      "ball_centre_height_mm": 58.575,
-      "delta_mm": -28.625,
-      "eps_over_R": -0.81961,
-      "normal_tilt_deg": -55.046,
-      "rebound_vz": 1.482662,
-      "normal": "away_and_up"
+      "case": "lifted 40 mm",
+      "ball_centre_height_mm": 68.575,
+      "lowest_point_mm": 40.0,
+      "regime": "rail structure"
     }
   ],
   "invariants": [
@@ -201,22 +170,27 @@
       "unit": "m/s"
     },
     {
-      "quantity": "eps_derived_from_nose_geometry",
-      "statement": "the contact height comes from the line of centres: eps = R*(apex - arc_radius - z_c)/(R + arc_radius), where z_c is the ball's centre height at the contact, so it is an output of the profile and of the ball's state rather than a tuned input",
+      "quantity": "eps_derived_from_nose_height",
+      "statement": "the contact height comes from the specified nose height: eps = h_nose - R, so it is an output of the table spec rather than a tuned input",
       "tolerance": 1e-09,
       "unit": "m"
     },
     {
       "quantity": "eps_independent_of_approach_angle",
-      "statement": "eps depends only on z_c: the nose is a cylinder along the rail, so the contact normal has no component along the rail and a 40 degree approach gives the same eps as a square hit at the same z_c",
+      "statement": "eps depends only on the nose height: the contact normal has no component along the rail, so a 40 degree approach gives the same eps and the same normal tilt as a square hit",
       "tolerance": 1e-09,
       "unit": "m"
     },
     {
-      "quantity": "normal_flips_for_a_lifted_ball",
-      "statement": "with the ball's centre 20 mm above the bed, eps is negative (-0.533 R) and the normal points away from the rail and UP, so the cushion pushes the ball up as well as back",
+      "quantity": "nose_height_changes_the_rebound",
+      "statement": "the specified nose height is what sets the vertical impulse: at 0.500 D the cushion launches the ball upward (+0.49 m/s at 2 m/s) and at 0.635 D it presses the ball into the slate (-0.44 m/s). Reproducing both is the check that the contact height is the nose height",
       "tolerance": 1e-09,
-      "unit": "m"
+      "unit": "m/s"
+    },
+    {
+      "quantity": "rail_regimes_are_distinct",
+      "statement": "the solver must branch on the regime: nose rubber below h_nose, rail structure between h_nose and the rail top (~15 mm higher), and no contact above the rail top. The rubber model must not be extrapolated into the rail structure",
+      "tolerance": 0
     }
   ]
 }
