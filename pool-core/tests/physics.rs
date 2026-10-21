@@ -285,6 +285,41 @@ fn a_ball_in_the_regime_two_band_hits_the_rail_structure() {
 }
 
 #[test]
+fn an_airborne_ball_hits_the_nose_rubber_at_the_right_time() {
+    // A ball that is in the air when it reaches the rail meets the inclined face at
+    // the height the geometry gives, and the impact time follows from the closed
+    // form.
+    let cfg = TableConfig::default();
+    let geometry = TableGeometry::new(&cfg);
+    let rail = &geometry.rails[3]; // the right rail
+    let speed = 1.0;
+    let mut ball = ball(&cfg, 0, cfg.table.length - 0.05, 0.635);
+    ball.position.z = cfg.ball.radius + 0.01;
+    ball.velocity = Vec3::new(speed, 0.0, 0.0);
+    ball.motion_state = MotionState::Airborne;
+
+    // In the air the ball keeps its speed, so the impact time is the distance to
+    // the contact divided by the speed. The contact height follows from the
+    // geometry: the ball meets the face where its centre is
+    // `R cos(theta)` short of the nose line, at the height it has by then.
+    let contact = cfg.table.length
+        - (cfg.ball.radius
+            + (ball.position.z - cfg.cushion.nose_height) * geometry.cushion.sin_theta)
+            / geometry.cushion.cos_theta;
+    let expected = (contact - ball.position.x) / speed;
+
+    let accel = Vec3::new(0.0, 0.0, -cfg.simulation.gravity);
+    let (time, regime) = cushion::time_of_impact(&ball, accel, rail, &geometry.cushion, &cfg, 10.0)
+        .expect("the impact is found");
+    assert_eq!(regime, RailRegime::NoseRubber);
+    // The ball falls a little on the way, which moves the contact point a little.
+    assert!(
+        (time - expected).abs() < 1e-3,
+        "the impact time was {time}, expected about {expected}"
+    );
+}
+
+#[test]
 fn a_ball_that_flies_over_the_rail_leaves_the_table() {
     let cfg = TableConfig::default();
     let geometry = TableGeometry::new(&cfg);

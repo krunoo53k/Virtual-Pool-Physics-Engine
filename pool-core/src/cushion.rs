@@ -154,6 +154,12 @@ pub fn regime_for_height(z: f64, radius: f64, cfg: &TableConfig) -> RailRegime {
 /// Both candidate conditions are quadratic in `t` (the ball's horizontal position
 /// is quadratic because of the cloth friction, and so is its height when it is
 /// airborne), so the impact time is found with the shared root finder.
+///
+/// The document describes the airborne case as a quartic, which is what a swept
+/// sphere against a general surface gives. Against a *plane* - which is what the
+/// model of §5.1 uses - the contact condition is the signed distance to the plane,
+/// and that is linear in the ball's position, hence quadratic in `t`. The same root
+/// finder solves both, and the degenerate case (`a = 0`) is handled by it.
 pub fn time_of_impact(
     ball: &BallState,
     accel: Vec3,
