@@ -201,6 +201,24 @@ throw the object ball to the shooter's left.
 describe the same shot and pin the same hash, so a number that moves on the way
 from Godot to the core stops both sides from agreeing.
 
+The game has a table built from the core's own geometry, sixteen balls on it
+and the controls a pool game has always had: the mouse aims, **S** draws the
+cue back and a flick lets it go, **E** holds the english and **B** holds the
+fine aim.
+
+![the game](godot-project/docs/table.png)
+
+Three tests run it, all headless and all with an exit code:
+
+```sh
+godot --headless --path godot-project scenes/smoke_test.tscn   # the data survives the trip
+godot --headless --path godot-project scenes/play_test.tscn    # a break, and the balls scatter
+godot --headless --path godot-project scenes/input_test.tscn   # the mouse and the keys do what they say
+```
+
+What is not there yet: the rules. The shot resolves and the balls come to
+rest, but nothing decides who won.
+
 ## What the model does and does not do
 
 The document lists its own limitations, and they are reproduced faithfully here:
