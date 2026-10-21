@@ -97,6 +97,13 @@ pub struct Segment {
     pub w0: Vec3,
     /// The constant angular acceleration over the segment, rad/s^2.
     pub wa: Vec3,
+    /// The rotation the ball has already made when the segment starts, as a
+    /// rotation vector: the axis of the rotation times the angle, in radians.
+    ///
+    /// A renderer turns it into an orientation: the axis is the direction of the
+    /// vector and the angle is its length. The angle is *not* wrapped, so a ball
+    /// that has rolled through many turns keeps its phase.
+    pub spin0: Vec3,
     /// Where the ball is in the pocket state machine (§9.2).
     pub pocket_state: PocketState,
 }
@@ -140,6 +147,22 @@ impl Segment {
         self.w0 + self.wa * dt
     }
 
+    /// The rotation the ball has made by the time `t`, as a rotation vector.
+    ///
+    /// The rotation vector is the axis of the rotation times the angle in
+    /// radians, so the renderer reads the orientation off it: the axis is the
+    /// direction of the vector, the angle is its length.
+    ///
+    /// Over a segment the angular velocity is `w0 + wa * dt`, so the rotation is
+    /// the integral of it: `spin0 + w0 * dt + wa * dt^2 / 2`. That is exact for a
+    /// rotation about a fixed axis - a rolling, a spinning or an airborne ball -
+    /// and an approximation for a sliding ball, whose axis turns as it is spun up
+    /// towards the rolling condition (§3.3).
+    pub fn rotation_at(&self, t: f64) -> Vec3 {
+        let dt = self.dt(t);
+        self.spin0 + (self.w0 * dt + self.wa * (0.5 * dt * dt))
+    }
+
     /// The JSON form of the segment.
     pub fn to_json_value(&self) -> Value {
         Value::Object(vec![
@@ -151,6 +174,7 @@ impl Segment {
             ("a".into(), vec3_value(self.a)),
             ("w".into(), vec3_value(self.w0)),
             ("wa".into(), vec3_value(self.wa)),
+            ("spin".into(), vec3_value(self.spin0)),
             (
                 "pocket".into(),
                 Value::String(pocket_name(self.pocket_state).into()),
@@ -220,6 +244,47 @@ impl Trace {
             out.push(ball);
         }
         out
+    }
+
+    /// The position of every ball at the time `t`, m.
+    ///
+    /// This is what a renderer asks for every frame: the positions only, without
+    /// the state of each ball around them.
+    pub fn sample_positions(&self, t: f64) -> Vec<Vec3> {
+        self.balls
+            .iter()
+            .map(|segments| match segment_at(segments, t) {
+                Some(segment) => segment.position_at(t),
+                None => Vec3::ZERO,
+            })
+            .collect()
+    }
+
+    /// The angular velocity of every ball at the time `t`, rad/s.
+    pub fn sample_angular(&self, t: f64) -> Vec<Vec3> {
+        self.balls
+            .iter()
+            .map(|segments| match segment_at(segments, t) {
+                Some(segment) => segment.angular_velocity_at(t),
+                None => Vec3::ZERO,
+            })
+            .collect()
+    }
+
+    /// The rotation every ball has made by the time `t`, as a rotation vector.
+    ///
+    /// The rotation vector is the axis of the rotation times the angle, so the
+    /// renderer reads the orientation off it: the axis is the direction and the
+    /// angle is the length. The angle is not wrapped, so a ball that has rolled
+    /// through many turns keeps its phase.
+    pub fn sample_rotation(&self, t: f64) -> Vec<Vec3> {
+        self.balls
+            .iter()
+            .map(|segments| match segment_at(segments, t) {
+                Some(segment) => segment.rotation_at(t),
+                None => Vec3::ZERO,
+            })
+            .collect()
     }
 
     /// The JSON form of the trace.
@@ -354,6 +419,8 @@ pub(crate) struct OpenSegment {
     pub w0: Vec3,
     /// The constant angular acceleration, rad/s^2.
     pub wa: Vec3,
+    /// The rotation the ball has already made when the segment starts.
+    pub spin0: Vec3,
     /// The pocket state at `t0`.
     pub pocket_state: PocketState,
 }
@@ -370,6 +437,7 @@ impl OpenSegment {
             a: self.a,
             w0: self.w0,
             wa: self.wa,
+            spin0: self.spin0,
             pocket_state: self.pocket_state,
         }
     }
@@ -385,6 +453,8 @@ pub(crate) struct Recorder {
     pub trace: Trace,
     /// The segment every ball currently has open.
     open: Vec<Option<OpenSegment>>,
+    /// The rotation every ball has made so far, as a rotation vector.
+    spin: Vec<Vec3>,
 }
 
 impl Recorder {
@@ -399,12 +469,17 @@ impl Recorder {
                 duration: 0.0,
             },
             open: vec![None; count],
+            spin: vec![Vec3::ZERO; count],
         }
     }
 
     /// Opens a segment for a ball.
-    pub(crate) fn open(&mut self, index: usize, segment: OpenSegment) {
+    ///
+    /// The segment is stamped with the rotation the ball has made so far: that is
+    /// the state the ball was left in by the event that ended its last segment.
+    pub(crate) fn open(&mut self, index: usize, mut segment: OpenSegment) {
         if index < self.open.len() {
+            segment.spin0 = self.spin[index];
             self.open[index] = Some(segment);
         }
     }
@@ -415,6 +490,10 @@ impl Recorder {
             return;
         }
         if let Some(open) = self.open[index].take() {
+            let dt = t1 - open.t0;
+            // The rotation the ball makes over the segment: the integral of the
+            // angular velocity, which is linear over a segment.
+            self.spin[index] = self.spin[index] + open.w0 * dt + open.wa * (0.5 * dt * dt);
             self.trace.balls[index].push(open.close(t1));
         }
     }

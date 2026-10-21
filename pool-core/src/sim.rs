@@ -552,6 +552,9 @@ impl<'a> Simulation<'a> {
             a,
             w0: ball.angular_velocity,
             wa: self.angular_acceleration(ball, kind, a),
+            // The recorder stamps the rotation the ball has made so far: it is
+            // the one that keeps the tally across the segments of a ball.
+            spin0: Vec3::ZERO,
             pocket_state: ball.pocket_state,
         }
     }

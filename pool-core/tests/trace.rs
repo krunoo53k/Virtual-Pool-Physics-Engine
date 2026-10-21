@@ -217,3 +217,109 @@ fn two_traces_of_the_same_shot_are_identical() {
     let (_, second) = try_simulate_shot_traced(&input, &cfg).expect("the shot runs");
     assert_eq!(first, second);
 }
+
+#[test]
+fn a_rolling_ball_turns_as_far_as_it_rolls() {
+    let cfg = TableConfig::default();
+    // A ball that is already rolling: the rolling condition of §3.2, so it
+    // turns about the lateral axis and turns as many radians as it has rolled
+    // radii. It rolls slowly enough to stop on the bed, so no rail is in the
+    // way and the turn is only the roll. No cue strike either, so the state is
+    // exactly what is set here.
+    let speed = 0.3;
+    let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.635, cfg.ball.radius));
+    ball.velocity = Vec3::new(speed, 0.0, 0.0);
+    ball.angular_velocity = Vec3::new(0.0, speed / cfg.ball.radius, 0.0);
+    let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
+    let mut simulation = pool_core::Simulation::new(&input, &cfg);
+    simulation.record();
+    simulation.run_without_strike().expect("the ball rolls");
+    let trace = simulation.trace().cloned().expect("the path was recorded");
+
+    let travelled = trace.sample_positions(trace.duration)[0].x - 0.5;
+    let rotation = trace.sample_rotation(trace.duration)[0];
+    let expected = travelled / cfg.ball.radius;
+    assert!(
+        (rotation.y - expected).abs() < 1e-9,
+        "the ball turned {} radians, which is not the {expected} of the roll",
+        rotation.y
+    );
+    // The roll is about the lateral axis, not about the direction of travel.
+    assert!(
+        rotation.x.abs() < 1e-9,
+        "the ball turned about the direction of travel: {rotation:?}"
+    );
+}
+
+#[test]
+fn the_vertical_spin_decay_drives_the_spin_past_zero() {
+    // The spin decay of §3.2 is linear: `w_z(t) = w0 - (5 mu_sp g / 2R) t`. A
+    // linear decay of a spin that starts at zero does not stay at zero: it
+    // goes on into the backspin, and a backspin grows instead of dying. This
+    // test pins that behaviour, so that a fix to the decay model shows up
+    // here.
+    //
+    // A decay that is proportional to the spin - `w_z(t) = w0 e^(-kt)` - would
+    // not do this, and it is what the model probably wants; but the model as
+    // written is what the fixtures and the determinism hash pin, so it is not
+    // changed here.
+    let cfg = TableConfig::default();
+    let speed = 0.3;
+    let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.635, cfg.ball.radius));
+    ball.velocity = Vec3::new(speed, 0.0, 0.0);
+    ball.angular_velocity = Vec3::new(0.0, speed / cfg.ball.radius, 0.0);
+    let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
+    let mut simulation = pool_core::Simulation::new(&input, &cfg);
+    simulation.record();
+    simulation.run_without_strike().expect("the ball rolls");
+    let trace = simulation.trace().cloned().expect("the path was recorded");
+    // The ball starts with no vertical spin at all.
+    assert_eq!(simulation.balls()[0].angular_velocity.z, 0.0);
+    // And it turns backwards about the vertical axis on the way: the decay
+    // does not stop at zero, and a backspin grows instead of dying.
+    let rotation = trace.sample_rotation(trace.duration)[0];
+    assert!(
+        rotation.z < 0.0,
+        "the ball turned {} about the vertical axis, which is not backwards",
+        rotation.z
+    );
+    // The final spin is zero all the same, because the state change zeroes it.
+    assert_eq!(simulation.balls()[0].angular_velocity.z, 0.0);
+}
+
+#[test]
+fn the_rotation_is_continuous_at_every_event() {
+    let (cfg, input) = shot();
+    let (_, trace) = try_simulate_shot_traced(&input, &cfg).expect("the shot runs");
+    for (index, segments) in trace.balls.iter().enumerate() {
+        for pair in segments.windows(2) {
+            let (first, second) = (&pair[0], &pair[1]);
+            let end = first.rotation_at(first.t1);
+            let start = second.rotation_at(second.t0);
+            assert!(
+                (end - start).norm() < 1e-9,
+                "ball {index}: the rotation jumps at t = {}: {end:?} vs {start:?}",
+                first.t1
+            );
+        }
+    }
+}
+
+#[test]
+fn the_samplers_agree_with_the_state() {
+    let (cfg, input) = shot();
+    let (state, trace) = try_simulate_shot_traced(&input, &cfg).expect("the shot runs");
+    let positions = trace.sample_positions(trace.duration);
+    let angular = trace.sample_angular(trace.duration);
+    assert_eq!(positions.len(), state.balls.len());
+    for (index, ball) in state.balls.iter().enumerate() {
+        assert!(
+            (positions[index].x - ball.position.x).abs() < POSITION_TOLERANCE,
+            "ball {index} is not where the state says"
+        );
+        assert!(
+            (angular[index].x - ball.angular_velocity.x).abs() < 1e-9,
+            "ball {index} does not spin the way the state says"
+        );
+    }
+}
