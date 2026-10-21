@@ -534,6 +534,11 @@ For the WPA profile: `ε = 7.73 mm = 0.270 R`, `θ = 15.7°`. The contact surfac
 then modelled as a plane inclined `θ` from the vertical, which is what makes a resting ball
 contact at the specified height.
 
+> `ε = 0.270 R` is above the 0.1–0.2 R that Han (2005) is usually run with, and it is *not* a
+> correction of Han: his paper is about carom and three-cushion billiards, and those ε values
+> are for carom cushions, whose noses sit lower. The WPA specification fixes the pool value at
+> 0.635 D, and that is what this model uses. Do not "fix" 0.270 R back down into Han's range.
+
 **Why this reading, and not the other one.** There are two ways to read "nose height":
 
 - **As the contact height** (above). This is how the specification and the manufacturers use
@@ -556,6 +561,12 @@ be meaningless. The first reading predicts the right behaviour at all three refe
 Three independent qualitative statements about three different heights, matched by one model.
 That is the strongest available check on the cushion geometry, and it is why `h_nose` — a
 measured, specified dimension — is the model's input and `ε` and `θ` are derived from it.
+
+Note what this check does and does not do. It is a **qualitative** anchor: it pins the *sign* of
+the vertical impulse and the *ordering* of the three heights, and it is genuinely discriminating
+(the apex reading of v1.3 fails it outright). It does not pin the magnitude — the 3.8 mm hop the
+model predicts at the spec height is a rigid-model number and still wants high-speed-video
+calibration, at low speed as well as at break speed.
 
 **Per contact.** The contact height for a ball whose centre is at `z_c` is `z_c + R·sin θ`: the
 contact moves up the face as the ball rises. The plane idealisation keeps the normal's tilt at
