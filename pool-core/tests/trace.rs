@@ -339,3 +339,28 @@ fn the_samplers_agree_with_the_state() {
         );
     }
 }
+
+#[test]
+fn a_time_past_the_end_of_the_shot_gives_the_end_of_the_shot() {
+    // The last frame of a game loop is a little past the end of the shot, so
+    // the renderer asks for a time the shot does not have. The balls are where
+    // the shot left them - they are not at the origin.
+    let (cfg, input) = shot();
+    let (state, trace) = try_simulate_shot_traced(&input, &cfg).expect("the shot runs");
+    let past = trace.sample_positions(trace.duration + 1.0 / 60.0);
+    let last = trace.sample_positions(trace.duration);
+    for (index, ball) in state.balls.iter().enumerate() {
+        assert!(
+            (past[index].x - ball.position.x).abs() < POSITION_TOLERANCE
+                && (past[index].y - ball.position.y).abs() < POSITION_TOLERANCE,
+            "ball {index} is not where the shot left it: {:?} vs {:?}",
+            past[index],
+            ball.position
+        );
+        assert_eq!(past[index], last[index]);
+    }
+    // And a time before the start gives the start.
+    let before = trace.sample_positions(-1.0);
+    let first = trace.sample_positions(0.0);
+    assert_eq!(before, first);
+}

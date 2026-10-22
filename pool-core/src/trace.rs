@@ -215,6 +215,7 @@ impl Trace {
     /// The positions are the analytic ones: the exact trajectory of the model,
     /// not a resampling of the simulation's own accumulation.
     pub fn sample(&self, t: f64, cfg: &crate::config::TableConfig) -> Vec<BallState> {
+        let t = self.clamp(t);
         let mut out = Vec::with_capacity(self.balls.len());
         for (index, segments) in self.balls.iter().enumerate() {
             let number = self.numbers.get(index).copied().unwrap_or(index as u8);
@@ -246,11 +247,33 @@ impl Trace {
         out
     }
 
+    /// The time of the shot, clamped to the shot itself.
+    ///
+    /// A renderer asks for the position at the time it draws, and the frame it
+    /// draws is usually a little past the end of the shot: the last frame of a
+    /// game loop is at the shot's duration plus a fraction of a frame. The balls
+    /// are where the shot left them, so the time is clamped to the shot and the
+    /// last position is given - not the origin, which is what a lookup that
+    /// misses every segment would return.
+    fn clamp(&self, t: f64) -> f64 {
+        if !t.is_finite() {
+            return 0.0;
+        }
+        if t < 0.0 {
+            0.0
+        } else if t > self.duration {
+            self.duration
+        } else {
+            t
+        }
+    }
+
     /// The position of every ball at the time `t`, m.
     ///
     /// This is what a renderer asks for every frame: the positions only, without
     /// the state of each ball around them.
     pub fn sample_positions(&self, t: f64) -> Vec<Vec3> {
+        let t = self.clamp(t);
         self.balls
             .iter()
             .map(|segments| match segment_at(segments, t) {
@@ -262,6 +285,7 @@ impl Trace {
 
     /// The angular velocity of every ball at the time `t`, rad/s.
     pub fn sample_angular(&self, t: f64) -> Vec<Vec3> {
+        let t = self.clamp(t);
         self.balls
             .iter()
             .map(|segments| match segment_at(segments, t) {
@@ -278,6 +302,7 @@ impl Trace {
     /// angle is the length. The angle is not wrapped, so a ball that has rolled
     /// through many turns keeps its phase.
     pub fn sample_rotation(&self, t: f64) -> Vec<Vec3> {
+        let t = self.clamp(t);
         self.balls
             .iter()
             .map(|segments| match segment_at(segments, t) {
