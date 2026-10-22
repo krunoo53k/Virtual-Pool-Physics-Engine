@@ -415,16 +415,35 @@ func _aim() -> Vector3:
 	return base_aim.normalized()
 
 
+## The direction the cue ball will really take.
+##
+## The cue points where the player aims, but the ball leaves along the cue
+## axis only when the tip is in the middle of the ball: an off-centre tip
+## slides on the ball and the ball squirts away from the side that was struck
+## (§6.1). The preview shows the line the ball really takes, so the squirt is
+## something the player can see and correct for, and not a surprise.
+func _shot_direction() -> Vector3:
+	var aim := _aim()
+	if contact.length_squared() < 1e-12:
+		return aim
+	var preview: Dictionary = core.preview_cue_strike(1.0, aim, contact)
+	var velocity: Vector3 = preview["velocity"]
+	if velocity.length_squared() < 1e-12:
+		return aim
+	return velocity.normalized()
+
+
 ## Draws the aim: the line the cue ball takes, the ball it hits and the mark
 ## where the tip strikes.
 func _draw_aim() -> void:
 	var cue_ball := balls[0]
 	var aim := _aim()
+	var direction := _shot_direction()
 	aim_line.visible = phase != Phase.ROLLING
-	aim_line.position = cue_ball.position + aim * 0.30 + Vector3(0, 0.001, 0)
-	aim_line.basis = _basis_along(aim)
+	aim_line.position = cue_ball.position + direction * 0.30 + Vector3(0, 0.001, 0)
+	aim_line.basis = _basis_along(direction)
 
-	var hit := _first_contact(aim)
+	var hit := _first_contact(direction)
 	ghost.visible = hit != Vector3.ZERO
 	if ghost.visible:
 		ghost.position = hit

@@ -31,6 +31,7 @@ func _ready() -> void:
 	await _test_the_mouse_turns_the_shot()
 	await _test_the_mouse_is_absolute()
 	await _test_the_english()
+	await _test_the_draw_does_not_squirt()
 	await _test_the_release_cancels()
 	await _test_the_draw_and_the_stroke()
 	_report()
@@ -75,6 +76,24 @@ func _test_the_english() -> void:
 		printerr("the english did not move the tip to the shooter's right")
 	if game.base_aim.distance_to(aim) > 0.001:
 		printerr("the english moved the shot as well")
+	# An off-centre tip makes the ball squirt away from the side that was
+	# struck, and the preview has to show the line the ball really takes: a
+	# preview that shows the cue's line is a promise the shot does not keep.
+	var squirted: Vector3 = game._shot_direction()
+	print("the ball leaves at ", squirted, " and the cue points at ", game._aim())
+	if squirted.distance_to(game._aim()) < 0.0001:
+		printerr("the preview does not show the squirt")
+
+
+## A tip above or below the centre gives follow or draw, and no squirt at all.
+func _test_the_draw_does_not_squirt() -> void:
+	var saved: Vector2 = game.contact
+	game.contact = Vector2(0.0, 0.010)
+	var squared: float = game._shot_direction().distance_to(game._aim())
+	print("a follow leaves at ", game._shot_direction(), " and the cue points at ", game._aim())
+	if squared > 0.0001:
+		printerr("a follow squirted by {squared} rad")
+	game.contact = saved
 
 
 ## Letting go of the key without a stroke puts the game back to the default.

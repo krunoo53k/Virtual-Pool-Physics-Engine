@@ -121,6 +121,57 @@ fn the_squirt_points_away_from_the_side_that_was_struck() {
 }
 
 #[test]
+fn a_tip_above_or_below_the_centre_does_not_squirt() {
+    // The squirt comes from the tip sliding on the ball, and the tip slides
+    // *sideways*. A tip above the centre gives follow and a tip below it gives
+    // draw, and neither of them slides sideways: those shots go straight down
+    // the aim line.
+    //
+    // The impact parameter counts a tip that is above or below the centre as an
+    // off-centre hit too, so the squirt used to be looked up at the wrong
+    // number: a draw or a follow shot came off the line towards the shooter's
+    // right, and the player saw the cue ball leave to the side the moment it
+    // was struck.
+    let cfg = TableConfig::default();
+    for offset in [0.005, 0.010, -0.005, -0.010] {
+        let mut input = shot(&cfg, 0.0);
+        input.contact_offset_y = offset;
+        let strike = cue::strike(&input, &cfg);
+        assert!(
+            strike.velocity.y.abs() < 1e-12,
+            "a tip {offset} above the centre squirted to {:?}",
+            strike.velocity
+        );
+        // And the spin is there: the tip above the centre gives topspin and
+        // the tip below it gives backspin.
+        assert!(
+            strike.angular_velocity.y * offset > 0.0,
+            "a tip {offset} from the centre spun the ball {:?}",
+            strike.angular_velocity
+        );
+    }
+}
+
+#[test]
+fn the_squirt_depends_only_on_the_sideways_offset() {
+    // The same english with and without follow or draw squirts the same way:
+    // the sideways offset is what makes the tip slide.
+    let cfg = TableConfig::default();
+    let plain = cue::strike(&shot(&cfg, 0.010), &cfg).velocity;
+    for height in [0.005, -0.005, 0.010] {
+        let mut input = shot(&cfg, 0.010);
+        input.contact_offset_y = height;
+        let strike = cue::strike(&input, &cfg);
+        assert!(
+            (strike.velocity.y - plain.y).abs() < 1e-12,
+            "a follow of {height} changed the squirt: {:?} against {:?}",
+            strike.velocity,
+            plain
+        );
+    }
+}
+
+#[test]
 fn right_english_throws_the_object_ball_to_the_shooters_left() {
     let cfg = TableConfig::default();
     // Right english is the tip on the shooter's right: a negative offset.

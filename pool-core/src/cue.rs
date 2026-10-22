@@ -75,10 +75,19 @@ pub fn strike(input: &ShotInput, cfg: &TableConfig) -> CueStrike {
         (1.0 + cfg.cue.e_cue) * cfg.cue.cue_mass * input.cue_speed / (mass + cfg.cue.cue_mass);
     let speed = if speed.is_finite() { speed } else { 0.0 };
 
-    // The squirt (§6.1): the calibration curve is looked up at the impact parameter
-    // and the ball is deflected away from the side that was struck.
+    // The squirt (§6.1): the calibration curve is looked up at the impact
+    // parameter and the ball is deflected away from the side that was struck.
+    //
+    // The squirt comes from the tip *sliding* on the ball, and the tip slides
+    // around the ball: only a **sideways** offset makes it slide sideways. A
+    // tip above or below the centre gives follow or draw, and that shot goes
+    // straight - the tip does not slide sideways at all. So the squirt is
+    // looked up at the sideways part of the contact, and not at the whole
+    // impact parameter, which counts a tip that is above or below the centre
+    // as an off-centre hit as well.
+    let lateral = offset.dot(side).abs();
     let b_over_r = if radius > 0.0 {
-        impact_parameter / radius
+        lateral / radius
     } else {
         0.0
     };

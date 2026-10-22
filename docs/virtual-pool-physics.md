@@ -862,6 +862,18 @@ measured values from Cross (2008) or high-speed video go.
 > denominator grows with `M` it predicts that squirt *shrinks* with cue mass, which is the
 > opposite of the real trend.
 
+> **The squirt is driven by the *sideways* offset, not by the whole impact
+> parameter.** The impact parameter `b` is the perpendicular distance from the
+> cue's axis to the ball's centre, so a tip above or below the centre is an
+> off-centre hit by that measure too — and looking the squirt curve up at `b`
+> gives a draw or a follow shot a squirt of nearly 2°. It does not: the squirt
+> comes from the tip *sliding around* the ball, and only a **sideways** offset
+> makes it slide sideways. A draw or a follow shot goes straight down the aim
+> line. So the curve is looked up at the sideways part of the contact, while
+> the spin (`ω = (5/2)(b/R)(v/R)`) and the miscue limit keep using the whole
+> impact parameter, because a tip above the centre does give topspin and does
+> slip off at the same offset.
+
 **References:** R. Cross, "Cue and ball deflection (or 'squirt') in billiards," Am. J. Phys. 76,
 205 (2008). H.-C. Kim, "Motions of a billiard ball after a cue stroke," arXiv:2104.11232 /
 New Physics: Sae Mulli 72, 208 (2022).
