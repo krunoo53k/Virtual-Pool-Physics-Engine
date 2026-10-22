@@ -8,13 +8,15 @@ extends Node3D
 ##
 ## The controls, the way a pool game has always done it:
 ##
-## * the mouse aims;
-## * **S** draws the cue back and a flick forward lets it go;
+## * the mouse turns the shot, the way it turns the view in a first person
+##   game - the view is locked level, and the shot is the only thing the
+##   mouse turns;
+## * **S** draws the cue back, and pushing the mouse forward shoots;
 ## * **E** holds the english: the mouse then moves the tip on the cue ball;
-## * **B** holds the fine aim: the mouse then trims the angle.
+## * **B** holds the fine aim: the mouse then turns the shot more slowly.
 ##
-## While **B** or **E** is held the mouse stops aiming and only trims or
-## moves the tip, so the two never fight.
+## While **E** is held the mouse moves the tip on the ball instead of turning
+## the shot, so the two never fight.
 
 enum Phase { AIMING, CHARGING, STRIKING, ROLLING }
 
@@ -30,19 +32,18 @@ const MAX_PULL := 0.30
 ## The speed of the cue at a full draw, in metres per second.
 const MAX_CUE_SPEED := 9.0
 
-## What a flick of the mouse is worth: metres per second of mouse per metre
-## per second of cue.
-const FLICK_SCALE := 1.6
-
-## How fast the mouse has to move forward to let the cue go, in metres per
-## second.
-const MIN_FLICK := 0.30
-
 ## How long the cue takes to travel into the ball, in seconds.
 const STRIKE_TIME := 0.06
 
-## How much the fine aim turns per pixel of mouse, in radians.
-const TRIM_RATE := 0.0025
+## How fast the mouse turns the shot, in radians per pixel. A first person
+## camera turns with the mouse, not towards it.
+const LOOK_SPEED := 0.0035
+
+## How much finer the aim is while **B** is held.
+const FINE_SCALE := 0.25
+
+## How far the cue is drawn back per pixel of mouse, in metres.
+const DRAW_SPEED := 0.002
 
 ## How far the tip moves on the ball per pixel of mouse, in metres.
 const SPIN_SCALE := 0.00028
@@ -71,14 +72,40 @@ var ghost: MeshInstance3D
 ## The mark on the cue ball where the tip strikes.
 var spin_marker: MeshInstance3D
 
-## The camera.
+## The camera the player looks through.
 var camera: Camera3D
 
-## The aim from the mouse, frozen while **B** or **E** is held.
-var base_aim := Vector3(1, 0, 0)
+## The camera of the table view: the one **C** shows.
+##
+## It never moves. The shot is turned by the mouse and the view follows the
+## shot, so nothing here feeds back into the shot - which is what keeps the
+## mouse from behaving like a joystick.
+var table_camera: Camera3D
 
-## The fine trim, in radians. Positive turns the shot to the shooter's right.
-var trim := 0.0
+## Which view the camera is in: 0 is the table, 1 is down the cue.
+var camera_mode := 1
+
+## How far behind the cue ball the cue camera sits, in metres.
+var cue_camera_back := 0.62
+
+## How high above the bed the cue camera sits, in metres.
+var cue_camera_height := 0.155
+
+## How far ahead of the cue ball the cue camera looks, in metres.
+var cue_camera_ahead := 2.4
+
+## Where the table camera sits, in the table's frame.
+var table_camera_offset := Vector3(0.0, 1.42, -1.72)
+
+## How wide the camera sees, in degrees.
+var camera_fov := 54.0
+
+## The middle of the table, in the core's frame.
+var table_middle := Vector3(1.27, 0.0, -0.635)
+
+## The direction of the shot. The mouse turns it, the way it turns the view
+## in a first person game: relative, and it stops when the mouse stops.
+var base_aim := Vector3(1, 0, 0)
 
 ## The tip on the cue ball: `x` is the distance to the shooter's right and
 ## `y` the distance above the centre, both in metres.
@@ -90,12 +117,6 @@ var draw := 0.0
 ## How far the cue has been drawn back at its furthest, in metres: that is
 ## the power of the shot.
 var pulled := 0.0
-
-## How fast the mouse is moving forward along the aim, in metres per second.
-var flick := 0.0
-
-## The last point of the mouse on the bed.
-var bed_point := Vector3.ZERO
 
 ## Where the mouse is.
 var mouse_position := Vector2.ZERO
@@ -230,16 +251,51 @@ func _build_cue() -> void:
 func _build_camera(geometry: Dictionary) -> void:
 	var length: float = geometry["length"]
 	var width: float = geometry["width"]
+	table_middle = Vector3(length / 2.0, 0.0, -width / 2.0)
+
+	# The table camera: it looks down at the table from behind the head rail,
+	# and it never moves.
+	table_camera = Camera3D.new()
+	table_camera.fov = camera_fov
+	table_camera.near = 0.01
+	table_camera.far = 60.0
+	# The camera is not in the tree yet, so it is aimed without `look_at`.
+	table_camera.look_at_from_position(
+		table_middle + table_camera_offset,
+		table_middle + Vector3(0.0, 0.06, 0.05)
+	)
+	add_child(table_camera)
+
+	# The camera the player looks through. It has to be the current one: the
+	# first camera in the tree is the one Godot renders through.
 	camera = Camera3D.new()
-	# The table's middle, in the core's frame.
-	var middle := Vector3(length / 2.0, 0.0, -width / 2.0)
-	camera.position = middle + Vector3(0.0, 1.42, -1.72)
-	camera.fov = 50.0
+	camera.fov = camera_fov
 	camera.near = 0.01
 	camera.far = 60.0
-	# The camera is not in the tree yet, so it is aimed without `look_at`.
-	camera.look_at_from_position(camera.position, middle + Vector3(0.0, 0.06, 0.05))
+	camera.position = table_camera.position
+	camera.basis = table_camera.basis
 	add_child(camera)
+	camera.make_current()
+
+
+## Puts the camera where it belongs.
+##
+## The cue camera rests behind the cue ball, on the line of the shot, and looks
+## forward along it: it moves with the aim, so turning the shot turns the view.
+func _update_camera() -> void:
+	camera.fov = camera_fov
+	if camera_mode == 1 and not balls.is_empty():
+		var aim := _aim()
+		var cue_ball := balls[0]
+		var eye := cue_ball.position - aim * cue_camera_back + Vector3.UP * cue_camera_height
+		# The view looks along the shot, level.
+		camera.position = eye
+		camera.look_at(eye + aim * cue_camera_ahead, Vector3.UP)
+		return
+	# The table: the whole of it, from above and behind - the same view the
+	# aim is picked with, so the player can see how the mouse maps.
+	camera.position = table_camera.position
+	camera.basis = table_camera.basis
 
 
 ## Builds the status line and the power bar.
@@ -272,7 +328,6 @@ func _read_the_arguments() -> void:
 func _process(delta: float) -> void:
 	match phase:
 		Phase.AIMING:
-			_update_aim()
 			_draw_aim()
 		Phase.CHARGING:
 			_draw_aim()
@@ -288,6 +343,7 @@ func _process(delta: float) -> void:
 			if shot_time >= shot.get_duration():
 				_settle()
 	_update_cue()
+	_update_camera()
 	_update_status()
 	if screenshot != "" and get_tree().current_scene == self:
 		screenshot_frames += 1
@@ -328,44 +384,13 @@ func _aim_at_the_table() -> void:
 	base_aim = direction.normalized()
 
 
-## The aim follows the mouse, unless the mouse is busy trimming or moving the
-## tip.
-func _update_aim() -> void:
-	if not mouse_moved:
-		return
-	if Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_E):
-		return
-	var point := _on_the_bed(mouse_position)
-	var cue_ball := balls[0]
-	var direction := point - cue_ball.position
-	direction.y = 0.0
-	if direction.length() > 0.0001:
-		base_aim = direction.normalized()
-
-
-## The direction of the shot: the aim, trimmed.
+## The direction of the shot.
 ##
 ## The shot is level. A cue that is tilted down would drive the ball into the
 ## slate, and the slate is what launches it (§7.1) - so a level shot is not a
 ## detail here, it is the difference between a break and a jump shot.
 func _aim() -> Vector3:
-	var direction := base_aim.rotated(Vector3.UP, -trim)
-	direction.y = 0.0
-	if direction.length() < 0.0001:
-		return Vector3(1, 0, 0)
-	return direction.normalized()
-
-
-## Where the mouse meets the bed.
-func _on_the_bed(screen: Vector2) -> Vector3:
-	var from := camera.project_ray_origin(screen)
-	var direction := camera.project_ray_normal(screen)
-	if absf(direction.y) < 0.000001:
-		return bed_point
-	var distance := -from.y / direction.y
-	if distance < 0.0:
-		return bed_point
-	return from + direction * distance
+	return base_aim.normalized()
 
 
 ## Draws the aim: the line the cue ball takes, the ball it hits and the mark
@@ -474,8 +499,7 @@ func _tip(centre: Vector3, aim: Vector3) -> Vector3:
 ##
 ## This is the way the play test starts a shot: the mouse is not there.
 func fire_now(speed: float) -> void:
-	pulled = MAX_PULL
-	flick = speed
+	pulled = MAX_PULL * clampf(speed / MAX_CUE_SPEED, 0.0, 1.0)
 	phase = Phase.STRIKING
 	strike_time = 0.0
 
@@ -489,8 +513,8 @@ func _fire() -> void:
 		positions.append(ball.position)
 		numbers.append(ball.number)
 
-	var speed := minf(pulled / MAX_PULL * MAX_CUE_SPEED, flick * FLICK_SCALE)
-	speed = maxf(speed, 0.15)
+	# The power of the shot is how far the cue was drawn back.
+	var speed := maxf(pulled / MAX_PULL * MAX_CUE_SPEED, 0.15)
 	shot = core.simulate(speed, aim, contact, positions, numbers)
 	aim_line.visible = false
 	phase = Phase.ROLLING
@@ -523,9 +547,9 @@ func _settle() -> void:
 func _update_status() -> void:
 	match phase:
 		Phase.AIMING:
-			status.text = "aim  -  hold S to draw the cue, E for the english, B to trim"
+			status.text = "aim  -  the mouse turns the shot; S draws the cue back, E for the english, B for a finer aim"
 		Phase.CHARGING:
-			status.text = "draw  -  let go with a flick"
+			status.text = "draw  -  push the mouse forward to shoot"
 		Phase.STRIKING:
 			status.text = "..."
 		Phase.ROLLING:
@@ -539,16 +563,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		_key(event)
 
 
-## The mouse: it aims, or it trims, or it moves the tip.
+## The mouse: it turns the shot, or it draws the cue, or it moves the tip.
 func _mouse_motion(event: InputEventMouseMotion) -> void:
 	mouse_moved = true
 	mouse_position = event.position
-	var point := _on_the_bed(mouse_position)
-	var moved := point - bed_point
-	bed_point = point
 
 	if Input.is_key_pressed(KEY_E):
-		# The tip moves on the face of the ball.
+		# The tip moves on the face of the ball, and the aim is left alone.
 		contact.x += event.relative.x * SPIN_SCALE
 		contact.y -= event.relative.y * SPIN_SCALE
 		var limit: float = core.get_miscue_limit()
@@ -556,42 +577,46 @@ func _mouse_motion(event: InputEventMouseMotion) -> void:
 		contact.y = clampf(contact.y, -limit, limit)
 		return
 
-	if Input.is_key_pressed(KEY_B):
-		# The fine aim: the mouse turns the shot to the shooter's right.
-		trim += event.relative.x * TRIM_RATE
-		trim = clampf(trim, -0.35, 0.35)
+	if phase == Phase.CHARGING:
+		# The cue is drawn back by dragging the mouse towards the player - down
+		# the screen - and the shot is on when the cue comes back to the ball,
+		# so the key never has to be let go of.
+		var was_drawn := pulled > 0.0
+		draw = clampf(draw + event.relative.y * DRAW_SPEED, 0.0, MAX_PULL)
+		if was_drawn and event.relative.y < 0.0 and draw <= 0.0:
+			# The cue is home: the stroke is over.
+			phase = Phase.STRIKING
+			strike_time = 0.0
+			return
+		pulled = maxf(pulled, draw)
 		return
 
-	if phase == Phase.CHARGING:
-		# The cue follows the mouse along the aim: back to draw it, forward
-		# to let it go.
-		var along := moved.dot(_aim())
-		# The cue can only be drawn back so far.
-		draw = clampf(draw - along, 0.0, MAX_PULL)
-		pulled = maxf(pulled, draw)
-		# The flick is smoothed, so that a single bad frame cannot make a
-		# full-power shot.
-		var speed := along / maxf(get_process_delta_time(), 0.001)
-		flick = lerpf(flick, maxf(0.0, speed), 0.35)
+	# The mouse turns the shot, the way it turns the view in a first person
+	# game: relative, and it stops when the mouse stops. **B** turns it finer.
+	var fine := 1.0
+	if Input.is_key_pressed(KEY_B):
+		fine = FINE_SCALE
+	base_aim = base_aim.rotated(Vector3.UP, -event.relative.x * LOOK_SPEED * fine)
 
 
 ## The keys.
 func _key(event: InputEventKey) -> void:
 	if event.keycode == KEY_S:
 		if event.pressed and not event.echo and phase == Phase.AIMING:
+			# The cue is drawn back. The shot is on when the cue comes home,
+			# so letting go of the key only ever cancels.
 			phase = Phase.CHARGING
 			draw = 0.0
 			pulled = 0.0
-			flick = 0.0
 		elif not event.pressed and phase == Phase.CHARGING:
-			if flick >= MIN_FLICK and pulled > 0.001:
-				phase = Phase.STRIKING
-				strike_time = 0.0
-			else:
-				phase = Phase.AIMING
-				draw = 0.0
-				pulled = 0.0
+			# The key is let go of: back to the default, the draw is
+			# forgotten, and no shot is on.
+			phase = Phase.AIMING
+			draw = 0.0
+			pulled = 0.0
 	elif event.keycode == KEY_ESCAPE and phase == Phase.CHARGING:
 		phase = Phase.AIMING
 		draw = 0.0
 		pulled = 0.0
+	elif event.keycode == KEY_C:
+		camera_mode = 1 - camera_mode
