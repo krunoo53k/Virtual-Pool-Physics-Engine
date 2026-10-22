@@ -32,11 +32,8 @@ const COLOURS := {
 	15: Color(0.55, 0.14, 0.14),
 }
 
-## The colour of the cue ball.
-const CUE_COLOUR := Color(0.94, 0.93, 0.88)
-
-## The mark on the cue ball.
-const CUE_MARK := Color(0.72, 0.13, 0.13)
+## The colour of the cue ball: plain white, with nothing on it.
+const CUE_COLOUR := Color(1.0, 1.0, 1.0)
 
 ## The texture of a ball.
 ##
@@ -44,7 +41,7 @@ const CUE_MARK := Color(0.72, 0.13, 0.13)
 static func ball(number: int, size: int = 128) -> ImageTexture:
 	var image := Image.create(size, size, false, Image.FORMAT_RGB8)
 	var base := CUE_COLOUR
-	var band := CUE_MARK
+	var band := CUE_COLOUR
 	if number != 0:
 		base = COLOURS.get(number, CUE_COLOUR)
 		# The solid balls are their colour all over; the stripes are white with
