@@ -85,6 +85,10 @@ var ghost: MeshInstance3D
 ## The mark on the cue ball where the tip strikes.
 var spin_marker: MeshInstance3D
 
+## Whether the cue ball has a ball to hit on the line of the shot. The ghost
+## ball is only drawn when it has.
+var aim_has_hit := false
+
 ## The camera the player looks through.
 var camera: Camera3D
 
@@ -337,6 +341,22 @@ func _build_status() -> void:
 	power.size = Vector2(4, 0)
 	layer.add_child(power)
 
+	# Which physics the game is running.
+	#
+	# The physics is in the extension, and the extension is a library that is
+	# loaded when the game starts: a game that is left running keeps the
+	# physics it was started with, however new the library on disk is. So the
+	# game says which physics it has, and the number changes whenever the
+	# physics changes.
+	var stamp := Label.new()
+	stamp.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	stamp.position = Vector2(16, -28)
+	stamp.add_theme_font_size_override("font_size", 14)
+	stamp.add_theme_color_override("font_color", Color(0.62, 0.62, 0.58))
+	stamp.text = "physics " + core.get_model_version()
+	layer.add_child(stamp)
+	print("the physics is model ", core.get_model_version())
+
 
 ## Reads the command line: `--screenshot PATH` writes a picture of the game
 ## and leaves.
@@ -365,6 +385,7 @@ func _process(delta: float) -> void:
 			if shot_time >= shot.get_duration():
 				_settle()
 	_update_cue()
+	_update_aim_visibility()
 	_update_camera()
 	_update_status()
 	if screenshot != "" and get_tree().current_scene == self:
@@ -439,20 +460,29 @@ func _draw_aim() -> void:
 	var cue_ball := balls[0]
 	var aim := _aim()
 	var direction := _shot_direction()
-	aim_line.visible = phase != Phase.ROLLING
 	aim_line.position = cue_ball.position + direction * 0.30 + Vector3(0, 0.001, 0)
 	aim_line.basis = _basis_along(direction)
 
 	var hit := _first_contact(direction)
-	ghost.visible = hit != Vector3.ZERO
-	if ghost.visible:
+	aim_has_hit = hit != Vector3.ZERO
+	if aim_has_hit:
 		ghost.position = hit
 
 	# The mark where the tip strikes.
 	var offset := _right(aim) * contact.x + Vector3.UP * contact.y
-	spin_marker.visible = offset.length() > 0.0001
-	if spin_marker.visible:
-		spin_marker.position = cue_ball.position + offset.normalized() * ball_radius
+	spin_marker.position = cue_ball.position + offset.normalized() * ball_radius
+
+
+## Shows the aim only while the player is aiming.
+##
+## The aim is drawn on the cloth, and the camera rides the cue ball: when the
+## shot goes, the camera leaves the line and the ghost ball behind, and they
+## slide up the screen and off. They have to go with the shot.
+func _update_aim_visibility() -> void:
+	var aiming := phase == Phase.AIMING or phase == Phase.CHARGING or phase == Phase.STRIKING
+	aim_line.visible = aiming
+	ghost.visible = aiming and aim_has_hit
+	spin_marker.visible = aiming and contact.length_squared() > 1e-12
 
 
 ## A basis that puts the +x axis along the direction.

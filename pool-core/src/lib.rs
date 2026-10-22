@@ -51,4 +51,9 @@ pub use state::{
 pub use trace::{Segment, SegmentKind, Trace};
 
 /// The version of the physics model, following the research document.
-pub const MODEL_VERSION: &str = "1.4";
+///
+/// The number changes whenever the physics changes, so that a game can say
+/// which physics it is running: the extension is a library that is loaded when
+/// the game starts, and a game that is left running keeps the physics it was
+/// started with, however new the library on disk is.
+pub const MODEL_VERSION: &str = "1.5";

@@ -1,7 +1,7 @@
 # Virtual Pool — a deterministic 8-ball pool physics engine
 
 A Rust implementation of the physics model specified in
-[`docs/virtual-pool-physics.md`](docs/virtual-pool-physics.md) (version 1.4).
+[`docs/virtual-pool-physics.md`](docs/virtual-pool-physics.md) (version 1.5).
 
 The engine is **event-driven and closed-form**: between two events every ball's
 state is given by an analytic expression, so nothing is ever integrated step by
@@ -95,13 +95,19 @@ Two versions move, and they mean different things:
 
 | | What it is |
 |---|---|
-| `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.4`) |
+| `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.5`) |
 | the crate version (`0.1.0`) | the version of the **API** |
 
 A change to the model bumps both; a change to the API only bumps the crate
 version. The model version is what the game asks for -
 `PoolCore.get_model_version()` - so a game can tell which model it is talking
 to, and a recorded shot can be tied to the model that produced it.
+
+The game shows it in the corner, because the extension is a library that is
+loaded when the game starts: **a game that is left running keeps the physics
+it was started with**, however new the library on disk is. After a change to
+the core, rebuild the extension (`godot-project/build-extension.sh`) *and
+restart the game*.
 
 The crates are released in order: `pool-core` first, because `pool-godot`
 depends on it. The version of `pool-core` in `pool-godot/Cargo.toml` is the

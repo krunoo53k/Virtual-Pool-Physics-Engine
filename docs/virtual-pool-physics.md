@@ -1,8 +1,8 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.4
-> **Date:** 2026-10-21
+> **Version:** 1.5
+> **Date:** 2026-10-22
 > **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, ball-cue and ball-pocket interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
 >
 > **Revision note (1.1):** corrected the sliding-state spin sign (§3.3), the ball-ball normal and
@@ -35,6 +35,22 @@
 > rebound" again. Also: the rail is now treated as three surfaces (nose rubber, rail structure
 > above it, clear of the rail) with the band between the nose and the rail top named (§11.3),
 > and a spurious `cos θ` was removed from the vertical-impulse formula.
+>
+> **Revision note (1.5) — the amendments that playing the game asked for.** Four points, all
+> of them found by building the game on top of this model rather than by reading it:
+>
+> * **The spin decay stops at zero** (§3.2, §3.4). The decay is linear, and a linear decay has
+>   to be told where zero is: it decays *towards* zero and stops there. A decay that simply
+>   subtracted would carry the spin past zero into a backspin, and the backspin would then
+>   grow instead of dying - so a ball never came to rest and every shot ran to the time limit.
+> * **The nose's height is a knife edge** (§11.3). A ball on the bed touches the nose at
+>   *exactly* the nose's height, so the test that rejects a contact below the nose sits on
+>   that boundary; with an ulp of tolerance, a ball whose height came from a single-precision
+>   number was rejected and went *through* the rail. The tolerance is a length - a micron.
+> * **The squirt comes from the sideways offset** (§6.1), not from the whole impact
+>   parameter: a draw or a follow shot goes straight down the aim line.
+> * **The render time is clamped to the shot** (§11.2): a frame drawn a little past the end
+>   of the shot gets the end of the shot, not the origin of the table.
 
 ---
 
