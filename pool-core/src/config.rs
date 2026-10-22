@@ -95,7 +95,11 @@ impl Default for ClothConfig {
 pub struct BallBallConfig {
     /// Coefficient of restitution between two balls.
     pub e_ball: f64,
-    /// Ball-ball sliding friction, `mu_ball`.
+    /// Ball-ball sliding friction, `mu_ball`, at a sliding speed of 1 m/s.
+    ///
+    /// The friction between the balls falls as the contact slides faster (TP A.14),
+    /// so the model scales this value with the sliding speed - see
+    /// [`crate::ball_ball::friction_at_speed`].
     pub mu_ball: f64,
 }
 
@@ -194,10 +198,20 @@ pub struct TableGeometryConfig {
     pub mouth_corner: f64,
     /// Side pocket mouth, jaw tip to jaw tip (5.06").
     pub mouth_side: f64,
-    /// Corner pocket cut angle (142 deg).
+    /// Corner pocket cut angle (142 deg), the angle the WPA specifies.
     pub corner_cut_angle_deg: f64,
-    /// Side pocket cut angle (103 deg).
+    /// Side pocket cut angle (104 deg), the angle the WPA specifies.
     pub side_cut_angle_deg: f64,
+    /// The corner pocket's facing angle from the centreline, in degrees.
+    ///
+    /// Zero means "derive it from the cut angle", which is the rule of §9.1:
+    /// `(180 - cut angle) / 2`. The derivation is a *reading* of the specified cut
+    /// angle, and a table that has been measured can be matched by giving the
+    /// facing angle directly.
+    pub corner_facing_angle_deg: f64,
+    /// The side pocket's facing angle from the centreline, in degrees. Zero means
+    /// "derive it from the cut angle" (see `corner_facing_angle_deg`).
+    pub side_facing_angle_deg: f64,
     /// Slate cut angle at the lip, from vertical (13.5 deg).
     pub pocket_angle_deg: f64,
     /// Shelf depth behind a corner pocket mouth (1.75").
@@ -222,7 +236,9 @@ impl Default for TableGeometryConfig {
             mouth_corner: 4.56 * 0.0254,
             mouth_side: 5.06 * 0.0254,
             corner_cut_angle_deg: 142.0,
-            side_cut_angle_deg: 103.0,
+            side_cut_angle_deg: 104.0,
+            corner_facing_angle_deg: 0.0,
+            side_facing_angle_deg: 0.0,
             pocket_angle_deg: 13.5,
             shelf_depth_corner: 1.75 * 0.0254,
             shelf_depth_side: 0.25 * 0.0254,
@@ -556,6 +572,14 @@ impl TableGeometryConfig {
                 Value::Number(self.side_cut_angle_deg),
             ),
             (
+                "corner_facing_angle_deg".into(),
+                Value::Number(self.corner_facing_angle_deg),
+            ),
+            (
+                "side_facing_angle_deg".into(),
+                Value::Number(self.side_facing_angle_deg),
+            ),
+            (
                 "pocket_angle_deg".into(),
                 Value::Number(self.pocket_angle_deg),
             ),
@@ -583,6 +607,8 @@ impl TableGeometryConfig {
             mouth_side: f64_field(value, "mouth_side")?,
             corner_cut_angle_deg: f64_field(value, "corner_cut_angle_deg")?,
             side_cut_angle_deg: f64_field(value, "side_cut_angle_deg")?,
+            corner_facing_angle_deg: f64_field(value, "corner_facing_angle_deg")?,
+            side_facing_angle_deg: f64_field(value, "side_facing_angle_deg")?,
             pocket_angle_deg: f64_field(value, "pocket_angle_deg")?,
             shelf_depth_corner: f64_field(value, "shelf_depth_corner")?,
             shelf_depth_side: f64_field(value, "shelf_depth_side")?,

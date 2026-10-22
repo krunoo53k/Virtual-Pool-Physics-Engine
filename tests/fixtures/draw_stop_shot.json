@@ -3,7 +3,7 @@
   "title": "Draw shot: the cue ball reverses only when the backspin dominates",
   "purpose": "Pins the draw/stop behaviour that follows from the sliding-state equations, including the analytic reversal threshold.",
   "sources": [
-    "doc section 4.3"
+    "doc section 3.3"
   ],
   "setup": {
     "balls": [

@@ -15,7 +15,7 @@
 
 use pool_core::config::TableConfig;
 use pool_core::math::Vec3;
-use pool_core::state::BallState;
+use pool_core::state::{BallState, ShotInput};
 use pool_core::try_simulate_shot_traced;
 
 /// The core's frame in Godot's.
@@ -45,7 +45,11 @@ fn rack(cfg: &TableConfig, round: bool) -> Vec<BallState> {
             let y = foot.y + (2.0 * column as f64 - row as f64) * radius;
             let x = foot.x - libm::sqrt(3.0) * radius * row as f64;
             let position = Vec3::new(x, y, radius);
-            let position = if round { through_f32(position) } else { position };
+            let position = if round {
+                through_f32(position)
+            } else {
+                position
+            };
             balls.push(BallState::at_rest(cfg, number, position));
             number += 1;
         }
@@ -106,6 +110,35 @@ fn a_break_settles_with_the_positions_a_game_can_hold() {
         "the balls left the table: {:?} - a ball that rolls into a rail has to bounce",
         off
     );
+}
+
+#[test]
+fn a_ball_a_nanometre_below_the_bed_does_not_fall_through_the_table() {
+    // The bed is at exactly one radius. A game that keeps its balls in `f32` puts
+    // the centre a fraction of a nanometre below that, and a ball that is a hair
+    // below the bed and a hair above the ground is in no state at all: it cannot
+    // land, because the landing time of a ball whose centre is below the bed does
+    // not exist, and it falls through the table and off the world.
+    let cfg = TableConfig::default();
+    let mut balls = rack(&cfg, true);
+    for ball in balls.iter_mut() {
+        ball.position.z -= 5.0e-10;
+    }
+    let input = ShotInput::new(8.0, Vec3::new(-1.0, 0.0, 0.0), balls);
+    let (state, _trace) = try_simulate_shot_traced(&input, &cfg).expect("the break runs");
+    for (index, ball) in state.balls.iter().enumerate() {
+        assert!(
+            ball.is_settled() || ball.is_pocketed || ball.is_off_table,
+            "ball {index} is still moving: {:?} at {:?}",
+            ball.velocity,
+            ball.position
+        );
+        assert!(
+            ball.position.z >= cfg.ball.radius - 1e-9,
+            "ball {index} is below the bed: {:?}",
+            ball.position
+        );
+    }
 }
 
 #[test]

@@ -158,8 +158,14 @@ impl TableGeometry {
         let a_corner = cfg.table.mouth_corner / 2.0_f64.sqrt();
         let s_half = cfg.table.mouth_side / 2.0;
 
-        let corner_facing = (180.0 - cfg.table.corner_cut_angle_deg).to_radians() / 2.0;
-        let side_facing = (180.0 - cfg.table.side_cut_angle_deg).to_radians() / 2.0;
+        let corner_facing = facing_angle(
+            cfg.table.corner_facing_angle_deg,
+            cfg.table.corner_cut_angle_deg,
+        );
+        let side_facing = facing_angle(
+            cfg.table.side_facing_angle_deg,
+            cfg.table.side_cut_angle_deg,
+        );
 
         let corner_specs = [
             CornerSpec {
@@ -440,6 +446,22 @@ fn pocket_label(index: usize) -> &'static str {
     }
 }
 
+/// The facing angle of a pocket, in radians.
+///
+/// The WPA specifies the pocket's *cut angle*, and the step from the cut angle to the
+/// direction of the facing is a reading rather than a specification (§9.1): the rule is
+/// that the two facings meet at the throat at the cut angle, so each lies
+/// `(180 - cut angle) / 2` away from the pocket's centreline. A measured table can be
+/// matched by giving the facing angle directly, which is what a non-zero `override`
+/// does.
+fn facing_angle(override_deg: f64, cut_angle_deg: f64) -> f64 {
+    if override_deg > 0.0 {
+        override_deg.to_radians()
+    } else {
+        (180.0 - cut_angle_deg).to_radians() / 2.0
+    }
+}
+
 /// The direction of a facing: the centreline tilted by the facing angle towards the
 /// pocket's centre line, so that the two facings converge on the throat.
 fn facing_dir(centreline: Vec2, facing: f64, tip: Vec2, centre: Vec2) -> Vec2 {
@@ -507,6 +529,27 @@ mod tests {
         let cos = d.dot(c);
         let facing = (180.0 - cfg.table.corner_cut_angle_deg).to_radians() / 2.0;
         assert!((cos - facing.cos()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_facing_angle_can_be_given_directly_for_a_measured_table() {
+        // The facing angle is derived from the specified cut angle by default (§9.1),
+        // and a measured table is matched by giving the angle itself.
+        let cfg = TableConfig::default();
+        let geom = TableGeometry::new(&cfg);
+        let pocket = &geom.pockets[0];
+        let c = pocket.centreline;
+        let d = pocket.jaws[0].direction();
+        let derived = (180.0 - cfg.table.corner_cut_angle_deg).to_radians() / 2.0;
+        assert!((d.dot(c) - derived.cos()).abs() < 1e-12);
+
+        let mut measured = TableConfig::default();
+        measured.table.corner_facing_angle_deg = 7.0;
+        let geom = TableGeometry::new(&measured);
+        let pocket = &geom.pockets[0];
+        let c = pocket.centreline;
+        let d = pocket.jaws[0].direction();
+        assert!((d.dot(c) - 7.0_f64.to_radians().cos()).abs() < 1e-12);
     }
 
     #[test]

@@ -77,7 +77,8 @@ pub fn resolve_cushion(
 
     // The normal approach speed, positive while the ball heads into the rail.
     let v_n = -ball.velocity.dot(normal);
-    if v_n <= 0.0 || slip <= 0.0 {
+    if v_n <= 0.0 {
+        // The ball is not approaching the rail: there is no contact at all.
         return CushionOutcome {
             velocity: ball.velocity,
             angular_velocity: ball.angular_velocity,
@@ -89,13 +90,28 @@ pub fn resolve_cushion(
         };
     }
 
+    // The normal impulse. It stands on its own: a ball that is approaching the rail gets
+    // bounced off it whether or not its contact point is slipping.
     let jn = (1.0 + e) * m * v_n;
-    let jt_stick = (2.0 / 7.0) * m * slip;
-    let jt_cap = mu * jn;
-    let jt = if jt_stick <= jt_cap { jt_stick } else { jt_cap };
+
+    // The tangential impulse needs a slip to work against. A ball whose contact point is
+    // instantaneously at rest has no slip, and then there is no friction impulse - but the
+    // normal impulse still stands. Skipping it would let the ball through the rail, and
+    // such a ball exists: a ball with exactly the backspin that cancels the contact
+    // point's velocity at the rail has zero slip.
+    let jt = if slip > 0.0 {
+        let jt_stick = (2.0 / 7.0) * m * slip;
+        jt_stick.min(mu * jn)
+    } else {
+        0.0
+    };
 
     // The slip direction; the friction impulse always opposes the slip.
-    let slip_dir = tangent * (s_x / slip) + rail_tangent * (s_y / slip);
+    let slip_dir = if slip > 0.0 {
+        tangent * (s_x / slip) + rail_tangent * (s_y / slip)
+    } else {
+        Vec3::ZERO
+    };
     let impulse = normal * jn - slip_dir * jt;
 
     CushionOutcome {
@@ -104,7 +120,9 @@ pub fn resolve_cushion(
         jn,
         jt,
         slip,
-        sticking: jt_stick <= jt_cap,
+        // The contact sticks when the impulse that would stop the slip is smaller than
+        // the Coulomb limit.
+        sticking: slip > 0.0 && (2.0 / 7.0) * m * slip <= mu * jn,
         normal,
     }
 }
@@ -294,6 +312,51 @@ mod tests {
             "vz = {}",
             out.velocity.z
         );
+    }
+
+    #[test]
+    fn a_ball_with_no_slip_at_the_rail_is_still_bounced_off_it() {
+        // The slip at the contact is the contact point's velocity in the tangent plane.
+        // With a nose at the ball's centre height the tangent plane is vertical, so a
+        // ball that is moving straight at the rail with no spin has *no* slip at all -
+        // and it is still approaching the rail. The normal impulse must be applied: an
+        // early return on "no slip" would let the ball through the rail.
+        let cfg = TableConfig::default();
+        let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.5, cfg.ball.radius));
+        ball.velocity = Vec3::new(2.0, 0.0, 0.0);
+
+        // theta = 0: the nose sits at the ball's centre.
+        let out = resolve_cushion(&ball, Vec3::X, Vec3::Y, 0.0, 1.0, 0.75, 0.14, &cfg);
+        assert_eq!(out.slip, 0.0, "the ball is set up with no slip");
+        assert!(out.jn > 0.0, "the normal impulse must not be skipped");
+        assert_eq!(out.jt, 0.0, "there is no friction impulse without a slip");
+        // The ball came off the rail: it is travelling away from it.
+        assert!(out.velocity.x < 0.0, "vx = {}", out.velocity.x);
+    }
+
+    #[test]
+    fn a_ball_whose_slip_cancels_at_the_rail_is_still_bounced_off_it() {
+        // The same thing with the contact tilt of the specified nose: a ball with
+        // exactly the backspin that cancels the contact point's velocity has no slip
+        // at the contact, and still has to be bounced off the rail.
+        let cfg = TableConfig::default();
+        let geom = TableGeometry::new(&cfg);
+        let sin_theta = geom.cushion.sin_theta;
+
+        let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.5, cfg.ball.radius));
+        ball.velocity = Vec3::new(2.0, 0.0, 0.0);
+        // `s_x = v_x sin(theta) + R omega_y`, so this cancels the slip.
+        ball.angular_velocity = Vec3::new(0.0, -2.0 * sin_theta / cfg.ball.radius, 0.0);
+
+        let out = resolve_nose_cushion(&ball, Vec3::X, Vec3::Y, &cfg, &geom.cushion);
+        assert!(
+            out.slip < 1e-15,
+            "the ball is set up with no slip, got {}",
+            out.slip
+        );
+        assert!(out.jn > 0.0, "the normal impulse must not be skipped");
+        // The ball came off the rail: it is travelling away from it.
+        assert!(out.velocity.x < 0.0, "vx = {}", out.velocity.x);
     }
 
     #[test]

@@ -150,6 +150,13 @@
       "regime": "rail structure"
     }
   ],
+  "measured_hop": {
+    "quantity": "hop_height_mm",
+    "expected": null,
+    "tolerance": 0.5,
+    "unit": "mm",
+    "notes": "TO BE CALIBRATED: the hop height of a ball off the rail, measured from high-speed video, at a known nose height. The 3.8 mm the model predicts at the WPA spec height is a model output and not a measurement: it depends on treating the cushion impulse and the slate rebound as sequential, and Mathavan treats the table contact as simultaneous (doc section 5.1). Until this is measured, the hop numbers in the document are the model talking to itself."
+  },
   "invariants": [
     {
       "quantity": "rebound_angle_independence",
@@ -165,7 +172,7 @@
     },
     {
       "quantity": "vertical_flip_threshold",
-      "statement": "the outgoing vertical velocity changes sign at eps_c/R = mu_cushion/sqrt(1 + mu_cushion^2) = 0.139 for mu_cushion = 0.14; above it the ball is pressed into the slate, below it the ball is launched upward. The WPA reference profile derives eps = 0.039 R and must therefore launch the ball upward",
+      "statement": "the outgoing vertical velocity changes sign at eps_c/R = mu_cushion/sqrt(1 + mu_cushion^2) = 0.139 for mu_cushion = 0.14; above it the ball is pressed into the slate, below it the ball is launched upward. The WPA reference profile derives eps = 0.270 R and must therefore press the ball into the slate",
       "tolerance": 1e-09,
       "unit": "m/s"
     },

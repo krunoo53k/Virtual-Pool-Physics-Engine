@@ -1,9 +1,9 @@
 {
   "id": "slide_to_roll",
   "title": "Sliding ball reaches the rolling condition exactly at t = 2*u0/(7*mu_s*g)",
-  "purpose": "Pins the sign of the sliding-state angular velocity (doc section 4.3). A minus sign in the omega equation makes u grow instead of decaying, which this fixture catches immediately.",
+  "purpose": "Pins the sign of the sliding-state angular velocity (doc section 3.3). A minus sign in the omega equation makes u grow instead of decaying, which this fixture catches immediately.",
   "sources": [
-    "docs section 4.3",
+    "doc section 3.3",
     "Kiefl 2020 (sign error in the published version)"
   ],
   "setup": {

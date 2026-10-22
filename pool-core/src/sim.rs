@@ -104,6 +104,17 @@ impl SimEvent {
     }
 }
 
+/// How close to the bed a ball may be and still count as lying on it, in metres.
+///
+/// A ball that rests on the bed has its centre at exactly one radius. A game that
+/// keeps its balls in `f32` puts the centre a fraction of a nanometre below that, and
+/// a ball that is a hair below the bed and a hair above the ground is in no state at
+/// all: it is marked airborne, and then it cannot land, because the landing time of a
+/// ball whose centre is *below* the bed does not exist. It falls through the table.
+/// A micron is far below anything that matters physically and far above the noise in
+/// the numbers.
+pub const BED_TOLERANCE: f64 = 1e-6;
+
 /// The deterministic simulation.
 pub struct Simulation<'a> {
     cfg: &'a TableConfig,
@@ -133,6 +144,11 @@ impl<'a> Simulation<'a> {
             ball.mass = cfg.ball.mass;
             ball.radius = cfg.ball.radius;
             ball.moment_of_inertia = cfg.moment_of_inertia();
+            // A ball that is on the bed has its centre at exactly one radius. The
+            // input may say otherwise by a fraction of a nanometre (§BED_TOLERANCE).
+            if ball.position.z <= cfg.ball.radius + BED_TOLERANCE {
+                ball.position.z = cfg.ball.radius;
+            }
         }
         Simulation {
             cfg,
@@ -853,29 +869,39 @@ impl<'a> Simulation<'a> {
             let ball = &mut self.balls[a];
             ball.velocity = outcome.velocity_a;
             ball.angular_velocity = outcome.angular_velocity_a;
+            // The vertical part of the friction impulse lifts the striking ball or
+            // presses it into the cloth (§4.5). A ball that is on the bed cannot go
+            // down - the cloth holds it - and one whose vertical speed is positive
+            // leaves the cloth.
+            self.settle_on_bed(a);
         }
         {
             let ball = &mut self.balls[b];
             ball.velocity = outcome.velocity_b;
             ball.angular_velocity = outcome.angular_velocity_b;
+            // The object ball is pressed into the cloth by the same impulse, and the
+            // cloth takes it.
+            self.settle_on_bed(b);
         }
-        // The table can lift the striking ball off the cloth (§4.5). The lift comes
-        // from the cloth's friction during the collision, so it only applies while
-        // the ball is still in contact with the bed: a ball that is already in the
-        // air cannot pick up any more.
-        if outcome.lift > 0.0 {
-            let on_the_bed = self.balls[a].motion_state != MotionState::Airborne
-                && self.balls[a].position.z <= self.cfg.ball.radius + 1e-9;
-            if on_the_bed {
-                let ball = &mut self.balls[a];
-                ball.velocity.z += outcome.lift;
-                ball.position.z = self.cfg.ball.radius;
-                ball.motion_state = MotionState::Airborne;
-            }
-        } else {
-            self.refresh_bed_state(a);
-        }
+        self.refresh_bed_state(a);
         self.refresh_bed_state(b);
+    }
+
+    /// Puts a ball that is on the bed back on the bed.
+    ///
+    /// A ball lying on the cloth cannot have a downward speed - the cloth holds it -
+    /// and its centre is at exactly one radius above the bed. A ball that is *in the
+    /// air* keeps both: it can fall, and it falls onto the slate.
+    fn settle_on_bed(&mut self, index: usize) {
+        let radius = self.cfg.ball.radius;
+        let ball = &mut self.balls[index];
+        if ball.position.z > radius + BED_TOLERANCE {
+            return;
+        }
+        ball.position.z = radius;
+        if ball.velocity.z < 0.0 {
+            ball.velocity.z = 0.0;
+        }
     }
 
     /// Applies a cushion impact (§5.1, §8.1).

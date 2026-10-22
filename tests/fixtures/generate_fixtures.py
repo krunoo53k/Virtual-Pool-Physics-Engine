@@ -44,21 +44,41 @@ def ang(a): return math.atan2(a[1], a[0])
 def rot(a, t): return (a[0]*math.cos(t)-a[1]*math.sin(t), a[0]*math.sin(t)+a[1]*math.cos(t))
 
 
+def friction_at_speed(mu_ball, slip):
+    """The ball-ball friction as a function of the sliding speed at the contact.
+
+    Alciatore's TP A.14 fits Marlow's data with
+    `mu(v) = 0.009951 + 0.108 * exp(-0.77 * v)`. The config's `mu_ball` is the
+    coefficient at the reference slip speed of 1 m/s, so the law is normalised there
+    (doc section 4.4.5).
+    """
+    slip = max(slip, 0.0)
+    reference = 0.009951 + 0.108 * math.exp(-0.77)
+    return mu_ball * (0.009951 + 0.108 * math.exp(-0.77 * slip)) / reference
+
+
 def ball_ball(pA, pB, vA, vB, wA=0.0, wB=0.0, e=E_BALL, mu=MU_BALL):
-    """Doc section 5.4.5."""
+    """Doc section 4.4.5: the impulse model in the tangent plane."""
     d = (pB[0]-pA[0], pB[1]-pA[1]); L = mag(d); n = (d[0]/L, d[1]/L); t = (-n[1], n[0])
     v_n = vA[0]*n[0]+vA[1]*n[1]
     rA = (R*n[0], R*n[1]); rB = (-R*n[0], -R*n[1])
     cA = add(vA, cr(wA, rA)); cB = add(vB, cr(wB, rB))
+    # The slip is a vector in the tangent plane: horizontal along the rail and
+    # vertical. The test balls here are spinless, so the vertical part is zero.
     u_t = (cA[0]-cB[0])*t[0] + (cA[1]-cB[1])*t[1]
+    u_z = 0.0
+    u = math.hypot(u_t, u_z)
     J_n = ((1+e)/2)*M*v_n
-    J_t = math.copysign(min(M*abs(u_t)/7, mu*J_n), u_t)
+    mu_eff = friction_at_speed(mu, u)
+    J_t = min(M*u/7, mu_eff*J_n) if u > 0.0 else 0.0
+    # The friction always opposes the slip, so the impulse carries the sign of it.
+    J_t = math.copysign(J_t, u_t) if u_t != 0.0 else 0.0
     vA2 = add(vA, add(sc(n, -J_n/M), sc(t, -J_t/M)))
     vB2 = add(vB, add(sc(n,  J_n/M), sc(t,  J_t/M)))
     wA2 = wA + (-rA[1]*(-J_t*t[0]) + rA[0]*(-J_t*t[1]))/I
     wB2 = wB + (-rB[1]*( J_t*t[0]) + rB[0]*( J_t*t[1]))/I
     return dict(vA=vA2, vB=vB2, wA=wA2, wB=wB2, Jn=J_n, Jt=J_t, u_t=u_t,
-                n=n, t=t, sticking=(M*abs(u_t)/7 <= mu*J_n))
+                n=n, t=t, sticking=(u > 0.0 and M*u/7 <= mu_eff*J_n))
 
 
 def cushion3(v, w, sin_t=None, e=0.75, mu=0.14, z_c=None):
@@ -116,10 +136,10 @@ def fixture_slide():
     return {
         "id": "slide_to_roll",
         "title": "Sliding ball reaches the rolling condition exactly at t = 2*u0/(7*mu_s*g)",
-        "purpose": "Pins the sign of the sliding-state angular velocity (doc section 4.3). "
+        "purpose": "Pins the sign of the sliding-state angular velocity (doc section 3.3). "
                    "A minus sign in the omega equation makes u grow instead of decaying, "
                    "which this fixture catches immediately.",
-        "sources": ["docs section 4.3", "Kiefl 2020 (sign error in the published version)"],
+        "sources": ["doc section 3.3", "Kiefl 2020 (sign error in the published version)"],
         "setup": {
             "balls": [{"id": "b0", "position": [0.0, 0.0], "velocity": [1.0, 0.0],
                        "angular_velocity": [0.0, 0.0, 0.0]}],
@@ -157,7 +177,7 @@ def fixture_stun():
         "title": "90 degree rule: cue and object ball separate at ~90 degrees (30 degree cut)",
         "purpose": "Validates the normal components of the ball-ball collision together with "
                    "the tangential (throw) impulse.",
-        "sources": ["doc sections 5.2 and 5.4.5",
+        "sources": ["doc sections 4.2 and 4.4.5",
                     "Kim 2024: separation angle 85-89 degrees for e in [0.92, 0.98]"],
         "setup": {
             "balls": [
@@ -193,32 +213,61 @@ ALCIATORE_THROW = {   # measured object-ball throw, degrees (cut -> slow, medium
     60: (5.25, 3.50, 1.70),
 }
 
+# The speeds of TP A.14's own throw measurements: 1, 3 and 7 mph.
+ALCIATORE_SPEEDS = {"slow": 0.4472, "medium": 1.3411, "fast": 3.1293}
+
+
+def throw_at(cut, speed):
+    """The model's object-ball throw at a cut angle and a cue ball speed."""
+    a = math.radians(cut)
+    r = ball_ball((0.0, 0.0), (0.3*math.cos(a), 0.3*math.sin(a)),
+                  (speed, 0.0), (0.0, 0.0))
+    return math.degrees(ang(r["vB"]) - a), r["sticking"]
+
 
 def fixture_throw():
     v0 = 2.0
     rows = []
     for cut in (10, 20, 30, 40, 50, 60):
-        a = math.radians(cut)
-        r = ball_ball((0.0, 0.0), (0.3*math.cos(a), 0.3*math.sin(a)), (v0, 0.0), (0.0, 0.0))
-        throw = math.degrees(ang(r["vB"]) - a)
+        throw, sticking = throw_at(cut, v0)
         measured = ALCIATORE_THROW.get(cut)
         rows.append({
             "cut_angle": cut,
+            "cue_speed": v0,
             "model_throw_deg": round(throw, 4),
-            "regime": "sticking" if r["sticking"] else "sliding",
+            "regime": "sticking" if sticking else "sliding",
             "measured_throw_deg": {
                 "slow": measured[0] if measured else None,
                 "medium": measured[1] if measured else None,
                 "fast": measured[2] if measured else None,
             },
         })
+    # The speed dependence: the same cut, three speeds, at TP A.14's own speeds. The
+    # friction between the balls falls with the sliding speed (doc section 4.4.5), so
+    # the throw falls with the speed too.
+    speed_rows = []
+    for name, speed in ALCIATORE_SPEEDS.items():
+        throw, sticking = throw_at(30, speed)
+        speed_rows.append({
+            "cut_angle": 30,
+            "cue_speed": speed,
+            "model_throw_deg": round(throw, 4),
+            "regime": "sticking" if sticking else "sliding",
+            "measured_throw_deg": {
+                "slow": ALCIATORE_THROW[30][0],
+                "medium": ALCIATORE_THROW[30][1],
+                "fast": ALCIATORE_THROW[30][2],
+            },
+            "measured_speed": name,
+        })
     return {
         "id": "cut_throw_sweep",
-        "title": "Object-ball throw versus cut angle",
-        "purpose": "Validates the 1/7 sticking constant and the Coulomb cap on the tangential "
-                   "impulse. Also records a known model limitation (see known_deviations).",
+        "title": "Object-ball throw versus cut angle and shot speed",
+        "purpose": "Validates the 1/7 sticking constant, the Coulomb cap on the tangential "
+                   "impulse and the speed-dependent friction coefficient. Also records a known "
+                   "model limitation (see known_deviations).",
         "sources": ["Alciatore, 'The Amazing World of Billiards Physics' (2007), TP A-14 "
-                    "throw data", "doc section 5.4.5"],
+                    "throw data", "doc section 4.4.5"],
         "setup": {
             "balls": [
                 {"id": "cue", "position": [0.0, 0.0], "velocity": [v0, 0.0],
@@ -227,19 +276,23 @@ def fixture_throw():
                  "angular_velocity": [0.0, 0.0, 0.0]},
             ],
             "params": {"e_ball": E_BALL, "mu_ball": MU_BALL,
-                       "note": "object ball placed along the cut-angle bisector per row"},
+                       "note": "object ball placed along the cut-angle bisector per row; "
+                               "the cue ball is spinless, so the slip is purely horizontal"},
         },
         "expectations": rows,
+        "throw_versus_speed": speed_rows,
         "known_deviations": [
-            "The model caps the tangential impulse at mu_ball*J_n, which gives a constant "
-            "throw angle of atan(mu_ball) = 2.86 deg once the balls start slipping "
-            "(cut angles above ~18.8 deg). The measured throw is speed dependent and larger "
-            "on slow shots (up to 5.5 deg at a 40 deg cut) because the table's static "
-            "friction during the collision raises the effective friction. This is the "
-            "correction described by Kim 2024 and is not implemented.",
+            "The friction between the balls falls with the sliding speed (TP A.14's fit to "
+            "Marlow's data, doc section 4.4.5), so the throw falls with the shot speed: the "
+            "model gives 4.81 deg at a 30 deg cut on TP A.14's slow shot (1 mph) and 2.02 deg "
+            "on its fast one (7 mph). The measured values are 4.65 and 2.90 deg. The slow end "
+            "is close and the fast end is under-predicted by about 0.9 deg.",
             "In the sticking regime (cut angles below ~18.8 deg) the model predicts "
             "atan(2*tan(cut)/(7*(1+e))), which gives 1.48 deg at a 10 deg cut against a "
             "measured 1.45 deg - agreement to 0.03 deg.",
+            "The measured throw depends on the cue ball's spin as well as its speed, and the "
+            "published figures do not carry every shot condition, so the residual is a "
+            "calibration item rather than a structural one (doc section 14.3).",
         ],
     }
 
@@ -316,8 +369,7 @@ def fixture_cushion():
                    "measured from the rail normal, so 0 deg is a square hit. The second block "
                    "pins the vertical flip between the normal impulse (into the slate) and the "
                    "friction impulse (upward), which is what produces the hop.",
-        "sources": ["doc sections 5.1 and 8.1", "Mathavan et al. 2010, Figs. 8-10"],
-        "setup": {
+        "sources": ["doc sections 5.1 and 8.1", "Mathavan et al. 2010, Figs. 8-10"],        "setup": {
             "balls": [{"id": "b0", "position": [0.5, 0.5],
                        "velocity": [2.0, 0.0], "angular_velocity": [0.0, 2.0/R, 0.0]}],
             "params": {"nose_height": NOSE_H, "nose_tip_radius": NOSE_TIP_R,
@@ -330,6 +382,19 @@ def fixture_cushion():
         "expectations": rows,
         "vertical_flip": flip,
         "rail_regimes": regimes,
+        "measured_hop": {
+            "quantity": "hop_height_mm",
+            "expected": None,
+            "tolerance": 0.5,
+            "unit": "mm",
+            "notes": "TO BE CALIBRATED: the hop height of a ball off the rail, measured from "
+                     "high-speed video, at a known nose height. The 3.8 mm the model predicts "
+                     "at the WPA spec height is a model output and not a measurement: it "
+                     "depends on treating the cushion impulse and the slate rebound as "
+                     "sequential, and Mathavan treats the table contact as simultaneous "
+                     "(doc section 5.1). Until this is measured, the hop numbers in the "
+                     "document are the model talking to itself.",
+        },
         "invariants": [
             {"quantity": "rebound_angle_independence",
              "statement": "the rebound angle is identical for incident speeds of 1, 2 and 4 m/s "
@@ -344,7 +409,8 @@ def fixture_cushion():
                           "eps_c/R = mu_cushion/sqrt(1 + mu_cushion^2) = 0.139 for "
                           "mu_cushion = 0.14; above it the ball is pressed into the slate, "
                           "below it the ball is launched upward. The WPA reference profile "
-                          "derives eps = 0.039 R and must therefore launch the ball upward",
+                          "derives eps = 0.270 R and must therefore press the ball into "
+                          "the slate",
              "tolerance": 1e-9, "unit": "m/s"},
             {"quantity": "eps_derived_from_nose_height",
              "statement": "the contact height comes from the specified nose height: "
@@ -398,7 +464,7 @@ def fixture_draw():
         "title": "Draw shot: the cue ball reverses only when the backspin dominates",
         "purpose": "Pins the draw/stop behaviour that follows from the sliding-state equations, "
                    "including the analytic reversal threshold.",
-        "sources": ["doc section 4.3"],
+        "sources": ["doc section 3.3"],
         "setup": {
             "balls": [
                 {"id": "cue", "position": [0.0, 0.0], "velocity": [0.05, 0.0],
@@ -506,6 +572,19 @@ def fixture_squirt():
 
 # ---------------------------------------------------------------- 8. determinism
 def fixture_determinism():
+    # The golden hash is written by hand, by the first implementation, and it must
+    # survive a regeneration (doc section 14). The generator never overwrites it: it
+    # reads the value that is already in the file and writes it back.
+    golden = None
+    notes = None
+    path = os.path.join(OUT, "determinism_golden.json")
+    if os.path.exists(path):
+        with open(path) as handle:
+            existing = json.load(handle)
+        for entry in existing.get("expectations", []):
+            if entry.get("quantity") == "final_state_hash":
+                golden = entry.get("expected")
+                notes = entry.get("notes")
     return {
         "id": "determinism_golden",
         "title": "Golden-shot determinism check",
@@ -531,9 +610,9 @@ def fixture_determinism():
             "params": {"max_sim_time": 30.0},
         },
         "expectations": [
-            {"quantity": "final_state_hash", "expected": None, "tolerance": 0,
-             "notes": "TO BE FILLED: the first implementation writes the hash of the final "
-                      "state here, and it becomes the golden value"},
+            {"quantity": "final_state_hash", "expected": golden, "tolerance": 0,
+             "notes": notes or ("TO BE FILLED: the first implementation writes the hash of "
+                                "the final state here, and it becomes the golden value")},
             {"quantity": "hash_stability", "statement": "the hash must be identical across "
              "repeated runs, across thread counts, and across x86-64 / ARM / wasm targets",
              "tolerance": 0},

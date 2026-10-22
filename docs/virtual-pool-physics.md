@@ -1,7 +1,7 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.5
+> **Version:** 1.6
 > **Date:** 2026-10-22
 > **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, ball-cue and ball-pocket interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
 >
@@ -51,6 +51,53 @@
 >   parameter: a draw or a follow shot goes straight down the aim line.
 > * **The render time is clamped to the shot** (§11.2): a frame drawn a little past the end
 >   of the shot gets the end of the shot, not the origin of the table.
+>
+> **Revision note (1.6) — the corrections a review of the document asked for.** The
+> derivations were re-checked and they hold; the errors were in the statements around them.
+>
+> * **The cushion's normal impulse is not skipped when the slip is zero** (§5.3). The code
+>   returned early on `slip <= 0.0`, which dropped the normal impulse and let the ball
+>   through the rail. The normal impulse is applied whenever the ball is approaching the
+>   rail; only the tangential part is skipped when there is no slip.
+> * **The cushion's impulse formulas assume a ball on the bed** (§5.1). The contact speed
+>   `c` and the slip `s_x` are written for `v_z = 0`; an airborne ball at the rail needs the
+>   `v_z` terms, and the core carries them.
+> * **The spurious `cos θ` is gone from the formula *and* from the comment** (§5.3): the
+>   outgoing vertical speed is `(1 + e)·v_n·(μ·cos θ − sin θ)`.
+> * **A plane is a plane** (§11.3): the contact condition against the inclined nose face
+>   is linear in position, so the time of impact is a quadratic for an airborne ball too.
+>   Only a curved surface (the rounded nose tip) or a ball–ball contact gives a quartic.
+> * **Air drag is dropped** (§7): it is 0.04 m/s² against 9.81, and a quadratic drag law
+>   would take the closed-form ballistic arc away from the event-driven core.
+> * **The handedness of the cue strike is stated once, in the input model** (§6.2, §12.3):
+>   `+ŷ` is the shooter's *left*, and a positive `contact_offset_x` is a strike on the left.
+> * **The cue strike's offset case is written out** (§6.2): the centre-hit formula is the
+>   *longitudinal* response; an offset hit also has a *transverse* response, in which the
+>   ball's effective mass is `m/(1 + 5b²/2R²)` — 1.625·m at `b = 0.5R`. The full cue mass
+>   belongs to the longitudinal response and the ~12 g effective end mass to the
+>   transverse one. The two are not in conflict; the document now says which is which.
+> * **The friction between two balls is two-dimensional** (§4.4.5): the slip at a
+>   ball–ball contact has a vertical component, the friction acts along the slip in the
+>   tangent plane, and that vertical component is what carries the vertical effects of
+>   §4.5 — the same treatment the cushion gets in §5.1.
+> * **The friction between two balls falls with the sliding speed** (§4.4.5, §14.3):
+>   TP A.14 fits `μ(v_rel) = 0.009951 + 0.108·e^(−0.77·v_rel)`, which is why the measured
+>   throw is larger on slow shots. That is a cheaper way to close the throw gap than
+>   coupling the cloth friction into the impulse, as §14.3 used to say was the only way.
+> * **The pocket's facing angles are marked as a reading, not a specification** (§9.1): the
+>   WPA gives the cut angles but no drawing and no reference lines, so the derivation from
+>   the cut angle to the facing angle is stated as an assumption and exposed in the table
+>   config. The WPA's side-pocket cut angle is 104° (+1); the 103° (±2°) in §2.3 is the
+>   BCA's.
+> * **The stale references are fixed** (§2.2, §5.2, §9.1, §9.2, §12.4), and the time limit
+>   is no longer called a determinism requirement (§12.4).
+> * **The Zeno guard is given a number** (§8.2): the slate bounce settles below
+>   `v_z = 0.02 m/s`, and the 30 s cap reports an unsettled shot rather than truncating it
+>   silently.
+> * **The three-height check is a fit, not a validation** (§5.1, §8.1): the hop magnitudes
+>   depend on treating the cushion impulse and the slate rebound as sequential, and
+>   Mathavan treats the table contact as simultaneous. The 3.8 mm hop is a model output
+>   until `cushion_rebound` carries measured video.
 
 ---
 
@@ -123,7 +170,7 @@ Each domain has well-studied analytical models.
 | Cushion profile | K-66 (BCA standard) | Wikipedia (Billiard table) |
 | Cushion nose height | 63.5% of ball diameter ≈ 36.3 mm (1 7/16") | WPA/BCA; Dr. Dave Pool Info |
 | Cushion base | 1 3/16" (30 mm) | BCA |
-| Cushion contact point above ball centre (ε) | 0.1–0.2 R in practice (Han); Mathavan models a contact height of h = 7R/5 = 1.4 R | Han 2005; Mathavan 2010 |
+| Cushion contact point above ball centre (ε) | **derived, not specified**: `ε = h_nose − R` = 0.270 R for the WPA profile (§5.1). Han's 0.1–0.2 R is the *carom* range, for carom cushions whose noses sit lower — it is not the pool value | §5.1; Han 2005 (carom) |
 
 ### 2.3 Pockets (WPA/BCA)
 
@@ -131,12 +178,21 @@ Each domain has well-studied analytical models.
 |---|---|---|
 | Corner pocket mouth | 4.5"–4.625" (114.3–117.5 mm) | WPA Equipment Specs |
 | Side pocket mouth | 5.0"–5.125" (127–130.2 mm) | WPA Equipment Specs |
-| Corner pocket angle | 142° ± 1° | BCA |
-| Side pocket angle | 103° ± 2° | BCA |
+| Corner pocket cut angle | 142° ± 1° | WPA Equipment Specs; BCA |
+| Side pocket cut angle | 104° ± 1° (WPA); 103° ± 2° (BCA) | WPA Equipment Specs; BCA |
 | Vertical pocket angle (back draft) | 12°–15° | WPA |
-| Corner pocket shelf | 1 5/8"–1 7/8" | BCA |
-| Side pocket shelf | 0"–3/8" | BCA |
+| Corner pocket shelf | 1"–2¼" (WPA); 1⅝"–1⅞" (BCA) | WPA Equipment Specs; BCA |
+| Side pocket shelf | 0"–3/8" | WPA Equipment Specs; BCA |
 | Pocket radius (slate) | 1/8"–1/4" drop point | BCA |
+
+> **The cut angle is what the WPA specifies; the facing angle is what the model uses.**
+> The WPA's wording is: "The angle must be the same on both sides of a pocket entrance.
+> The cut angles of the rubber cushion and its wood backing (rail liner) for both sides of
+> the corner pocket entrance must be 142 degrees (+1)." It gives no drawing and does not
+> say which lines the angle is measured between, so the step from the cut angle to the
+> facing angle is a *reading*, not a specification — see §9.1. The table uses the WPA's
+> numbers; the BCA's differ slightly on the side pocket and on the corner shelf, and both
+> are compliant tables.
 
 ### 2.4 Cloth / Cushion Properties
 
@@ -198,6 +254,14 @@ The ball is:
 - **Sliding** when `u(t) ≠ 0`
 - **Spinning** when `v(t) = 0` but `ω(t) ≠ 0` (ball rotates in place)
 - **Stationary** when `v(t) = 0` and `ω(t) = 0`
+
+> **The bed is at exactly one radius.** A ball that rests on the cloth has its centre at
+> `z = R`, and that is a *known* quantity, not a measurement. A game that keeps its balls in
+> `f32` puts the centre a fraction of a nanometre below that — and a ball that is a hair
+> below the bed and a hair above the ground is in no state at all: it cannot land, because
+> the landing time of a ball whose centre is *below* the bed does not exist, and it falls
+> through the table and off the world. The core snaps a ball that is within a micron of the
+> bed onto it. It is the same knife edge as the nose height of §11.3, one domain over.
 
 ### 3.2 Rolling State
 
@@ -422,7 +486,8 @@ English (sidespin) creates additional relative sliding at the contact point:
 #### 4.4.5 Mathematical Model with Friction
 
 Resolve the collision in the frame of the line of centres `n̂` (from A's centre to B's centre)
-and the tangent `t̂`. Let `v_n = v_A·n̂` (positive while A approaches B) and `v_t = v_A·t̂`.
+and the **tangent plane** at the contact, which is spanned by the horizontal tangent `t̂` and
+the vertical `ẑ`. Let `v_n = v_A·n̂` (positive while A approaches B).
 Assume equal masses `m` and that B is initially at rest.
 
 **Normal component (line of centres):**
@@ -442,42 +507,46 @@ Sanity check: `v_A,n′ + v_B,n′ = v_n` (momentum conserved) and for a head-on
 ball bouncing off an immovable wall, it does not conserve momentum for two balls, and it would
 send the cue ball backwards at nearly full speed on a head-on shot.
 
-**Tangential component (perpendicular to the line of centres):**
+**Tangential component (the tangent plane):**
 
-The tangential slip velocity at the contact point (including the contribution of both balls'
-spin) is
+Two balls touch at a *point*, not along a line, so the slip at the contact has two components:
+the horizontal one along `t̂` and the vertical one along `ẑ`. The relative slip velocity at
+the contact point (including the contribution of both balls' spin) is
 
 ```
-u_t = (v_A + ω_A × r_A)·t̂ - (v_B + ω_B × r_B)·t̂
+u_t = (v_A + ω_A × r_A)·t̂ - (v_B + ω_B × r_B)·t̂      (slip along the rail)
+u_z = (v_A + ω_A × r_A)·ẑ - (v_B + ω_B × r_B)·ẑ      (slip in the vertical)
+u   = sqrt(u_t² + u_z²)                              (the slip speed)
 ```
 
 with `r_A = R·n̂` and `r_B = -R·n̂` the vectors from each centre to the contact point. An impulse
-`J_t` applied at the contact changes the relative tangential slip by `7·J_t/m` (each ball's
+`J_t` applied at the contact changes the relative slip by `7·J_t/m` (each ball's
 contact-point velocity changes by `(7/2)·J_t/m`, because `1/m + R²/I = 7/(2m)` for
 `I = (2/5)mR²`). Hence the impulse that exactly stops the slip is
 
 ```
-J_t(stick) = m · u_t / 7
+J_t(stick) = m · u / 7
 ```
 
 and the Coulomb limit caps it at
 
 ```
-|J_t| ≤ μ_ball · J_n
+|J_t| ≤ μ_ball(u) · J_n
 ```
 
 so
 
 ```
-J_t = sign(u_t) · min( m·|u_t|/7 , μ_ball·J_n )
+J_t = min( m·u/7 , μ_ball(u)·J_n )
 ```
 
-applied as `−J_t·t̂` on A and `+J_t·t̂` on B (the friction always opposes the relative slip), and
-then
+applied along the slip direction `û = (u_t·t̂ + u_z·ẑ)/u` as `−J_t·û` on A and `+J_t·û` on B
+(the friction always opposes the relative slip), and then
 
 ```
-v_A,t′ = v_A,t - J_t/m          v_B,t′ = v_B,t + J_t/m
-ω_A′ = ω_A + (r_A × (-J_t·t̂))/I     ω_B′ = ω_B + (r_B × (+J_t·t̂))/I
+v_A′ = v_A − (J_n·n̂ + J_t·û)/m        v_B′ = v_B + (J_n·n̂ + J_t·û)/m
+ω_A′ = ω_A + (r_A × (−J_n·n̂ − J_t·û))/I
+ω_B′ = ω_B + (r_B × ( J_n·n̂ + J_t·û))/I
 ```
 
 > **The factor is 1/7, not 2/7.** `2/7` is the *ball-on-a-fixed-plane* constant (there the slip
@@ -485,6 +554,35 @@ v_A,t′ = v_A,t - J_t/m          v_B,t′ = v_B,t + J_t/m
 > equation (TP A-14), whose sticking branch is `min(…, 1/7)·(v·sin φ - R·ω_z)`.
 > The spin update is not optional: throw, gear effect and spin transfer are all consequences of
 > it.
+
+> **The friction between the balls is not constant.** A constant `μ_ball` cannot produce a
+> throw that depends on the shot speed, and the measurements do (TP A-14): 2.9° at a 30° cut
+> on a fast shot, 4.65° on a slow one. Alciatore fits Marlow's data with
+>
+> ```
+> μ_ball(v_rel) = 0.009951 + 0.108·e^(−0.77·v_rel)      [v_rel in m/s]
+> ```
+>
+> which is 0.118 at a standstill and 0.060 at `v_rel = 1 m/s`. The config's `μ_ball` is the
+> value at that reference speed, so the law used here is
+>
+> ```
+> μ_ball(u) = μ_ball · (0.009951 + 0.108·e^(−0.77·u)) / (0.009951 + 0.108·e^(−0.77))
+> ```
+>
+> A slow shot slips slowly, so it gets a *larger* friction coefficient and a larger throw —
+> which is the measured behaviour. §14.3 records what is left over.
+
+> **The slip is two-dimensional, and that is not a detail.** With the friction restricted to
+> the horizontal tangent (the older form of this section) the vertical component of the slip
+> is thrown away, and with it the vertical effects of §4.5: the cue ball is lifted and the
+> object ball is pressed into the cloth because the *vertical* component of the friction
+> impulse acts on them. For a rolling cue ball the contact point at the front of the ball
+> moves *downwards* — it is the leading edge of a rolling sphere — so the friction lifts the
+> cue ball and presses the object ball into the cloth; with backspin the roles swap. TP A-14
+> works in the same two-dimensional tangent plane (its slip vector is
+> `(v·sin φ − R·ω_z)·t̂ + (R·ω_x·cos φ)·ẑ`), and so does the cushion model of §5.1.
+
 
 ### 4.5 Table Effect During Collision (arXiv 2402.13258)
 
@@ -511,12 +609,39 @@ During collision, the impact force between balls is ~400× gravity. The friction
    the cloth fibres cannot respond within 250 μs, so the full static friction is available.
    This is why the table plays such a large role in ball-ball collisions.
 
+> **Where the vertical impulse comes from.** It is the *vertical component of the friction
+> between the balls*, which is why the tangential impulse has to be treated in the whole
+> tangent plane and not only along the rail (§4.4.5). The vertical slip `u_z` is
+> `R·ω_x·cos φ` for a cue ball whose spin is about the axis perpendicular to the line of
+> centres — the roll axis. For a **rolling** cue ball the contact point at the front of the
+> ball moves downwards (it is the leading edge of a rolling sphere), so the friction acts
+> upwards on the cue ball and downwards on the object ball: the cue ball hops and the object
+> ball is pressed into the cloth. With backspin the two swap.
+>
+> The estimate above is the scale of that effect, not a separate mechanism: with a
+> *constant* friction coefficient, the vertical impulse of the tangential model is
+> `J_t·|u_z|/u = μ_ball·J_n/m ≈ μ_ball·U_i` for a square hit — which is exactly Kim's
+> figure. The general model in §4.4.5 replaces the estimate and carries the sign, the
+> cut angle and the speed dependence with it.
+>
+> The one place the two disagree is the size, and it is worth knowing about. TP A.14's
+> friction coefficient *falls* with the sliding speed, so at break speed the model lifts
+> the cue ball by about 0.08 m/s where Kim's constant-μ estimate gives 0.5 m/s — a hop
+> of a third of a millimetre against his 1.3 cm. Both cannot be right, and which of them
+> is right is a measurement rather than a calculation; it is on the calibration list
+> (§13.3). What the model does settle is the sign, which Kim's estimate cannot: a stun
+> shot has no vertical slip and no lift at all, and a rolling shot lifts the cue ball
+> and presses the object ball into the cloth.
+
 **Implementation recommendation:** Treat the table during the collision as (a) an extra
 tangential friction contribution on the ball-ball contact, which is already captured by the
-`u_t` slip velocity in §4.4.5 (spin is part of the slip), and (b) a possible vertical impulse
-that can lift the cue ball (§8.1). Do not apply an ad-hoc speed reduction to the object ball:
-the observed loss is a consequence of the normal restitution `e` and of the throw mechanics,
-both of which the collision model already produces.
+slip velocity `u` in §4.4.5 (spin is part of the slip, in both directions), and (b) the
+vertical impulse that the vertical component of that same impulse produces — the cue ball's
+share of it, `J_t·u_z/u` per unit mass, is its vertical velocity after the collision, and the
+object ball's share is absorbed by the cloth, which is what "pushes the object ball down"
+means. Do not apply an ad-hoc speed reduction to the object ball: the observed loss is a
+consequence of the normal restitution `e` and of the throw mechanics, both of which the
+collision model already produces.
 
 ### 4.6 Multi-Ball Collisions
 
@@ -597,6 +722,21 @@ the vertical impulse and the *ordering* of the three heights, and it is genuinel
 model predicts at the spec height is a rigid-model number and still wants high-speed-video
 calibration, at low speed as well as at break speed.
 
+> **The three-height check is a fit, not a validation.** The reading of "nose height" was
+> *chosen* because it reproduces the three heights, so the fact that it reproduces them is
+> not independent evidence for it — it is the reason it was chosen. What the check does
+> establish is that the alternative reading (v1.3) cannot be right: it fails on all three
+> heights. A real validation has to come from a measurement of a *known* nose height: the
+> rebound speed, the rebound angle and the hop height of a ball off a rail whose geometry has
+> been measured. That is what the `cushion_rebound` fixture (§14) is for, and until it
+> carries measured video the hop numbers in this section are model outputs.
+>
+> The hop magnitudes have a second, quieter dependency: they come from treating the cushion
+> impulse and the slate rebound as *sequential* — the cushion presses the ball in, and then
+> the slate throws it back. Mathavan et al. treat the table contact as simultaneous with the
+> cushion contact, and the two treatments give different hops. The sequential treatment is
+> the simpler one and is what this model does; it is an assumption, not a result.
+
 **Per contact.** The contact height for a ball whose centre is at `z_c` is `z_c + R·sin θ`: the
 contact moves up the face as the ball rises. The plane idealisation keeps the normal's tilt at
 `θ`; the real nose profile is steepest at the tip and flattens upward, so the true tilt for a
@@ -639,17 +779,23 @@ fixture (§14), which pins both ends.
 **Impulse model:**
 
 ```
-c   = v_x(τ) · cos θ                       (normal approach speed)
-s_x = v_x(τ) · sin θ + R·ω_y(τ)                    (slip along the contact tangent)
+c   = v_x(τ) · cos θ + v_z(τ) · sin θ                (normal approach speed, = v_n)
+s_x = v_x(τ) · sin θ - v_z(τ) · cos θ + R·ω_y(τ)     (slip along the contact tangent)
 s_y = v_y(τ) + R·ω_z(τ) · cos θ - R·ω_x(τ) · sin θ  (slip along the rail)
 
 J_n = (1 + e_cushion) · m · c              (normal impulse, > 0 for an incoming ball)
 ```
 
+> **The `v_z` terms matter for an airborne ball.** A ball resting on the bed has `v_z = 0`,
+> and then `c = v_x·cos θ` and `s_x = v_x·sin θ + R·ω_y` — the form this section used to
+> give. A ball that reaches the rail in the air does not: its vertical velocity enters both
+> the normal approach speed and the slip, and §11.3 expects exactly that case. The core
+> carries the general form.
+
 The slip components are the contact point's velocity (`v + ω × r_c`) projected onto the tangent
 plane of the contact, which is spanned by `t̂ = (sin θ, 0, -cos θ)` and `ŷ`:
 
-- along `t̂`: `(v + ω × r_c)·t̂ = v_x·sin θ + R·ω_y`
+- along `t̂`: `(v + ω × r_c)·t̂ = v_x·sin θ - v_z·cos θ + R·ω_y`
 - along `ŷ`: `(v + ω × r_c)·ŷ = v_y + R·(ω_z·cos θ - ω_x·sin θ)`
 
 > Han (2005) prints `s_y` with the opposite sign (which flips the `v_y` equation) and prints
@@ -726,9 +872,9 @@ you are modelling the two contacts separately.
 
 > **Do not port Mathavan's `h = 7R/5` straight across.** His measurements were made on a
 > Riley-style *snooker* table, and 7R/5 = 40 mm for a pool ball — about 10% above the WPA pool
-> nose height of 36.3 mm. For a K-66 pool table the effective contact height is lower
-> (≈ 0.04–0.27 R depending on the nose profile; §5.1). Snooker values must be recalibrated for
-> pool.
+> nose height of 36.3 mm. For a K-66 pool table the effective contact height is the one the
+> specification gives: `ε = h_nose − R` = 0.270 R, i.e. a 15.7° contact tilt (§5.1). Snooker
+> values must be recalibrated for pool.
 
 ### 5.3 Simplified Model (Game-Level)
 
@@ -769,16 +915,32 @@ fn resolve_cushion_collision(ball: &mut Ball, n_rail: Vec3, e_cushion: f64,
 
     // Normal approach speed (positive while the ball is heading into the rail).
     let v_n = -ball.velocity.dot(n_hat);
-    if v_n <= 0.0 || slip <= 0.0 {
+    if v_n <= 0.0 {
+        // The ball is not approaching the rail: there is no contact at all.
         return;
     }
 
     // Normal impulse, and a tangential impulse capped by Coulomb friction.
     let j_n = (1.0 + e_cushion) * ball.mass * v_n;
-    let j_t = ((2.0 / 7.0) * ball.mass * slip).min(mu_cushion * j_n);
+
+    // The tangential part needs a slip to work against. A ball whose contact point is
+    // instantaneously at rest has no slip, and then there is no friction impulse - but
+    // the normal impulse still stands, and skipping it would let the ball through the
+    // rail. (Such a ball exists: a ball with exactly the backspin that cancels the
+    // contact point's velocity at the rail.)
+    let j_t = if slip > 0.0 {
+        let j_t_stick = (2.0 / 7.0) * ball.mass * slip;
+        j_t_stick.min(mu_cushion * j_n)
+    } else {
+        0.0
+    };
 
     // The tangential impulse opposes the slip.
-    let slip_dir = tangent * (s_x / slip) + y * (s_y / slip);
+    let slip_dir = if slip > 0.0 {
+        tangent * (s_x / slip) + y * (s_y / slip)
+    } else {
+        Vec3::ZERO
+    };
     let impulse = j_n * n_hat - j_t * slip_dir;
 
     ball.velocity = ball.velocity + impulse / ball.mass;
@@ -786,7 +948,7 @@ fn resolve_cushion_collision(ball: &mut Ball, n_rail: Vec3, e_cushion: f64,
         ball.angular_velocity + r_c.cross(impulse) / ball.moment_of_inertia;
 
     // The outgoing vertical velocity is whatever the impulse produced:
-    //   v_z' = (1 + e) * v_n * cos(theta) * (mu*cos(theta) - sin(theta))
+    //   v_z' = (1 + e) * v_n * (mu*cos(theta) - sin(theta))
     // If it is positive the ball leaves the cloth (section 8.1); if it is negative the slate
     // rebound handles it. Do not add an upward velocity by hand in this function.
 }
@@ -904,6 +1066,31 @@ v_ball = (1 + e_cue) · M_cue · V_cue / (m_ball + M_cue)
 ```
 (for a centre-ball hit; `e_cue` is the tip COR, 0.71–0.75 leather / 0.81–0.87 phenolic)
 
+> **This is the *longitudinal* response, and it is the whole cue's mass.** The tip pushes the
+> ball along the cue's axis; the cue is rigid in compression, so the mass that resists is the
+> cue's whole mass, and the impulse is `J = (1 + e_cue)·M_cue·V_cue/(m_cue + M_cue)`. The
+> impulse does not depend on the offset `b`: the ball's contact point is not moving before
+> the strike, so the restitution acts on the same relative speed whatever `b` is. The offset
+> goes into the *torque* (`ω = (5/2)(b/R)(v_ball/R)`, below) and into the *transverse*
+> response, which is the squirt.
+>
+> The transverse response is a different direction and therefore a different pair of masses.
+> A force applied at the contact, `b` off the ball's centre, is resisted by the ball's
+> **effective mass** for that direction,
+>
+> ```
+> 1/m_eff = 1/m_ball + b²/I     →     m_eff = m_ball / (1 + 5b²/2R²)
+> ```
+>
+> which is 1.625·`m_ball` at `b = 0.5R`. On the cue's side the mass is the **effective end
+> mass** of ~12 g, not the 454 g of the whole cue, because only the last ~12 cm of the shaft
+> moves during the ~2 ms contact (§6.1).
+>
+> So the two rules do not contradict each other, and the document has to say which is which:
+> **the total cue mass belongs to the longitudinal response (the ball's speed), and the
+> effective end mass belongs to the transverse one (the squirt).** A formula that mixes them —
+> the total cue mass in a squirt expression, or the end mass in a speed expression — is wrong.
+
 **Angular velocity (spin) from offset hit:**
 
 For a horizontal stroke (θ = 0), taking the shot direction as +x̂, with +ŷ lateral and +ẑ up:
@@ -989,10 +1176,10 @@ For `v_z↓ = 1 m/s` and `e_table = 0.6`: `h_jump ≈ 1.8 cm`; for `v_z↓ = 2 m
 
 While airborne, the ball is subject to:
 1. **Gravity:** `a_z = -g`
-2. **Air drag:** `F_drag = -½ · ρ_air · C_d · A · |v| · v`
-3. **Magnus effect (if spinning):** `F_Magnus ∝ ω × v`
+2. **Air drag:** `F_drag = -½ · ρ_air · C_d · A · |v| · v` — *not modelled, see below*
+3. **Magnus effect (if spinning):** `F_Magnus ∝ ω × v` — *not modelled*
 
-**Air drag parameters:**
+**Air drag parameters** (for the size of the effect, not for a model):
 - Air density ρ_air ≈ 1.225 kg/m³
 - Drag coefficient for sphere C_d ≈ 0.47
 - Cross-sectional area A = π · R² ≈ 0.00256 m²
@@ -1004,7 +1191,20 @@ For a jump shot at 3 m/s with topspin of 500 rpm:
   `S = ωR/v` (≈0.5 for 500 rpm at 3 m/s), not the Reynolds number; the induced force is
   modest and a jump lasts only ~0.1–0.3 s, so the resulting Δv is a few cm/s.
 
-**Recommendation:** Air drag and Magnus effect are **minor** for jump shots in pool. Gravity is the dominant force. Include air drag for realism but Magnus effect can be omitted.
+**Recommendation:** **Model gravity only.** Air drag and the Magnus effect are *minor* for
+jump shots in pool — 0.04 m/s² against 9.81 m/s² — and modelling drag would cost more than it
+buys:
+
+- A drag law quadratic in `v` has no closed-form trajectory. The event-driven core advances
+  every ball *analytically* between events (§11.2), and the air state is one of the four
+  closed-form states of §3. With drag, the air state would have to be integrated, and the
+  whole point of the architecture — that a ball's position at any `t` is known without
+  stepping — would be gone for the one state that can go on for a third of a second.
+- At 0.04 m/s² the drag changes the height of a 3 m/s jump by well under a millimetre.
+
+So the drag and Magnus numbers above are quoted to show that they do not matter, not as a
+model to implement. The same goes for a ball in the air for longer than a jump shot: the
+only air state the model has is the ballistic arc of §3.
 
 ### 7.2 Ball Landing (Ball-Slate Interaction)
 
@@ -1088,6 +1288,25 @@ where `e_table ≈ 0.5–0.7`.
 
 If `|v_z(after)|` is small (below a threshold), the ball settles on the table and `v_z = 0`.
 
+> **The threshold is what stops the bounce sequence, and it has to be a number.** A slate
+> bounce multiplies the vertical speed by `e_table` on every hit, so `v_z` after `n` bounces
+> is `v_z·e_table^n`. With `e_table = 0.6` that sequence never reaches zero: it has
+> *infinitely many* events in a finite time. This is the classic Zeno behaviour of a
+> restitution model, and it is not a modelling subtlety — it is an infinite event loop, and
+> an event-driven core will sit in it until it hits a limit.
+>
+> The cure is the settle threshold, and it is a **length-and-speed threshold, not a bounce
+> count**: when the rebound's vertical speed falls below `v_settle = 0.02 m/s`, the ball is
+> treated as settled, `v_z` is set to zero and the ball is back on the bed. The number is
+> arbitrary within a wide band — 0.02 m/s is a hop of 20 μm, which nothing can see — but it
+> has to exist, it has to be in the config, and it has to be *the same* on every run, because
+> the event sequence is part of the deterministic state (§11.4).
+>
+> A second guard sits behind it: the event loop has a hard limit on the number of events it
+> will resolve (§12.4). A Zeno sequence that the threshold somehow missed would then be cut
+> off rather than run forever — but the threshold is the real cure, and the event limit is
+> the net under it.
+
 ---
 
 ## 9. Ball-Pocket Interactions
@@ -1100,20 +1319,42 @@ fail, which is why pocketing is the hardest thing in pool to model.
 
 ### 9.1 Geometry
 
-Per pocket (dimensions in §3.3):
+Per pocket (dimensions in §2.3):
 
 | Element | Corner pocket | Side pocket |
 |---|---|---|
 | Mouth (jaw tip to jaw tip) | 4.5"–4.625" | 5.0"–5.125" |
-| Facing angle from the pocket centreline | 19° | 38.5° |
+| Cut angle (the specified angle) | 142° ± 1° | 104° ± 1° |
+| Facing angle from the pocket centreline | 19° | 38° |
 | Slate cut angle at the lip (from vertical) | 12°–15° | 12°–15° |
-| Shelf depth behind the mouth | 1 5/8"–1 7/8" | 0"–3/8" |
+| Shelf depth behind the mouth | 1"–2¼" | 0"–3/8" |
 | Drop point radius | 1/8"–1/4" | 1/8"–1/4" |
 
-The facing angles follow from the pocket cut angles (142° corner, 103° side): each facing lies
-`(180° - cut angle)/2` away from the pocket's centreline, i.e. 19° for a corner pocket and 38.5°
-for a side pocket. The normal of a facing is therefore rotated by the same angle away from the
-perpendicular to the centreline, and that is the normal used for the jaw collision.
+> **The facing angle is a reading of the cut angle, and it is an assumption.** The WPA
+> specifies the *cut angle* — "the cut angles of the rubber cushion and its wood backing
+> (rail liner) for both sides of the corner pocket entrance must be 142 degrees (+1)" — and
+> it is a per-side angle: the same on both sides of the entrance. But the specification is
+> text: it has no drawing, and it does not say which two lines the cut angle is measured
+> between. The step from the cut angle to the direction of the facing therefore has to be
+> argued, and the argument used here is:
+>
+> * the cut angle is the angle at which the two facings meet at the throat of the pocket,
+>   symmetric about the pocket's centreline, so each facing lies
+>   `(180° − cut angle)/2` away from the centreline — 19° for a 142° corner pocket and 38°
+>   for a 104° side pocket;
+> * the normal of a facing is therefore rotated by the same angle away from the perpendicular
+>   to the centreline, and that is the normal used for the jaw collision.
+>
+> **The alternative reading is worth stating, because it changes the game.** If the 142° is
+> instead the angle between a facing and *its own rail line*, each facing lies 7° from the
+> corner's centreline (and 13° for the side pocket), the pocket's throat opens much wider,
+> and the rattle behaviour changes completely. Nothing in the WPA text settles it.
+>
+> The consequence for the implementation is that **the facing angle has to be a config
+> parameter, not a derived constant**: the table config carries the cut angle, the facing
+> angle is derived from it by the rule above, and a table that has been measured can be
+> matched by overriding the facing angle directly. The `pocket_drop` fixture (§14) checks the
+> resulting rattle behaviour.
 
 Everything here is table-dependent. Pockets vary between manufacturers, and many tables are
 "shimmed" to make the openings smaller. Treat the numbers above as the WPA reference
@@ -1131,7 +1372,7 @@ ON_TABLE ──(centre crosses the mouth line)──► ENTERING
    └────(centre crosses back over the mouth)────┘   ("rattle out")
 ```
 
-- **ON_TABLE** — normal ball-cloth physics (§4).
+- **ON_TABLE** — normal ball-cloth physics (§3).
 - **ENTERING** — the ball's centre is between the mouth line and the drop line. It is off the
   cloth and sliding on slate. It may still hit a jaw.
 - **POCKETED** — the centre has crossed the drop line; the ball is in the cabinet.
@@ -1206,11 +1447,15 @@ exactly what the `pocket_drop` fixture (§14) checks.
 | `e_jaw` | 0.60 | jaw restitution (lower than a rail) |
 | `μ_jaw` | 0.30 | jaw friction |
 | `μ_slate` | 0.15 | friction on the pocket shelf |
-| `shelf_depth_corner` | 1.75" | WPA range 1 5/8"–1 7/8" |
+| `shelf_depth_corner` | 1.75" | WPA range 1"–2¼" |
 | `shelf_depth_side` | 0.25" | WPA range 0"–3/8" |
 | `pocket_angle` | 13.5° | slate cut angle from vertical |
-| `mouth_corner` | 4.56" | jaw tip to jaw tip |
-| `mouth_side` | 5.06" | jaw tip to jaw tip |
+| `mouth_corner` | 4.56" | jaw tip to jaw tip (WPA 4.5"–4.625") |
+| `mouth_side` | 5.06" | jaw tip to jaw tip (WPA 5"–5.125") |
+| `corner_cut_angle_deg` | 142° | the specified horizontal pocket cut angle (WPA ±1°) |
+| `side_cut_angle_deg` | 104° | the specified horizontal pocket cut angle (WPA ±1°) |
+| `corner_facing_angle_deg` | 0 (derived) | the facing's angle from the centreline — set it for a measured table |
+| `side_facing_angle_deg` | 0 (derived) | the facing's angle from the centreline — set it for a measured table |
 
 ### 9.7 Implementation notes
 
@@ -1427,9 +1672,14 @@ for continuous/ambient motion (ball-in-hand placement, cue stick animation, UI).
   rail's top edge is ~15 mm higher than the nose, and the band in between is regime 2. The
   solver must branch on the regime rather than run one model through all three.
 
-  For an airborne ball in regime 1, `z_c(t)` is quadratic as well as `x_c(t)`, so the contact
-  condition against the inclined face is a **quartic**. In regime 1 on the bed it is a
-  quadratic.
+  For an airborne ball in regime 1, `z_c(t)` is quadratic as well as `x_c(t)`, and the
+  contact condition against the inclined face is **still a quadratic**. The reason is that
+  the face is a *plane*: the contact condition is the signed distance to the plane, which is
+  linear in the ball's position, and the position is quadratic in `t`. A quartic would need
+  a *curved* surface — the rounded nose tip of §5.4, if the model ever used the real profile
+  instead of the inclined plane — or a ball–ball contact (§ below). The nose tip radius is a
+  shape parameter and the model does not use it, so the time of impact in regime 1 is a
+  quadratic for a ball on the bed and for a ball in the air alike.
 
   > **An airborne ball has to be branched on the regime too.** The three regimes are
   > decided by the height of the ball *at the moment of the contact*, and for a ball in
@@ -1577,14 +1827,27 @@ struct ShotInput {
     // The elevation for jump shots is baked into this vector.
     cue_direction: Vec3,       // pre-normalized by the caller
     
-    // Contact point on cue ball (offset from center)
+    // Contact point on cue ball (offset from center).
+    //
+    // `contact_offset_x` is measured along `up x direction`, which is the +y side of
+    // the frame of section 6.2 - and +y is the shooter's LEFT (the shooter's right is
+    // `direction x up`). So a POSITIVE `contact_offset_x` is a strike on the shooter's
+    // left, and a negative one is a strike on the shooter's right.
     contact_offset_x: f64,     // -R to +R (left/right english)
+    // `contact_offset_y` is measured along `up`: positive is above the centre (topspin
+    // or follow), negative is below it (backspin or draw).
     contact_offset_y: f64,     // -R to +R (top/bottom spin)
     
     // Current state of all balls at moment of strike
     ball_states: [BallState; 16],
 }
 ```
+
+> **The sign convention is part of the input.** `contact_offset_x` and `contact_offset_y` are
+> *offsets from the centre of the cue ball*, in the units of §6.2, and the axes are the
+> cue's own axes: `+y` is `up × direction` (the shooter's left) and `+z` is `up`. Reading
+> `contact_offset_x` as "the shooter's right" inverts the english, and nothing else in the
+> shot looks broken — the ball simply goes the other way round.
 
 **Why a direction vector and not angles:** expressing the aim as degrees (or radians) forces the
 deterministic core to call `sin`/`cos` to convert it, and those calls go to the platform libm,
@@ -1659,19 +1922,38 @@ fn simulate_shot(input: ShotInput) -> GameState {
 }
 ```
 
-**Choosing the timestep:** a fixed timestep is required for determinism regardless of which
-architecture you use, but 240 Hz is *not* justified by the ball-ball contact time. Collisions are
-modelled as instantaneous, so the 250 μs contact duration never enters the integrator; what the
-timestep actually has to be small enough for is *spatial* accuracy — that no ball may move far
-enough in one step to pass through another ball or a cushion. At 240 Hz a 13 m/s break shot
-covers 5.4 cm per step, essentially a full ball diameter, so discrete overlap tests will miss
-collisions at break speed.
+**Choosing the timestep:** the timestep is a property of the *stepped* architecture, not of
+determinism. With the event-driven core there is no timestep at all, and the fixed timestep
+that §11.1 describes is not needed for determinism either — determinism comes from the
+closed-form segments and the explicit tie-break rule (§11.4). What a *stepped* integrator
+does need is a step size that is fixed (so that the sequence of operations does not depend
+on the frame rate) and small enough for spatial accuracy. 240 Hz is *not* justified by the
+ball-ball contact time: collisions are modelled as instantaneous, so the 250 μs contact
+duration never enters the integrator; what the timestep actually has to be small enough for
+is *spatial* accuracy — that no ball may move far enough in one step to pass through another
+ball or a cushion. At 240 Hz a 13 m/s break shot covers 5.4 cm per step, essentially a full
+ball diameter, so discrete overlap tests will miss collisions at break speed.
 
 So:
 - with **event-driven** simulation, no timestep constraint applies at all;
-- with a **stepped** integrator, either use continuous collision detection (swept TOI within
-  each step, §11.3) or raise the rate — 1000 Hz gives 1.3 cm per step at 13 m/s, which is below
-  a ball diameter but still not comfortable for a fast grazing hit.
+- with a **stepped** integrator, use a *fixed* timestep and either continuous collision
+  detection (swept TOI within each step, §11.3) or raise the rate — 1000 Hz gives 1.3 cm
+  per step at 13 m/s, which is below a ball diameter but still not comfortable for a fast
+  grazing hit.
+
+**The time limit is a guard, not a physics parameter.** `MAX_SIM_TIME` (30 s) and the event
+limit behind it exist so that a shot cannot run for ever — a Zeno sequence that the settle
+threshold of §8.2 somehow missed, or a ball that never comes to rest. When the limit is
+reached the shot has **not** finished, and the core says so: the state it returns is
+reported as *settling*, not *settled*, and the balls are where they were at the limit. That
+matters for the rules — a shot that is still settling is a shot that is still going, and
+the game must not call it.
+
+A limit that fires on a *legitimate* shot is a limit that is set too low, not a shot that
+should be cut short. A ball rolling at the slowest speed the model admits takes
+`v/(μ_r·g)` seconds to stop, which at `μ_r = 0.01` is about 10 s for a ball that is still
+moving at 1 m/s — and the shot that contains it is not over. The 30 s limit is comfortably
+above that; it is the Zeno case it is there for, not the slow roll.
 
 ---
 
@@ -1685,7 +1967,7 @@ So:
 | Ball-ball | Elastic + friction impulse (Kim 2024; Dr. Dave TP A-14) | Medium | High |
 | Ball-cushion | Han (2005) or simplified game model | Low-Medium | Medium-High |
 | Ball-cue | Impulse-based with squirt correction (Kim 2021) | Medium | High |
-| Jump shots | Gravity + air drag (Magnus optional) | Low | Medium-High |
+| Jump shots | Gravity only, closed form (drag and Magnus neglected, §7) | Low | Medium-High |
 | Ball-slate | COR bounce (e_table = 0.5–0.7) | Low | Medium |
 | Determinism | f64, event-driven core, platform-independent libm, lockstep | Medium | N/A |
 
@@ -1696,7 +1978,7 @@ So:
 | Ball radius R | 0.028575 m |
 | Ball mass m | 0.170 kg (6 oz) |
 | Ball COR (ball-ball) e | 0.95 |
-| Ball-ball friction μ_ball | 0.05 |
+| Ball-ball friction μ_ball | 0.05 at a 1 m/s slip (the law is speed-dependent, §4.4.5) |
 | Sliding friction μ_s | 0.20 |
 | Rolling friction μ_r | 0.01 |
 | Cushion COR e_cushion | 0.75 |
@@ -1711,6 +1993,8 @@ So:
 | Pocket jaw COR e_jaw | 0.60 |
 | Pocket jaw friction μ_jaw | 0.30 |
 | Pocket shelf friction μ_slate | 0.15 |
+| Pocket cut angle (corner / side) | 142° / 104° (WPA ±1°) |
+| Slate settle speed | 0.02 m/s (the Zeno guard, §8.2) |
 | Simulation timestep | none required (event-driven); 1/240–1/1000 s if stepped |
 | Max simulation time | 30 seconds |
 | Gravity g | 9.81 m/s² |
@@ -1731,7 +2015,7 @@ can be fitted, and calibrate in this order — each step depends on the previous
 | 4 | `e_cushion` | rebound speed off a cushion | speed loss on a 45° incidence |
 | 5 | `e_jaw`, `μ_jaw`, `μ_slate` | pocket outcomes on a real table | which shots rattle and which hang up |
 | 6 | squirt curve | high-speed video of off-centre hits | the deflection angle vs impact parameter |
-| 7 | `e_ball`, `μ_ball` | separation angle and throw | 85°–89° separation, 1.45° throw at a 10° cut |
+| 7 | `e_ball`, `μ_ball` | separation angle and throw | 85°–89° separation, 1.45° throw at a 10° cut; at a 30° cut the throw runs from 2.9° (fast) to 4.65° (slow) |
 
 Two defaults deserve an explicit note:
 
@@ -1790,9 +2074,10 @@ Two of them are worth calling out because they are the ones that catch real bugs
 - **`cut_throw_sweep`** compares the model against measured throw. The two regimes have
   closed forms. In the *sticking* regime (cut angles below ≈ 18.8°) the throw is
   `atan(2·tan(cut)/(7·(1+e)))`, which gives 1.48° at a 10° cut against a measured 1.45° —
-  agreement to 0.03°. In the *sliding* regime the Coulomb cap makes the throw constant at
-  `atan(μ_ball)` = 2.86°, which matches the measured *fast*-shot throw (2.90° at a 30° cut) but
-  under-predicts the slow-shot throw (4.65°) — see the known deviation below.
+  agreement to 0.03°. In the *sliding* regime the Coulomb cap makes the throw
+  `atan(μ_ball(u))`, where `u` is the slip speed — and because `μ_ball` falls with the slip
+  speed (§4.4.5), the throw is speed-dependent: 2.86° at a 1 m/s slip, more on a slow shot,
+  where the measured throw is 4.65° at a 30° cut against 2.90° on a fast one.
 
 ### 14.2 Schema
 
@@ -1826,12 +2111,29 @@ Conventions:
 
 ### 14.3 Known deviations
 
-The `cut_throw_sweep` fixture records the one place where the model is knowingly wrong: the
-tangential impulse is capped at `μ_ball·J_n`, which gives a speed-independent throw angle of
-`atan(μ_ball)` = 2.86° once the balls slip. The measured throw is strongly speed dependent (2.9° fast, 4.65° slow at a 30°
-cut) because the table's static friction during the collision raises the effective friction
-between the balls. Kim (2024) treats this; this model does not. Closing the gap means coupling
-the ball-cloth friction into the ball-ball impulse, which the 250 μs contact makes awkward.
+The `cut_throw_sweep` fixture records the one place where the model is knowingly wrong.
+
+**What the model does now.** The tangential impulse is capped at `μ_ball(u)·J_n`, and
+`μ_ball` is not a constant: it is TP A.14's fit to Marlow's data,
+`μ(v_rel) = 0.009951 + 0.108·e^(−0.77·v_rel)` (§4.4.5). A slow shot slips slowly, so it gets
+a larger friction coefficient and a larger throw — which is the measured behaviour, and the
+reason the measured throw is 4.65° at a 30° cut on a slow shot against 2.90° on a fast one.
+
+**What is left.** The shape of the speed dependence is right and the slow-shot end of the
+range is close, but the measured numbers are not reproduced across the whole range, and the
+reason is that the measurement's shot conditions are not fully pinned down: the throw depends
+on the cue ball's *spin* as well as its speed (a rolling cue ball and a stun cue ball slip at
+different rates, so they throw differently at the same speed), and the published figures do
+not carry every condition needed to reproduce them. The residual is therefore a
+*calibration* item rather than a structural one — it is on the list in §13.3 — and not the
+structural gap this section used to describe.
+
+**What used to be said here, and why it changed.** The older text said that closing the gap
+meant coupling the ball-cloth friction into the ball-ball impulse, which the 250 μs contact
+makes awkward. That was written before the speed dependence in TP A.14 was taken into
+account: with the friction coefficient itself a function of the slip speed, most of the gap
+closes without touching the cloth at all. Coupling the cloth friction into the impulse is
+still the remaining route to the last fraction of a degree, and it is still awkward.
 
 ### 14.4 Determinism fixture
 
@@ -1879,45 +2181,61 @@ transcendental function that leaked into the core (§11.4), not an arithmetic di
    - Authoritative reference for all physical property values
    - Also the source of the throw equation in TP A-14 and the throw data used in §4.4
 
-7. **Cross, R. (2008).** "Cue and ball deflection (or 'squirt') in billiards." Am. J. Phys. 76, 205.
+7. **Alciatore, D.G. (2005, rev. 2025).** "TP A.14 — The effects of cut angle, speed, and spin
+   on object ball throw." https://drdavepoolinfo.com/technical_proofs/new/TP_A-14.pdf
+   - The source of the 1/7 sticking constant, of the two-dimensional slip vector used in
+     §4.4.5, and of the measured throw data in §14.1
+   - Also the source of the speed-dependent friction law
+     `μ(v_rel) = 0.009951 + 0.108·e^(−0.77·v_rel)`, fitted to Marlow's data
+
+8. **Alciatore, D.G. (2005).** "TP A.17 — The effect of the amount of friction on throw."
+   https://billiards.colostate.edu/technical_proofs/new/TP_A-17.pdf
+   - The throw equation of TP A.14 written out with the friction-speed relation, and the
+     scale factor used to show the effect of the friction on the throw
+
+9. **Cross, R. (2008).** "Cue and ball deflection (or 'squirt') in billiards." Am. J. Phys. 76, 205.
    - Experimental and theoretical analysis of squirt
 
-8. **Petit, Régis (2004).** "Billiards: Theory of the Game." Chiron.
-   - Complete 3D vector treatment of billiard physics
-   - Covers horizontal and inclined cue strokes, jump shots
+10. **Petit, Régis (2004).** "Billiards: Theory of the Game." Chiron.
+    - Complete 3D vector treatment of billiard physics
+    - Covers horizontal and inclined cue strokes, jump shots
 
-9. **Alciatore, David (Dr. Dave).** "The Amazing World of Billiards Physics," *Scientific American*
-   (2007). https://billiards.colostate.edu/physics_articles/Alciatore_SCIAM_article_posted_version.pdf
-   - Spin-induced throw, cut-induced throw, jump shot mechanics
-   - Published throw equation (TP A-14), including the 1/7 sticking constant
+11. **Alciatore, David (Dr. Dave).** "The Amazing World of Billiards Physics," *Scientific American*
+    (2007). https://billiards.colostate.edu/physics_articles/Alciatore_SCIAM_article_posted_version.pdf
+    - Spin-induced throw, cut-induced throw, jump shot mechanics
+    - Published throw equation (TP A-14), including the 1/7 sticking constant
 
-10. **Gaffer on Games.** "Fix Your Timestep!" (2004).
+12. **Gaffer on Games.** "Fix Your Timestep!" (2004).
     https://gafferongames.com/post/fix_your_timestep/
     - Industry standard for fixed-timestep simulation
 
-11. **Gaffer on Games.** "Snapshot Interpolation" (2014).
+13. **Gaffer on Games.** "Snapshot Interpolation" (2014).
     https://gafferongames.com/post/snapshot_interpolation/
     - Industry standard for client-side interpolation of server snapshots
 
-12. **WPA Equipment Specifications.** https://wpapool.com/wp-content/uploads/2024/01/RECOMMENDED-EQUIPMENT-SPECIFICATIONS.pdf
+14. **WPA Equipment Specifications.** https://wpapool.com/wp-content/uploads/2024/01/RECOMMENDED-EQUIPMENT-SPECIFICATIONS.pdf
     - Official tournament table, ball, and pocket dimensions
+    - Section 9 gives the pocket openings, the vertical pocket angle and the *horizontal
+      pocket cut angles* (142° for the corner pocket, 104° for the side pocket, each +1°),
+      with no drawing and no definition of the reference lines — see §9.1
 
-13. **BCA Equipment Specifications.** https://cdn.ymaws.com/bca-pool.com/resource/resmgr/imported/BCAEquipmentSpecifications_2008.pdf
-    - Additional equipment specifications
+15. **BCA Equipment Specifications.** https://cdn.ymaws.com/bca-pool.com/resource/resmgr/imported/BCAEquipmentSpecifications_2008.pdf
+    - Additional equipment specifications: its side-pocket cut angle is 103° ± 2°, and its
+      corner shelf range is narrower than the WPA's
 
-14. **Aramith General Specifications.** https://aramith.com/general-specifications/
+16. **Aramith General Specifications.** https://aramith.com/general-specifications/
     - Ball material and physical properties
 
-15. **Nierhoff, T. et al. (2012).** "Strategic play for a pool-playing robot." IEEE Workshop on Advanced Robotics and its Social Impacts.
+17. **Nierhoff, T. et al. (2012).** "Strategic play for a pool-playing robot." IEEE Workshop on Advanced Robotics and its Social Impacts.
     - Robotic billiards implementation experience
 
-16. **Wallace, R.E. & Schroeder, M.C. (1988).** "Analysis of billiard ball collisions in two dimensions." Am. J. Phys. 56, 815.
+18. **Wallace, R.E. & Schroeder, M.C. (1988).** "Analysis of billiard ball collisions in two dimensions." Am. J. Phys. 56, 815.
     - Classic paper on billiard ball collision physics
 
-17. **Coriolis, G. (1835/2005).** "Théorie mathématique des effets du jeu de billard." English translation by D. Nadler.
+19. **Coriolis, G. (1835/2005).** "Théorie mathématique des effets du jeu de billard." English translation by D. Nadler.
     - Historical foundation of billiard physics (1835)
 
-18. **Peskin, C.S. (2020).** "Collision of Billiard Balls in 3D with Spin and Friction." https://math.nyu.edu/~peskin/Collision_of_Billiard_Balls_in_3D_with_Spin_and_Friction.pdf
+20. **Peskin, C.S. (2020).** "Collision of Billiard Balls in 3D with Spin and Friction." https://math.nyu.edu/~peskin/Collision_of_Billiard_Balls_in_3D_with_Spin_and_Friction.pdf
     - 3D collision model with spin and friction
 
 ---

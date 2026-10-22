@@ -179,33 +179,75 @@ fn the_vertical_impulse_changes_sign_at_the_flip_threshold() {
 // ---------------------------------------------------------------- the table effect
 
 #[test]
-fn a_ten_metre_per_second_collision_lifts_the_ball_about_a_centimetre_and_a_half() {
+fn a_rolling_cue_ball_is_lifted_by_the_friction_between_the_balls() {
+    // The vertical impulse comes from the vertical component of the slip at the
+    // contact (§4.4.5). A rolling cue ball's contact point moves downwards at the
+    // front of the ball, so the friction acts upwards on it and the ball is lifted.
     let cfg = TableConfig::default();
     let mut a = ball(&cfg, 0, 0.0, 0.635);
-    a.velocity = Vec3::new(10.0, 0.0, 0.0);
+    a.velocity = Vec3::new(2.0, 0.0, 0.0);
+    // Natural roll: omega = (k x v) / R.
+    a.angular_velocity = Vec3::new(0.0, 2.0 / cfg.ball.radius, 0.0);
     let b = ball(&cfg, 1, 0.3, 0.635);
     let outcome = pool_core::ball_ball::resolve(&a, &b, &cfg);
-    assert!((outcome.lift - cfg.ball_ball.mu_ball * 10.0).abs() < 1e-12);
-    let height = outcome.lift * outcome.lift / (2.0 * cfg.simulation.gravity);
+    assert!(outcome.lift > 0.0, "the cue ball was not lifted");
+    // The lift is the vertical share of the friction impulse: `J_t * |u_z| / u`.
     assert!(
-        (height - 0.0127).abs() < 0.0005,
-        "the lift was {height} m, expected about 1.3 cm"
+        (outcome.lift - outcome.jt / cfg.ball.mass).abs() < 1e-12,
+        "the lift was {}, expected {}",
+        outcome.lift,
+        outcome.jt / cfg.ball.mass
+    );
+    // Kim's estimate for the same collision is `mu_ball * U_i` (§4.5); the two are
+    // the same effect, and the model is the smaller of the two because TP A.14's
+    // friction coefficient falls with the sliding speed.
+    let kim = cfg.ball_ball.mu_ball * 2.0;
+    assert!(
+        outcome.lift < kim && outcome.lift > 0.2 * kim,
+        "the lift was {}, Kim's estimate is {}",
+        outcome.lift,
+        kim
     );
 }
 
 #[test]
-fn the_lift_only_applies_while_the_ball_is_on_the_bed() {
+fn a_stun_cue_ball_is_not_lifted() {
+    // Without spin the slip at the contact is purely horizontal, so the friction
+    // between the balls has no vertical component: neither ball is lifted and
+    // neither is pressed into the cloth.
     let cfg = TableConfig::default();
     let mut a = ball(&cfg, 0, 0.0, 0.635);
-    a.velocity = Vec3::new(10.0, 0.0, 0.0);
+    a.velocity = Vec3::new(2.0, 0.0, 0.0);
+    let b = ball(&cfg, 1, 0.3, 0.635);
+    let outcome = pool_core::ball_ball::resolve(&a, &b, &cfg);
+    assert_eq!(outcome.lift, 0.0);
+    assert_eq!(outcome.velocity_b.z, 0.0);
+}
+
+#[test]
+fn a_rolling_cue_ball_presses_the_object_ball_into_the_cloth() {
+    // The other half of the same vertical impulse: the reaction presses the object
+    // ball into the cloth, which is what activates the large static friction of §4.5.
+    let cfg = TableConfig::default();
+    let mut a = ball(&cfg, 0, 0.0, 0.635);
+    a.velocity = Vec3::new(2.0, 0.0, 0.0);
+    a.angular_velocity = Vec3::new(0.0, 2.0 / cfg.ball.radius, 0.0);
     let b = ball(&cfg, 1, 0.3, 0.635);
     let outcome = pool_core::ball_ball::resolve(&a, &b, &cfg);
     assert!(outcome.lift > 0.0);
+    assert!(
+        outcome.velocity_b.z < 0.0,
+        "the object ball should be pressed down, vz = {}",
+        outcome.velocity_b.z
+    );
+}
 
-    // In the simulation the lift only applies once: a ball that is already in the air
-    // cannot pick up any more.
+#[test]
+fn the_lift_carries_the_cue_ball_off_the_bed_and_it_lands_again() {
+    let cfg = TableConfig::default();
     let mut balls = vec![ball(&cfg, 0, 0.0, 0.635), ball(&cfg, 1, 0.3, 0.635)];
-    balls[0].velocity = Vec3::new(10.0, 0.0, 0.0);
+    balls[0].velocity = Vec3::new(2.0, 0.0, 0.0);
+    balls[0].angular_velocity = Vec3::new(0.0, 2.0 / cfg.ball.radius, 0.0);
     let input = ShotInput::new(0.0, Vec3::X, balls);
     let state = try_simulate_state(&input, &cfg).expect("the shot runs");
     // The cue ball is in the air after the collision and it lands again.

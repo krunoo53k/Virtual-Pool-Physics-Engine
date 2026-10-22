@@ -165,12 +165,22 @@ fn cut_throw_sweep() {
     let balls = setup_balls(&fixture);
     let cue_ball = read_ball(&balls[0], cfg.ball.radius);
     let object_ball = read_ball(&balls[1], cfg.ball.radius);
-    let mut a = ball_from_fixture(&cfg, &cue_ball);
-    a.number = 0;
 
-    for row in expectations(&fixture) {
+    // The rows of the fixture: the cut angle, the cue ball's speed and the throw.
+    let mut rows = expectations(&fixture);
+    if let Some(speed_rows) = fixture.get("throw_versus_speed") {
+        if let Some(items) = speed_rows.as_array() {
+            rows.extend(items.iter().cloned());
+        }
+    }
+
+    for row in rows {
         let cut_deg = number(&row, "cut_angle");
         let cut = cut_deg.to_radians();
+        let speed = optional_number(&row, "cue_speed").unwrap_or(2.0);
+        let mut a = ball_from_fixture(&cfg, &cue_ball);
+        a.number = 0;
+        a.velocity = Vec3::new(speed, 0.0, 0.0);
         let mut b = ball_from_fixture(&cfg, &object_ball);
         b.number = 1;
         b.position = Vec3::new(0.3 * cut.cos(), 0.3 * cut.sin(), cfg.ball.radius);
@@ -183,7 +193,7 @@ fn cut_throw_sweep() {
             throw,
             number(&row, "model_throw_deg"),
             1e-4,
-            &format!("throw at {cut_deg} degrees"),
+            &format!("throw at {cut_deg} degrees and {speed} m/s"),
         );
         let regime = text(&row, "regime");
         assert_eq!(
@@ -193,7 +203,7 @@ fn cut_throw_sweep() {
             } else {
                 "sliding"
             },
-            "the regime at {cut_deg} degrees"
+            "the regime at {cut_deg} degrees and {speed} m/s"
         );
     }
 
@@ -205,6 +215,8 @@ fn cut_throw_sweep() {
         .to_degrees();
     let mut b = ball_from_fixture(&cfg, &object_ball);
     b.position = Vec3::new(0.3 * cut.cos(), 0.3 * cut.sin(), cfg.ball.radius);
+    let mut a = ball_from_fixture(&cfg, &cue_ball);
+    a.number = 0;
     let outcome = ball_ball::resolve(&a, &b, &cfg);
     let throw = (outcome.velocity_b.y.atan2(outcome.velocity_b.x) - cut).to_degrees();
     // The published formula gives the magnitude of the throw; the model throws the
@@ -218,6 +230,29 @@ fn cut_throw_sweep() {
     );
     // The measured throw at a 10 degree cut is 1.45 degrees (Alciatore TP A-14).
     assert_close(throw.abs(), 1.45, 0.03, "the measured 10 degree throw");
+
+    // The friction between the balls falls with the sliding speed (TP A.14), so a
+    // slower shot throws more - in the sliding regime. In the sticking regime the
+    // throw does not depend on the friction coefficient at all, and it does not
+    // depend on the speed either.
+    let cut = 30.0_f64.to_radians();
+    let mut throws = Vec::new();
+    for speed in [0.4472_f64, 1.3411, 3.1293] {
+        let mut a = ball_from_fixture(&cfg, &cue_ball);
+        a.velocity = Vec3::new(speed, 0.0, 0.0);
+        let mut b = ball_from_fixture(&cfg, &object_ball);
+        b.position = Vec3::new(0.3 * cut.cos(), 0.3 * cut.sin(), cfg.ball.radius);
+        let outcome = ball_ball::resolve(&a, &b, &cfg);
+        throws.push(
+            (outcome.velocity_b.y.atan2(outcome.velocity_b.x) - cut)
+                .to_degrees()
+                .abs(),
+        );
+    }
+    assert!(
+        throws[0] > throws[1] && throws[1] > throws[2],
+        "the throw must fall with the shot speed: {throws:?}"
+    );
 }
 
 // ---------------------------------------------------------------- the cushion

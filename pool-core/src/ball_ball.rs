@@ -19,38 +19,70 @@ pub struct BallBallOutcome {
     pub angular_velocity_b: Vec3,
     /// The normal impulse.
     pub jn: f64,
-    /// The tangential impulse (signed: it opposes the relative slip).
+    /// The tangential impulse (a magnitude: it acts along the slip).
     pub jt: f64,
-    /// The relative tangential slip at the contact point.
+    /// The relative slip speed at the contact point.
     pub slip: f64,
     /// True when the contact sticks (the tangential impulse is not Coulomb limited).
     pub sticking: bool,
     /// The line of centres.
     pub normal: Vec3,
-    /// The horizontal tangent used by the tangential impulse.
+    /// The horizontal tangent of the tangent plane.
     pub tangent: Vec3,
-    /// The vertical speed the striking ball gains from the table effect (§4.5).
+    /// The vertical speed the striking ball gains from the vertical component of the
+    /// friction impulse (section 4.5). It is positive when the ball is lifted.
     pub lift: f64,
+}
+
+/// The friction coefficient between two balls, as a function of the sliding speed at
+/// the contact.
+///
+/// Alciatore's TP A.14 fits Marlow's data with
+///
+/// ```text
+/// mu(v_rel) = 0.009951 + 0.108 * exp(-0.77 * v_rel)
+/// ```
+///
+/// so the friction between the balls *falls* as the contact slides faster. That is why
+/// the measured throw is larger on a slow shot than on a fast one (section 4.4.5).
+///
+/// The configuration's `mu_ball` is the coefficient at the reference slip speed of
+/// 1 m/s, so the law is normalised there: at that speed the model uses `mu_ball`
+/// itself, and the *shape* of the curve is TP A.14's.
+pub fn friction_at_speed(mu_ball: f64, slip: f64) -> f64 {
+    /// TP A.14's fit: `mu(v) = 0.009951 + 0.108 * exp(-0.77 * v)`.
+    const A: f64 = 0.009951;
+    const B: f64 = 0.108;
+    const K: f64 = 0.77;
+    /// `exp(-0.77)`: the exponential factor at the reference slip speed.
+    const EXP_REFERENCE: f64 = 0.46301306831122807;
+    /// The fit at the reference slip speed of 1 m/s.
+    const REFERENCE_MU: f64 = A + B * EXP_REFERENCE;
+    let slip = if slip > 0.0 { slip } else { 0.0 };
+    mu_ball * (A + B * libm::exp(-K * slip)) / REFERENCE_MU
 }
 
 /// Resolves a ball-ball collision between `a` (the striking ball) and `b`.
 ///
 /// The model is the one of §4.4.5:
 /// - the normal impulse is `J_n = ((1 + e) / 2) * m * v_n`, which conserves momentum;
-/// - the tangential impulse stops the slip at `m * u_t / 7` but is capped by the
-///   Coulomb limit `mu_ball * J_n`;
+/// - the tangential impulse stops the slip at `m * u / 7` but is capped by the
+///   Coulomb limit `mu_ball(u) * J_n`, with the friction coefficient falling with the
+///   sliding speed (TP A.14);
+/// - the slip is a vector in the *tangent plane* - horizontal along the rail and
+///   vertical - and the friction acts along it, which is what carries the vertical
+///   effects of §4.5;
 /// - both balls' spin is updated, which is what produces throw and spin transfer.
 pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutcome {
     let m = cfg.ball.mass;
     let radius = cfg.ball.radius;
     let inertia = cfg.moment_of_inertia();
     let e = cfg.ball_ball.e_ball;
-    let mu = cfg.ball_ball.mu_ball;
 
     let delta = b.position - a.position;
     // The line of centres is taken in the horizontal plane: the document's ball-ball
-    // model is a planar one, and the vertical effect of the collision is the table
-    // effect of §4.5, not a vertical component of the contact impulse.
+    // model is a planar one, and the vertical effect of the collision comes from the
+    // vertical component of the slip, not from the contact normal.
     let horizontal = Vec3::new(delta.x, delta.y, 0.0);
     let normal = match horizontal.normalize() {
         Some(n) => n,
@@ -75,8 +107,8 @@ pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutco
             }
         },
     };
-    // The tangent lies in the horizontal plane; the vertical component of the contact
-    // slip is handled by the table effect of §4.5 rather than by this impulse.
+    // The tangent plane at the contact is spanned by the horizontal tangent and the
+    // vertical.
     let tangent = Vec3::new(-normal.y, normal.x, 0.0);
 
     let r_a = normal * radius;
@@ -84,30 +116,42 @@ pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutco
 
     // Relative velocity along the line of centres, positive while A approaches B.
     let v_n = (a.velocity - b.velocity).dot(normal);
-    // The slip of the two contact points along the tangent.
+    // The slip of the two contact points, in the tangent plane (§4.4.5).
     let contact_a = a.velocity + a.angular_velocity.cross(r_a);
     let contact_b = b.velocity + b.angular_velocity.cross(r_b);
-    let u_t = (contact_a - contact_b).dot(tangent);
+    let slip_vector = contact_a - contact_b;
+    let u_t = slip_vector.dot(tangent);
+    let u_z = slip_vector.z;
+    let slip = (u_t * u_t + u_z * u_z).sqrt();
 
     let jn = ((1.0 + e) / 2.0) * m * v_n;
-    let jt_stick = m * u_t.abs() / 7.0;
+    // The friction coefficient falls with the sliding speed (TP A.14).
+    let mu = friction_at_speed(cfg.ball_ball.mu_ball, slip);
+    let jt_stick = m * slip / 7.0;
     let jt_cap = mu * jn;
-    // The friction always opposes the relative slip, so the impulse carries the sign
-    // of the slip.
-    let jt = if jt_stick <= jt_cap { jt_stick } else { jt_cap };
-    let jt = if u_t >= 0.0 { jt } else { -jt };
+    let jt = if slip > 0.0 {
+        jt_stick.min(jt_cap)
+    } else {
+        0.0
+    };
 
-    let impulse_a = normal * (-jn) + tangent * (-jt);
-    let impulse_b = normal * jn + tangent * jt;
+    // The friction acts along the slip, in the tangent plane. The slip direction is
+    // what carries the vertical part: for a rolling cue ball the contact point at the
+    // front of the ball moves downwards, so the friction lifts the cue ball and presses
+    // the object ball into the cloth (§4.5).
+    let slip_dir = if slip > 0.0 {
+        tangent * (u_t / slip) + Vec3::Z * (u_z / slip)
+    } else {
+        Vec3::ZERO
+    };
+
+    let impulse_a = normal * (-jn) - slip_dir * jt;
+    let impulse_b = normal * jn + slip_dir * jt;
 
     let velocity_a = a.velocity + impulse_a / m;
     let velocity_b = b.velocity + impulse_b / m;
     let angular_velocity_a = a.angular_velocity + r_a.cross(impulse_a) / inertia;
     let angular_velocity_b = b.angular_velocity + r_b.cross(impulse_b) / inertia;
-
-    // The table effect of §4.5: the friction between the balls can lift the
-    // striking ball off the cloth, `dv_z = mu_ball * U_i`.
-    let lift = if v_n > 0.0 { mu * v_n } else { 0.0 };
 
     BallBallOutcome {
         velocity_a,
@@ -116,11 +160,12 @@ pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutco
         angular_velocity_b,
         jn,
         jt,
-        slip: u_t,
-        sticking: jt_stick.abs() <= jt_cap.abs(),
+        slip,
+        sticking: slip > 0.0 && jt_stick <= jt_cap,
         normal,
         tangent,
-        lift,
+        // The vertical speed the striking ball gains from the friction impulse.
+        lift: impulse_a.z / m,
     }
 }
 

@@ -17,7 +17,7 @@ use pool_godot::{frame, shot};
 /// The hash of the shot, pinned.
 ///
 /// The same value is in `godot-project/scripts/smoke_test.gd`.
-const HASH: &str = "c4a38fea1e512ddd";
+const HASH: &str = "c399229b25faae5a";
 
 /// The cue ball and the fifteen object balls, in the core's frame.
 ///
@@ -47,14 +47,7 @@ fn the_shot(table: &TableConfig) -> pool_core::state::GameState {
     let core_positions: Vec<Vec3> = positions.iter().map(|p| frame::to_core(*p)).collect();
     let numbers: Vec<i32> = (0..core_positions.len() as i32).collect();
     let direction = frame::to_core(frame::to_godot(Vec3::Y));
-    let input = shot::shot_input(
-        table,
-        8.0,
-        direction,
-        (0.0, 0.0),
-        &core_positions,
-        &numbers,
-    );
+    let input = shot::shot_input(table, 8.0, direction, (0.0, 0.0), &core_positions, &numbers);
     let (state, _) = shot::simulate(table, &input).expect("the shot runs");
     state
 }

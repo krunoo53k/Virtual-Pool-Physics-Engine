@@ -1,10 +1,10 @@
 {
   "id": "cut_throw_sweep",
-  "title": "Object-ball throw versus cut angle",
-  "purpose": "Validates the 1/7 sticking constant and the Coulomb cap on the tangential impulse. Also records a known model limitation (see known_deviations).",
+  "title": "Object-ball throw versus cut angle and shot speed",
+  "purpose": "Validates the 1/7 sticking constant, the Coulomb cap on the tangential impulse and the speed-dependent friction coefficient. Also records a known model limitation (see known_deviations).",
   "sources": [
     "Alciatore, 'The Amazing World of Billiards Physics' (2007), TP A-14 throw data",
-    "doc section 5.4.5"
+    "doc section 4.4.5"
   ],
   "setup": {
     "balls": [
@@ -44,12 +44,13 @@
     "params": {
       "e_ball": 0.95,
       "mu_ball": 0.05,
-      "note": "object ball placed along the cut-angle bisector per row"
+      "note": "object ball placed along the cut-angle bisector per row; the cue ball is spinless, so the slip is purely horizontal"
     }
   },
   "expectations": [
     {
       "cut_angle": 10,
+      "cue_speed": 2.0,
       "model_throw_deg": -1.4799,
       "regime": "sticking",
       "measured_throw_deg": {
@@ -60,8 +61,9 @@
     },
     {
       "cut_angle": 20,
-      "model_throw_deg": -2.8624,
-      "regime": "sliding",
+      "cue_speed": 2.0,
+      "model_throw_deg": -3.0526,
+      "regime": "sticking",
       "measured_throw_deg": {
         "slow": null,
         "medium": null,
@@ -70,6 +72,7 @@
     },
     {
       "cut_angle": 30,
+      "cue_speed": 2.0,
       "model_throw_deg": -2.8624,
       "regime": "sliding",
       "measured_throw_deg": {
@@ -80,7 +83,8 @@
     },
     {
       "cut_angle": 40,
-      "model_throw_deg": -2.8624,
+      "cue_speed": 2.0,
+      "model_throw_deg": -2.3918,
       "regime": "sliding",
       "measured_throw_deg": {
         "slow": 5.55,
@@ -90,7 +94,8 @@
     },
     {
       "cut_angle": 50,
-      "model_throw_deg": -2.8624,
+      "cue_speed": 2.0,
+      "model_throw_deg": -2.0607,
       "regime": "sliding",
       "measured_throw_deg": {
         "slow": 5.4,
@@ -100,7 +105,8 @@
     },
     {
       "cut_angle": 60,
-      "model_throw_deg": -2.8624,
+      "cue_speed": 2.0,
+      "model_throw_deg": -1.8346,
       "regime": "sliding",
       "measured_throw_deg": {
         "slow": 5.25,
@@ -109,8 +115,47 @@
       }
     }
   ],
+  "throw_versus_speed": [
+    {
+      "cut_angle": 30,
+      "cue_speed": 0.4472,
+      "model_throw_deg": -4.8083,
+      "regime": "sliding",
+      "measured_throw_deg": {
+        "slow": 4.65,
+        "medium": 4.55,
+        "fast": 2.9
+      },
+      "measured_speed": "slow"
+    },
+    {
+      "cut_angle": 30,
+      "cue_speed": 1.3411,
+      "model_throw_deg": -3.5502,
+      "regime": "sliding",
+      "measured_throw_deg": {
+        "slow": 4.65,
+        "medium": 4.55,
+        "fast": 2.9
+      },
+      "measured_speed": "medium"
+    },
+    {
+      "cut_angle": 30,
+      "cue_speed": 3.1293,
+      "model_throw_deg": -2.0215,
+      "regime": "sliding",
+      "measured_throw_deg": {
+        "slow": 4.65,
+        "medium": 4.55,
+        "fast": 2.9
+      },
+      "measured_speed": "fast"
+    }
+  ],
   "known_deviations": [
-    "The model caps the tangential impulse at mu_ball*J_n, which gives a constant throw angle of atan(mu_ball) = 2.86 deg once the balls start slipping (cut angles above ~18.8 deg). The measured throw is speed dependent and larger on slow shots (up to 5.5 deg at a 40 deg cut) because the table's static friction during the collision raises the effective friction. This is the correction described by Kim 2024 and is not implemented.",
-    "In the sticking regime (cut angles below ~18.8 deg) the model predicts atan(2*tan(cut)/(7*(1+e))), which gives 1.48 deg at a 10 deg cut against a measured 1.45 deg - agreement to 0.03 deg."
+    "The friction between the balls falls with the sliding speed (TP A.14's fit to Marlow's data, doc section 4.4.5), so the throw falls with the shot speed: the model gives 4.81 deg at a 30 deg cut on TP A.14's slow shot (1 mph) and 2.02 deg on its fast one (7 mph). The measured values are 4.65 and 2.90 deg. The slow end is close and the fast end is under-predicted by about 0.9 deg.",
+    "In the sticking regime (cut angles below ~18.8 deg) the model predicts atan(2*tan(cut)/(7*(1+e))), which gives 1.48 deg at a 10 deg cut against a measured 1.45 deg - agreement to 0.03 deg.",
+    "The measured throw depends on the cue ball's spin as well as its speed, and the published figures do not carry every shot condition, so the residual is a calibration item rather than a structural one (doc section 14.3)."
   ]
 }
