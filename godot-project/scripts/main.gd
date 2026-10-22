@@ -60,6 +60,19 @@ var phase: int = Phase.AIMING
 ## The balls.
 var balls: Array[PoolBall] = []
 
+## The balls that are still on the table, by their index in `balls`. The cue
+## ball is the first one, because the core strikes the first ball it is given.
+var live: Array[int] = []
+
+## Where the cue ball starts: the head spot.
+var cue_spot := Vector3.ZERO
+
+## The balls that left the table in the last shot, by their index in `balls`.
+var off_table: Array[int] = []
+
+## The balls that went into a pocket in the last shot, by their index in `balls`.
+var pocketed: Array[int] = []
+
 ## The cue stick.
 var cue: MeshInstance3D
 
@@ -117,6 +130,13 @@ var draw := 0.0
 ## How far the cue has been drawn back at its furthest, in metres: that is
 ## the power of the shot.
 var pulled := 0.0
+
+## Whether the mouse turns the shot.
+##
+## The game turns the shot with the mouse, the way a first person game turns
+## the view. The tests turn this off: the mouse that happens to be on the desk
+## must not be able to change the shot a test is about.
+var mouse_turns_the_shot := true
 
 ## Where the mouse is.
 var mouse_position := Vector2.ZERO
@@ -194,6 +214,8 @@ func _build_balls() -> void:
 		add_child(ball)
 		ball.place(_to_godot(positions[index]), Vector3.ZERO)
 		balls.append(ball)
+		live.append(index)
+	cue_spot = balls[0].position
 
 
 ## Builds the cue, the aim line, the ghost ball and the tip's mark.
@@ -450,7 +472,9 @@ func _first_contact(aim: Vector3) -> Vector3:
 	var cue_ball := balls[0]
 	var best := INF
 	var found := Vector3.ZERO
-	for index in range(1, balls.size()):
+	for index in live:
+		if index == 0:
+			continue
 		var ball := balls[index]
 		var to_ball := ball.position - cue_ball.position
 		var along := to_ball.dot(aim)
@@ -509,9 +533,9 @@ func _fire() -> void:
 	var aim := _aim()
 	var positions := PackedVector3Array()
 	var numbers := PackedInt32Array()
-	for ball in balls:
-		positions.append(ball.position)
-		numbers.append(ball.number)
+	for index in live:
+		positions.append(balls[index].position)
+		numbers.append(balls[index].number)
 
 	# The power of the shot is how far the cue was drawn back.
 	var speed := maxf(pulled / MAX_PULL * MAX_CUE_SPEED, 0.15)
@@ -527,20 +551,40 @@ func _fire() -> void:
 func _play_back() -> void:
 	var positions := shot.sample(shot_time)
 	var rotations := shot.sample_rotation(shot_time)
-	for index in balls.size():
+	for index in live.size():
 		if index < positions.size():
-			balls[index].place(positions[index], rotations[index])
+			balls[live[index]].place(positions[index], rotations[index])
 
 
 ## The shot is over.
+##
+## The balls that left the table are out of the shot, and the cue ball goes
+## back on the table if it was pocketed: there is no ball-in-hand rule yet,
+## and a game you cannot shoot in again is no use.
 func _settle() -> void:
 	phase = Phase.AIMING
 	pulled = 0.0
 	draw = 0.0
-	for index in balls.size():
+	var still: Array[int] = []
+	off_table = []
+	pocketed = []
+	for index in live.size():
 		var state := shot.get_ball_state(index)
-		if state.get("pocketed", false) or state.get("off_table", false):
-			balls[index].visible = false
+		if state.get("pocketed", false):
+			# The ball went into a pocket: it is out of play, but it is not
+			# a ball that left the table.
+			balls[live[index]].visible = false
+			pocketed.append(live[index])
+		elif state.get("off_table", false):
+			balls[live[index]].visible = false
+			off_table.append(live[index])
+		else:
+			still.append(live[index])
+	live = still
+	if not live.has(0):
+		balls[0].place(cue_spot, Vector3.ZERO)
+		balls[0].visible = true
+		live.insert(0, 0)
 
 
 ## The status line.
@@ -567,6 +611,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _mouse_motion(event: InputEventMouseMotion) -> void:
 	mouse_moved = true
 	mouse_position = event.position
+
+	if not mouse_turns_the_shot:
+		return
 
 	if Input.is_key_pressed(KEY_E):
 		# The tip moves on the face of the ball, and the aim is left alone.
