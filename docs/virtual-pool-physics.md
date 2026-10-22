@@ -2273,6 +2273,7 @@ assumption that is written down as an assumption.
 ---
 
 ## 15. References
+
 1. **Kiefl, Evan (2020).** "The physics of pool/billiards." https://ekiefl.github.io/2020/04/24/pooltool-theory/
    - Comprehensive modern treatment of all five interaction domains
    - Includes full analytical equations for ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate
