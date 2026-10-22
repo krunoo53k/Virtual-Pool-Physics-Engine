@@ -1347,6 +1347,15 @@ list of segments ("ball 7 slides in a straight line until t=1.83 s, then rolls u
 and it can interpolate the exact position at any render time, including sub-step times, with no
 accumulated interpolation error.
 
+> **The render time is clamped to the shot.** A renderer's frame is not the
+> shot's duration: the last frame of a game loop is at the duration plus a
+> fraction of a frame, so the render time can be a little past the end of the
+> shot. The path has nothing to interpolate at that time, and a lookup that
+> misses every segment would answer "the ball is at the origin of the table".
+> The time is therefore clamped to the shot: a time past the end gives the
+> end, and a time before the start gives the start. The balls are where the
+> shot left them, which is what a renderer wants on its last frame.
+
 **Recommendation:** use the event-driven core for the shot simulation (it makes §3's closed-form
 equations the single source of truth and removes tunnelling), and keep a fixed-timestep loop only
 for continuous/ambient motion (ball-in-hand placement, cue stick animation, UI).
@@ -1393,6 +1402,15 @@ for continuous/ambient motion (ball-in-hand placement, cue stick animation, UI).
   For an airborne ball in regime 1, `z_c(t)` is quadratic as well as `x_c(t)`, so the contact
   condition against the inclined face is a **quartic**. In regime 1 on the bed it is a
   quadratic.
+
+  > **An airborne ball has to be branched on the regime too.** The three regimes are
+  > decided by the height of the ball *at the moment of the contact*, and for a ball in
+  > the air that height is a function of `t`. So the solver has to find where the ball
+  > crosses the rail line and then ask which of the three surfaces it meets there: the
+  > nose rubber if it is low enough, the rail structure if it is in the band, and over
+  > the rail if it is above the top. A ball that goes over is *off the table* (§10.2);
+  > a ball on the bed that is past the rail has gone *through* it, because the cushion
+  > is in the way and could not have been passed.
 - **Ball-pocket:** point-in-circle/polygon test, with the pocket's cut angle (§2.3)
 - **Ball-off-table:** boundary check on the ball's centre against the rail line
 
