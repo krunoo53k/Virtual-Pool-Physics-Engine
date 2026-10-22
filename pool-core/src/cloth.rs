@@ -97,7 +97,7 @@ pub fn advance_sliding(ball: &mut BallState, dt: f64, p: &ClothParams) {
 
 /// Advances a rolling ball by `dt` (§3.2).
 pub fn advance_rolling(ball: &mut BallState, dt: f64, p: &ClothParams) {
-    let speed = ball.velocity.x.hypot(ball.velocity.y);
+    let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
     if speed <= VELOCITY_EPS {
         return;
     }
@@ -161,7 +161,7 @@ pub fn segment_acceleration(ball: &BallState, p: &ClothParams) -> Vec3 {
             }
         }
         MotionState::Rolling => {
-            let speed = ball.velocity.x.hypot(ball.velocity.y);
+            let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
             if speed <= VELOCITY_EPS {
                 Vec3::ZERO
             } else {
@@ -176,7 +176,7 @@ pub fn segment_acceleration(ball: &BallState, p: &ClothParams) -> Vec3 {
 
 /// The acceleration of a ball sliding on a pocket shelf (§9.4).
 pub fn shelf_acceleration(ball: &BallState, g: f64, mu_slate: f64) -> Vec3 {
-    let speed = ball.velocity.x.hypot(ball.velocity.y);
+    let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
     if speed <= VELOCITY_EPS {
         return Vec3::ZERO;
     }
@@ -186,7 +186,7 @@ pub fn shelf_acceleration(ball: &BallState, g: f64, mu_slate: f64) -> Vec3 {
 
 /// Advances a ball that is sliding on a pocket shelf (§9.4).
 pub fn advance_shelf(ball: &mut BallState, dt: f64, g: f64, mu_slate: f64) {
-    let speed = ball.velocity.x.hypot(ball.velocity.y);
+    let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
     if speed <= VELOCITY_EPS {
         ball.velocity = Vec3::ZERO;
         return;

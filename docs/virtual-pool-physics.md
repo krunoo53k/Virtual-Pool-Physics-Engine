@@ -1,7 +1,7 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.6
+> **Version:** 1.7
 > **Date:** 2026-10-22
 > **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, ball-cue and ball-pocket interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
 >
@@ -98,6 +98,47 @@
 >   depend on treating the cushion impulse and the slate rebound as sequential, and
 >   Mathavan treats the table contact as simultaneous. The 3.8 mm hop is a model output
 >   until `cushion_rebound` carries measured video.
+>
+> **Revision note (1.7) — what a second review of v1.6 asked for.** Four of the points
+> were about the honesty of the document rather than about its arithmetic.
+>
+> * **The break-speed lift is an extrapolation, and it says so** (§4.5). TP A.14's friction
+>   law is fitted at 1–7 mph and a break slips at 8–10 m/s, past the end of the data; at a
+>   10 m/s slip the law gives μ ≈ 0.008 and a lift of 0.08 m/s, where Kim's constant-μ
+>   estimate gives 0.5 m/s. The two cannot both be right, the model is probably the one
+>   that is low, and no published measurement of the cue ball's hop after a break-speed
+>   collision was found. The fixture records one as `TO BE CALIBRATED` (§14).
+> * **The throw fixture compares like with like** (§14.1). It used to carry one model row
+>   per cut angle, at a fixed 2 m/s, beside three columns measured at 1, 3 and 7 mph — so
+>   the model row was really being compared against the *fast* column, and the residual
+>   looked like an overshoot growing with the cut angle. Every row is now at one of TP
+>   A.14's own speeds.
+> * **The measured throw columns are not a calibration target, and the document now
+>   proves it** (§14.1, §14.3). The three columns at a 30° cut cannot be fitted by *any*
+>   law of the form `A + B·e^(−K·u)`, for any floor term and any decay constant: the
+>   implied coefficients are 0.0813, 0.0796 and 0.0507 at slip speeds of 0.224, 0.671 and
+>   1.565 m/s, and for such a law the ratio of the successive differences is bounded
+>   below by `(u₂−u₁)/(u₃−u₂) = 0.50`, while the measured ratio is 0.061. There is
+>   nothing to fit, so the residual is a recorded deviation and no calibration is layered
+>   on top of it. TP A.14's own fit is the authority.
+> * **`hypot` is not arithmetic** (§11.4). It is not correctly rounded and not specified by
+>   IEEE-754, and the core used the platform's to decide whether a ball is moving — so
+>   two platforms could disagree in the last bit about whether a ball has stopped, and
+>   the event sequence with it. The core calls `libm::hypot` now, and a test reads the
+>   core's own source and fails if any platform transcendental appears in it.
+> * **The bed is snapped at the input boundary** (§3.1). A ball at rest is on the bed, so
+>   its centre is at exactly one radius, and that is where the `f32` positions of a game
+>   stop being allowed to say otherwise. The bed tolerance is also checked against the
+>   slate's settle threshold (§8.2): a ball with a vertical speed far below the threshold
+>   is absorbed on its first bounce, not turned into a chain of near-zero events.
+> * **What the fixtures do not check is now written down** (§14.5): the cushion hop, the
+>   break-speed lift, the jaw parameters and the squirt curve are the four things the
+>   model has not been checked against reality on.
+> * **The golden hash is confirmed on two targets** (§14.4): x86-64 and
+>   i686-unknown-linux-gnu — a different word size and a different floating-point path —
+>   agree bit for bit. The wasm32 baseline has *not* been established: there is no wasm
+>   toolchain here, and the document says so rather than implying a portability that has
+>   not been demonstrated.
 
 ---
 
@@ -632,6 +673,20 @@ During collision, the impact force between balls is ~400× gravity. The friction
 > (§13.3). What the model does settle is the sign, which Kim's estimate cannot: a stun
 > shot has no vertical slip and no lift at all, and a rolling shot lifts the cue ball
 > and presses the object ball into the cloth.
+>
+> **The break-speed number is an extrapolation, and it should be read as one.** The
+> friction law is a fit to throw data at modest slip speeds — TP A.14's own speeds run
+> from 1 to 7 mph — and a break shot's contact slips at 8–10 m/s, well past the end of
+> the data. The tail of an exponential fit is the least trustworthy part of it: at a
+> 10 m/s slip the law gives μ ≈ 0.008, a fifth of the coefficient the same fit gives at
+> 1 m/s, and the resulting lift of 0.08 m/s is *probably* an under-prediction rather
+> than a measurement. Kim's 1.3 cm is a calculation too, with a constant μ and the whole
+> friction impulse treated as vertical; it is the number to check against, not the
+> number to believe. **No published measurement of the cue ball's hop after a break-speed
+> collision was found**, so the fixture records one as `TO BE CALIBRATED` (§14): the
+> peak height of the cue ball after its first contact, from high-speed video, at a known
+> speed. Until that exists, the break-speed lift is the model's least trustworthy number
+> and nothing should be calibrated on it.
 
 **Implementation recommendation:** Treat the table during the collision as (a) an extra
 tangential friction contribution on the ball-ball contact, which is already captured by the
@@ -1735,6 +1790,20 @@ The real determinism risks are:
    crate (a pure-Rust, musl-derived implementation) instead of `f64::sin`/`f64::cos`, or supply
    your own polynomial approximations. Anything computed once at startup (cue direction, table
    geometry) should be computed *outside* the deterministic core and passed in as data.
+
+   > **`hypot` belongs on the list too.** It looks like arithmetic — "the length of a
+   > vector" — but it is not correctly rounded and it is not specified by IEEE-754: the
+   > platform is free to compute it any way it likes, and glibc and musl do not agree in
+   > the last bit. The core uses `hypot` to decide whether a ball is moving, so a
+   > platform that disagrees by an ulp can decide that a ball has stopped when another
+   > platform says it is still rolling — and then the event sequence, and the hash, are
+   > different. `libm::hypot` is the same code everywhere, so the core calls that one.
+
+   > **The rule is enforced, not just written down.** A test in the core reads the
+   > core's own source and fails if a platform transcendental — `sin`, `cos`, `exp`,
+   > `hypot`, `powf`, anything of that family — appears anywhere outside a test module.
+   > A leak is found on the machine that wrote it, rather than as a hash mismatch on
+   > the machine that did not.
 2. **`HashMap` iteration order.** Rust's `HashMap` uses a per-process random seed, so iteration
    order changes between runs of the same binary. Never iterate a `HashMap` to drive simulation
    order; use a `Vec`, a `BTreeMap`, or an explicitly sorted list.
@@ -2071,13 +2140,23 @@ Two of them are worth calling out because they are the ones that catch real bugs
 - **`slide_to_roll`** is the regression test for the §3.3 sign error. It asserts that the slip
   reaches zero at exactly `t = 2·u₀/(7·μ_s·g)` *and* that `ω_y` is positive at that instant.
   A sign flip in the angular velocity breaks both.
-- **`cut_throw_sweep`** compares the model against measured throw. The two regimes have
-  closed forms. In the *sticking* regime (cut angles below ≈ 18.8°) the throw is
-  `atan(2·tan(cut)/(7·(1+e)))`, which gives 1.48° at a 10° cut against a measured 1.45° —
-  agreement to 0.03°. In the *sliding* regime the Coulomb cap makes the throw
-  `atan(μ_ball(u))`, where `u` is the slip speed — and because `μ_ball` falls with the slip
-  speed (§4.4.5), the throw is speed-dependent: 2.86° at a 1 m/s slip, more on a slow shot,
-  where the measured throw is 4.65° at a 30° cut against 2.90° on a fast one.
+- **`cut_throw_sweep`** compares the model against measured throw, at TP A.14's own three
+  speeds (1, 3 and 7 mph), so that the model and the measurement beside it are the same
+  shot. The two regimes have closed forms. In the *sticking* regime (cut angles below
+  ≈ 18.8°) the throw is `atan(2·tan(cut)/(7·(1+e)))`, which gives 1.48° at a 10° cut against
+  a measured 1.45° — agreement to 0.03°. In the *sliding* regime the Coulomb cap makes the
+  throw `atan(μ_ball(u))`, where `u` is the slip speed, and because `μ_ball` falls with the
+  slip speed (§4.4.5) the throw is speed-dependent. There the model sits 0.6°–1.0° *below*
+  the measurement, at every speed and every cut angle — an offset, not a slope.
+
+> **The measured columns are not a calibration target, and the fixture now says so.** The
+> three columns at a 30° cut cannot be fitted by *any* friction law of the form
+> `A + B·e^(−K·u)`: their implied coefficients are 0.0813, 0.0796 and 0.0507 at slip speeds
+> of 0.224, 0.671 and 1.565 m/s, and for any such law with `K ≥ 0` the ratio of the
+> successive differences is bounded below by `(u₂−u₁)/(u₃−u₂) = 0.50`, while the measured
+> ratio is 0.061. So the three columns were not measured under one set of conditions, and
+> no value of the floor term and no value of the decay constant can fit them. They are
+> recorded as the deviation they are. TP A.14's own fit is the authority for the law.
 
 ### 14.2 Schema
 
@@ -2119,14 +2198,24 @@ The `cut_throw_sweep` fixture records the one place where the model is knowingly
 a larger friction coefficient and a larger throw — which is the measured behaviour, and the
 reason the measured throw is 4.65° at a 30° cut on a slow shot against 2.90° on a fast one.
 
-**What is left.** The shape of the speed dependence is right and the slow-shot end of the
-range is close, but the measured numbers are not reproduced across the whole range, and the
-reason is that the measurement's shot conditions are not fully pinned down: the throw depends
-on the cue ball's *spin* as well as its speed (a rolling cue ball and a stun cue ball slip at
-different rates, so they throw differently at the same speed), and the published figures do
-not carry every condition needed to reproduce them. The residual is therefore a
-*calibration* item rather than a structural one — it is on the list in §13.3 — and not the
-structural gap this section used to describe.
+**What is left.** Two things, and they are not the same kind of thing.
+
+*The size of the residual.* In the sliding regime the model sits 0.6°–1.0° below the
+measured throw, at every speed and every cut angle, and in the sticking regime it agrees
+to 0.03°. The residual is an **offset, not a slope**: the speed dependence of the throw is
+modelled correctly (the shape of the curve follows the slip speed), and what is missing is
+about a degree of throw in the Coulomb branch.
+
+*Why the residual cannot simply be fitted away.* The three measured columns at a 30° cut
+cannot be fitted by any friction law of the form `A + B·e^(−K·u)`, for any floor term and
+any decay constant: the implied coefficients are 0.0813, 0.0796 and 0.0507 at slip speeds
+of 0.224, 0.671 and 1.565 m/s, and for such a law the ratio of the successive differences
+is bounded below by `(u₂−u₁)/(u₃−u₂) = 0.50`, while the measured ratio is 0.061. The
+columns were therefore not measured under one set of conditions — the most likely
+explanation is that the shots differ in spin as well as in speed, and the published figures
+do not carry every condition. So the data is not a calibration target: **there is nothing to
+calibrate against**, and layering a correction on top of it would be fitting noise. TP
+A.14's own fit is the authority for the law, and the residual is recorded as a deviation.
 
 **What used to be said here, and why it changed.** The older text said that closing the gap
 meant coupling the ball-cloth friction into the ball-ball impulse, which the 250 μs contact
@@ -2145,10 +2234,45 @@ and must not include wall-clock time, hash-map iteration order or thread schedul
 Run it on every platform you ship. A mismatch between x86-64 and wasm is almost always a
 transcendental function that leaked into the core (§11.4), not an arithmetic difference.
 
+**Where the golden hash has been confirmed.** The hash is currently an **x86-64** value, and
+it has been confirmed on a second target: `i686-unknown-linux-gnu`, which is a different
+word size and a different floating-point path (x87's 80-bit intermediates against SSE2's
+64-bit), and it agrees bit for bit. That is the check that says the *arithmetic* is
+portable. It is not the check that says the *transcendentals* are, because both targets run
+the same `libm`; for that, the guarantee is structural — the core calls `libm` and nothing
+else, and a test enforces it.
+
+**The wasm baseline has not been established.** There is no wasm toolchain in the
+environment this document was written in, so the hash has not been run on
+`wasm32-unknown-unknown`. Until it has, the golden value is a baseline for one platform and
+a *specification* for the others: when the wasm build exists, the first thing to do with it
+is run this fixture, and the hash it produces is either the same number (and the model is
+portable) or a different one (and the leak that §11.4 warns about is in the core, and the
+portability test will find it).
+
+### 14.5 What the fixtures do not check
+
+The fixtures are the model's own equations, checked against each other and against whatever
+published data exists. They are **self-consistency, not validation**: a fixture that the model
+itself generated proves that the code implements this document and that the document's closed
+forms agree with one another. It says nothing about whether the physics is right.
+
+Four things are known to be unvalidated, and they are the ones to measure next:
+
+| What | Why it is open | What would close it |
+|---|---|---|
+| The cushion hop (3.8 mm at the WPA nose height) | the model treats the cushion impulse and the slate rebound as *sequential*, and Mathavan treats the table contact as simultaneous; the hop scales with the difference | high-speed video of a ball off a rail whose nose height has been measured (`cushion_rebound`, `measured_hop`) |
+| The break-speed cue ball lift | TP A.14's friction law is fitted at 1–7 mph and a break slips at 8–10 m/s, past the end of the data; Kim's estimate says 13 mm where the model says 0.3 mm (§4.5) | the cue ball's peak height after its first contact, from video, at a known speed (`cushion_rebound`, `measured_break_hop`) |
+| The jaw parameters and the facing angles | the WPA specifies the pocket's *cut* angles and gives no drawing, so the facing angle is a reading (§9.1); and no published measurement of a jaw's restitution or friction was found | a table, and a record of which shots rattle and which hang up (`pocket_drop`) |
+| The squirt curve | Cross (2008) has not been transcribed and the anchors are `null` | Cross's data, or high-speed video of off-centre hits (`squirt_curve`) |
+
+Everything else in this document is either a closed form — which the fixtures check against
+each other — a published result — which the fixtures check against the measurement — or an
+assumption that is written down as an assumption.
+
 ---
 
 ## 15. References
-
 1. **Kiefl, Evan (2020).** "The physics of pool/billiards." https://ekiefl.github.io/2020/04/24/pooltool-theory/
    - Comprehensive modern treatment of all five interaction domains
    - Includes full analytical equations for ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate

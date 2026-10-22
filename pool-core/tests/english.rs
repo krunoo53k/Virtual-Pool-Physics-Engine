@@ -229,11 +229,11 @@ fn the_two_throws_are_mirror_images() {
 #[test]
 fn the_throw_is_capped_by_the_ball_friction() {
     let cfg = TableConfig::default();
-    // The tangential impulse is limited to `mu_ball * J_n`, so the throw cannot
-    // exceed `atan(mu_ball) = 2.86 degrees` however much english there is
-    // (§4.4.5). This is the one place where the model is knowingly wrong: the
-    // measured throw is speed dependent and larger on slow shots.
-    let cap = cfg.ball_ball.mu_ball.atan().to_degrees();
+    // The tangential impulse is limited to `mu_ball(u) * J_n`, so the throw cannot
+    // exceed `atan(mu_ball(u))` however much english there is (§4.4.5). The
+    // coefficient falls with the sliding speed, so the cap is the *largest* one,
+    // at the slowest slip: `mu_ball` is the coefficient at a 1 m/s slip, and the
+    // law gives a bigger one below that.
     for offset in [-0.002, -0.005, -0.010] {
         let outcome = collide(&cfg, offset);
         // The throw is measured against the line of centres, not against the
@@ -241,11 +241,22 @@ fn the_throw_is_capped_by_the_ball_friction() {
         let along = outcome.velocity_b.dot(outcome.normal);
         let across = outcome.velocity_b.dot(outcome.tangent);
         let throw = across.atan2(along).to_degrees();
+        // The cap is the friction law's own limit at the slip speed of this
+        // collision, and the throw may not pass it.
+        let limit = ball_ball::friction_at_speed(cfg.ball_ball.mu_ball, outcome.slip)
+            .atan()
+            .to_degrees();
         assert!(
-            throw <= cap + 1e-9,
-            "the throw was {throw} degrees, which is past the {cap} degree cap"
+            throw <= limit + 1e-9,
+            "the throw was {throw} degrees, which is past the {limit} degree cap"
         );
-        assert!(throw > 0.0, "the throw was {throw} degrees, which is no throw");
+        // The limit is the reference value only at the reference slip speed; below
+        // it the law gives a bigger coefficient and a bigger cap.
+        assert!(limit > 0.0, "the cap is {limit} degrees");
+        assert!(
+            throw > 0.0,
+            "the throw was {throw} degrees, which is no throw"
+        );
     }
 }
 

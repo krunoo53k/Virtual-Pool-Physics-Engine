@@ -47,6 +47,7 @@ pub use sim::{
 };
 pub use state::{
     BallState, CueStickState, GamePhase, GameState, MotionState, PocketState, ShotInput,
+    BED_TOLERANCE,
 };
 pub use trace::{Segment, SegmentKind, Trace};
 

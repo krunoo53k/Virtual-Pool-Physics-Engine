@@ -60,9 +60,32 @@ pub struct BallState {
     pub pocket_state: PocketState,
 }
 
+/// How close to the bed a ball may be and still count as lying on it, in metres.
+///
+/// A ball that rests on the bed has its centre at exactly one radius, and that is a
+/// *known* quantity rather than a measurement. A game that keeps its balls in `f32`
+/// puts the centre a fraction of a nanometre below it, and a ball that is a hair below
+/// the bed and a hair above the ground is in no state at all: it is marked airborne,
+/// and then it cannot land, because the landing time of a ball whose centre is *below*
+/// the bed does not exist. It falls through the table.
+///
+/// A micron is far below anything that matters physically and far above the noise in
+/// the numbers.
+pub const BED_TOLERANCE: f64 = 1e-6;
+
 impl BallState {
     /// A ball at rest at the given position.
+    ///
+    /// A ball at rest is on the bed, so its centre is at exactly one radius: the
+    /// position's height is snapped to it when it is within [`BED_TOLERANCE`] of the
+    /// bed. This is the input boundary, and it is where the `f32` positions of a game
+    /// stop being allowed to say that a ball is a fraction of a nanometre inside the
+    /// slate.
     pub fn at_rest(cfg: &TableConfig, number: u8, position: Vec3) -> BallState {
+        let mut position = position;
+        if (position.z - cfg.ball.radius).abs() <= BED_TOLERANCE {
+            position.z = cfg.ball.radius;
+        }
         BallState {
             position,
             velocity: Vec3::ZERO,

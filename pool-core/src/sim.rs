@@ -21,7 +21,9 @@ use crate::cushion::{self, RailRegime};
 use crate::geometry::TableGeometry;
 use crate::math::{Vec2, Vec3};
 use crate::pocket;
-use crate::state::{BallState, GamePhase, GameState, MotionState, PocketState, ShotInput};
+use crate::state::{
+    BallState, GamePhase, GameState, MotionState, PocketState, ShotInput, BED_TOLERANCE,
+};
 use crate::trace::{OpenSegment, Recorder, SegmentKind, Trace};
 
 /// An error raised by the simulation. The core never panics; a fault is reported.
@@ -103,17 +105,6 @@ impl SimEvent {
         (self.time, self.kind.rank(), self.a, self.b)
     }
 }
-
-/// How close to the bed a ball may be and still count as lying on it, in metres.
-///
-/// A ball that rests on the bed has its centre at exactly one radius. A game that
-/// keeps its balls in `f32` puts the centre a fraction of a nanometre below that, and
-/// a ball that is a hair below the bed and a hair above the ground is in no state at
-/// all: it is marked airborne, and then it cannot land, because the landing time of a
-/// ball whose centre is *below* the bed does not exist. It falls through the table.
-/// A micron is far below anything that matters physically and far above the noise in
-/// the numbers.
-pub const BED_TOLERANCE: f64 = 1e-6;
 
 /// The deterministic simulation.
 pub struct Simulation<'a> {
@@ -309,7 +300,7 @@ impl<'a> Simulation<'a> {
             ball.motion_state = MotionState::Airborne;
             return;
         }
-        let speed = ball.velocity.x.hypot(ball.velocity.y);
+        let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
         if speed <= cloth::VELOCITY_EPS {
             let spin = ball.angular_velocity.z.abs();
             let in_plane = ball.angular_velocity.x.abs() + ball.angular_velocity.y.abs();
@@ -362,7 +353,7 @@ impl<'a> Simulation<'a> {
         if ball.pocket_state == PocketState::Entering {
             // On the shelf the ball only loses speed: it stops, and a ball that stops
             // before the drop line has hung up (§9.4).
-            let speed = ball.velocity.x.hypot(ball.velocity.y);
+            let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
             if speed <= cloth::VELOCITY_EPS {
                 return None;
             }
@@ -378,7 +369,7 @@ impl<'a> Simulation<'a> {
                 ))
             }
             MotionState::Rolling => {
-                let speed = ball.velocity.x.hypot(ball.velocity.y);
+                let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
                 Some((
                     cloth::time_to_rest(speed, &self.cloth),
                     EventKind::StateChange,

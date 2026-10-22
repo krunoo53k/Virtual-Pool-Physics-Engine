@@ -142,6 +142,26 @@ fn a_ball_a_nanometre_below_the_bed_does_not_fall_through_the_table() {
 }
 
 #[test]
+fn a_ball_with_a_tiny_vertical_speed_does_not_bounce_for_ever() {
+    // The bed tolerance and the settle threshold of §8.2 have to agree. A ball on the
+    // bed with a vertical speed far below the settle threshold must be absorbed on
+    // its first bounce, not turn into a chain of near-zero events.
+    let cfg = TableConfig::default();
+    for speed in [1e-9_f64, 1e-6, 1e-3, 0.019] {
+        let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.635, cfg.ball.radius));
+        ball.velocity = Vec3::new(0.5, 0.0, speed);
+        let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
+        let mut simulation = pool_core::Simulation::new(&input, &cfg);
+        let _ = simulation.run_without_strike();
+        let events = simulation.events().len();
+        assert!(
+            events <= 4,
+            "a ball with a vertical speed of {speed} m/s took {events} events"
+        );
+    }
+}
+
+#[test]
 fn the_spin_of_a_ball_dies_and_does_not_grow() {
     // The vertical spin decays towards zero and stops there. A spin that grew
     // instead of dying would keep the ball alive for ever, and the game would

@@ -106,6 +106,30 @@ The `rail_regimes` block records which surface a ball meets depending on its hei
 rubber, the rail structure above it, or nothing at all. The solver must branch on that rather
 than extrapolating the rubber model upward.
 
+## The throw fixture compares like with like
+
+`cut_throw_sweep.json` used to carry one model row per cut angle, at a fixed 2 m/s, next to
+three columns of measured throw labelled slow, medium and fast. That was a trap: the model's
+row was at 2 m/s and the columns were measured at 1, 3 and 7 mph, so the model row was really
+being compared against the *fast* column, and the residual looked like a small overshoot that
+grew with the cut angle.
+
+Every row is now at one of TP A.14's own speeds, so the model value and the measured value
+beside it are the same shot, and the residual is what it says it is:
+
+| cut | speed | model | measured | residual |
+|---|---|---|---|---|
+| 30° | 1 mph | 4.81° | 4.65° | +0.16° |
+| 30° | 3 mph | 3.55° | 4.55° | −1.00° |
+| 30° | 7 mph | 2.02° | 2.90° | −0.88° |
+
+**The measured columns cannot be fitted by any friction law of the form `A + B·e^(−K·u)`**,
+for any floor term and any decay constant, so they are not a calibration target: the implied
+coefficients at a 30° cut are 0.0813, 0.0796 and 0.0507 at slip speeds of 0.224, 0.671 and
+1.565 m/s, and for such a law the ratio of the successive differences is bounded below by
+`(u₂−u₁)/(u₃−u₂) = 0.50`, while the measured ratio is 0.061. TP A.14's own fit is the
+authority for the law; the residual is a recorded deviation, and the test pins it at 1.05°.
+
 ## Notes for the test author
 
 - The fixtures state the *physics*, not the API. Wire them to whatever the simulation entry
@@ -113,6 +137,15 @@ than extrapolating the rubber model upward.
 - `determinism_golden.json` must be run on every platform you ship. A mismatch between
   x86-64 and wasm is almost always a transcendental function that leaked into the core
   (doc §11.4), not an arithmetic difference.
+  - The hash has been confirmed on **x86-64** and on **i686-unknown-linux-gnu** — a
+    different word size and a different floating-point path (x87 against SSE2) — and it agrees
+    bit for bit.
+  - The **wasm32** baseline has *not* been established: there is no wasm toolchain here yet.
+    Until it has, the golden value is a baseline for one platform and a specification for the
+    others.
+  - The transcendentals are covered structurally rather than by luck: the core calls the
+    `libm` crate and nothing else, and `pool-core/tests/portability.rs` fails if a platform
+    `sin`, `cos`, `exp`, `hypot` or `powf` appears anywhere in the core's source.
 - `pocket_drop.json` deliberately leaves the rattle outcome to the implementation: once the
   jaw model is in place, add the observed outcome as a golden value so that a change in the
   jaw parameters shows up as a test failure rather than as a silently different game.

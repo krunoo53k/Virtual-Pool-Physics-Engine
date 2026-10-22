@@ -228,44 +228,40 @@ def throw_at(cut, speed):
 def fixture_throw():
     v0 = 2.0
     rows = []
+    # Every row is at one of TP A.14's own speeds, so that the model and the
+    # measurement it is compared against are the same shot. A model row at one
+    # speed next to a measured column from another speed is not a comparison.
+    for cut in (10, 30, 40, 50, 60):
+        measured = ALCIATORE_THROW.get(cut)
+        for (name, speed) in ALCIATORE_SPEEDS.items():
+            throw, sticking = throw_at(cut, speed)
+            index = ("slow", "medium", "fast").index(name)
+            rows.append({
+                "cut_angle": cut,
+                "cue_speed": speed,
+                "measured_speed": name,
+                "model_throw_deg": round(throw, 4),
+                "regime": "sticking" if sticking else "sliding",
+                "measured_throw_deg": measured[index] if measured else None,
+            })
+    # The model's own sweep at a fixed speed, as a regression value.
+    sweep = []
     for cut in (10, 20, 30, 40, 50, 60):
         throw, sticking = throw_at(cut, v0)
-        measured = ALCIATORE_THROW.get(cut)
-        rows.append({
+        sweep.append({
             "cut_angle": cut,
             "cue_speed": v0,
             "model_throw_deg": round(throw, 4),
             "regime": "sticking" if sticking else "sliding",
-            "measured_throw_deg": {
-                "slow": measured[0] if measured else None,
-                "medium": measured[1] if measured else None,
-                "fast": measured[2] if measured else None,
-            },
-        })
-    # The speed dependence: the same cut, three speeds, at TP A.14's own speeds. The
-    # friction between the balls falls with the sliding speed (doc section 4.4.5), so
-    # the throw falls with the speed too.
-    speed_rows = []
-    for name, speed in ALCIATORE_SPEEDS.items():
-        throw, sticking = throw_at(30, speed)
-        speed_rows.append({
-            "cut_angle": 30,
-            "cue_speed": speed,
-            "model_throw_deg": round(throw, 4),
-            "regime": "sticking" if sticking else "sliding",
-            "measured_throw_deg": {
-                "slow": ALCIATORE_THROW[30][0],
-                "medium": ALCIATORE_THROW[30][1],
-                "fast": ALCIATORE_THROW[30][2],
-            },
-            "measured_speed": name,
         })
     return {
         "id": "cut_throw_sweep",
         "title": "Object-ball throw versus cut angle and shot speed",
         "purpose": "Validates the 1/7 sticking constant, the Coulomb cap on the tangential "
-                   "impulse and the speed-dependent friction coefficient. Also records a known "
-                   "model limitation (see known_deviations).",
+                   "impulse and the speed-dependent friction coefficient. Every row is at one "
+                   "of TP A.14's own speeds, so that the model and the measurement beside it "
+                   "are the same shot. Also records a known model limitation (see "
+                   "known_deviations).",
         "sources": ["Alciatore, 'The Amazing World of Billiards Physics' (2007), TP A-14 "
                     "throw data", "doc section 4.4.5"],
         "setup": {
@@ -276,23 +272,26 @@ def fixture_throw():
                  "angular_velocity": [0.0, 0.0, 0.0]},
             ],
             "params": {"e_ball": E_BALL, "mu_ball": MU_BALL,
-                       "note": "object ball placed along the cut-angle bisector per row; "
-                               "the cue ball is spinless, so the slip is purely horizontal"},
+                       "note": "object ball placed along the cut-angle bisector per row; the "
+                               "cue ball is spinless, so the slip is purely horizontal and "
+                               "the slip speed is the cue ball's speed times sin(cut)"},
         },
         "expectations": rows,
-        "throw_versus_speed": speed_rows,
+        "model_sweep_at_2ms": sweep,
         "known_deviations": [
-            "The friction between the balls falls with the sliding speed (TP A.14's fit to "
-            "Marlow's data, doc section 4.4.5), so the throw falls with the shot speed: the "
-            "model gives 4.81 deg at a 30 deg cut on TP A.14's slow shot (1 mph) and 2.02 deg "
-            "on its fast one (7 mph). The measured values are 4.65 and 2.90 deg. The slow end "
-            "is close and the fast end is under-predicted by about 0.9 deg.",
-            "In the sticking regime (cut angles below ~18.8 deg) the model predicts "
-            "atan(2*tan(cut)/(7*(1+e))), which gives 1.48 deg at a 10 deg cut against a "
-            "measured 1.45 deg - agreement to 0.03 deg.",
+            "The model is below the measured throw by 0.6 to 1.0 degrees in the sliding "
+            "regime (cut angles of 30 degrees and above), at every speed, and it agrees with "
+            "the measurement to 0.03 degrees in the sticking regime (10 degrees). The "
+            "residual is an offset, not a slope.",
+            "The three measured columns at a 30 degree cut CANNOT be fitted by any friction "
+            "law of the form A + B exp(-K u): the implied coefficients are 0.0813, 0.0796 and "
+            "0.0507 at slip speeds of 0.224, 0.671 and 1.565 m/s, and for any K >= 0 the "
+            "ratio of the successive differences of such a law is at least (u2-u1)/(u3-u2) = "
+            "0.50, while the measured ratio is 0.061. So the columns were not measured under "
+            "one set of conditions, and they are not a calibration target for the friction "
+            "law: TP A.14's own fit is the authority, and the residual is a known deviation.",
             "The measured throw depends on the cue ball's spin as well as its speed, and the "
-            "published figures do not carry every shot condition, so the residual is a "
-            "calibration item rather than a structural one (doc section 14.3).",
+            "published figures do not carry every shot condition (doc section 14.3).",
         ],
     }
 
@@ -394,6 +393,19 @@ def fixture_cushion():
                      "sequential, and Mathavan treats the table contact as simultaneous "
                      "(doc section 5.1). Until this is measured, the hop numbers in the "
                      "document are the model talking to itself.",
+        },
+        "measured_break_hop": {
+            "quantity": "cue_ball_hop_height_mm",
+            "expected": None,
+            "tolerance": 1.0,
+            "unit": "mm",
+            "notes": "TO BE CALIBRATED: the peak height of the cue ball after its first "
+                     "contact in a break, from high-speed video, at a known speed. No "
+                     "published measurement was found. The model gives about 0.3 mm at a "
+                     "10 m/s contact, and that number is an extrapolation of TP A.14's "
+                     "friction law past the end of its data (doc section 4.5): Kim's "
+                     "constant-friction estimate gives 13 mm for the same collision, and "
+                     "the two cannot both be right.",
         },
         "invariants": [
             {"quantity": "rebound_angle_independence",

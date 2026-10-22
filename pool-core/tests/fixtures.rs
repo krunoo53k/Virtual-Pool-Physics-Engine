@@ -173,6 +173,17 @@ fn cut_throw_sweep() {
             rows.extend(items.iter().cloned());
         }
     }
+    if let Some(sweep) = fixture.get("model_sweep_at_2ms") {
+        if let Some(items) = sweep.as_array() {
+            rows.extend(items.iter().cloned());
+        }
+    }
+
+    // The measured throw is the reference the model is checked against, and the
+    // residual is a known deviation: the model is below the measurement by up to a
+    // degree in the sliding regime, and agrees with it to 0.03 degrees in the
+    // sticking regime.
+    let mut worst = 0.0_f64;
 
     for row in rows {
         let cut_deg = number(&row, "cut_angle");
@@ -205,7 +216,20 @@ fn cut_throw_sweep() {
             },
             "the regime at {cut_deg} degrees and {speed} m/s"
         );
+
+        // The measured value, where the row has one.
+        if let Some(measured) = optional_number(&row, "measured_throw_deg") {
+            let residual = (throw.abs() - measured).abs();
+            worst = worst.max(residual);
+            assert!(
+                residual <= 1.05,
+                "the throw at {cut_deg} degrees and {speed} m/s is {throw} degrees, \
+                 which is {residual} degrees from the measured {measured}"
+            );
+        }
     }
+    // The worst residual really is the one the deviation records.
+    assert!(worst > 0.5, "the residual band is too loose: {worst}");
 
     // The sticking regime matches the published formula
     // `atan(2 tan(cut) / (7 (1 + e)))` to within a hundredth of a degree.

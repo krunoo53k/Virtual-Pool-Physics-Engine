@@ -157,6 +157,13 @@
     "unit": "mm",
     "notes": "TO BE CALIBRATED: the hop height of a ball off the rail, measured from high-speed video, at a known nose height. The 3.8 mm the model predicts at the WPA spec height is a model output and not a measurement: it depends on treating the cushion impulse and the slate rebound as sequential, and Mathavan treats the table contact as simultaneous (doc section 5.1). Until this is measured, the hop numbers in the document are the model talking to itself."
   },
+  "measured_break_hop": {
+    "quantity": "cue_ball_hop_height_mm",
+    "expected": null,
+    "tolerance": 1.0,
+    "unit": "mm",
+    "notes": "TO BE CALIBRATED: the peak height of the cue ball after its first contact in a break, from high-speed video, at a known speed. No published measurement was found. The model gives about 0.3 mm at a 10 m/s contact, and that number is an extrapolation of TP A.14's friction law past the end of its data (doc section 4.5): Kim's constant-friction estimate gives 13 mm for the same collision, and the two cannot both be right."
+  },
   "invariants": [
     {
       "quantity": "rebound_angle_independence",
