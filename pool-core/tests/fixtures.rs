@@ -180,9 +180,9 @@ fn cut_throw_sweep() {
     }
 
     // The measured throw is the reference the model is checked against, and the
-    // residual is a known deviation: the model is below the measurement by up to a
-    // degree in the sliding regime, and agrees with it to 0.03 degrees in the
-    // sticking regime.
+    // residual is small but real: the model is below the measurement by at most
+    // half a degree, largest at the fast speeds, and agrees with it to 0.03
+    // degrees in the sticking regime.
     let mut worst = 0.0_f64;
 
     for row in rows {
@@ -222,14 +222,19 @@ fn cut_throw_sweep() {
             let residual = (throw.abs() - measured).abs();
             worst = worst.max(residual);
             assert!(
-                residual <= 1.05,
+                residual <= 0.5,
                 "the throw at {cut_deg} degrees and {speed} m/s is {throw} degrees, \
                  which is {residual} degrees from the measured {measured}"
             );
         }
     }
-    // The worst residual really is the one the deviation records.
-    assert!(worst > 0.5, "the residual band is too loose: {worst}");
+    // The worst residual is the one section 14.3 records (half a degree), and it
+    // is not zero: if this floor fails, the rows are not being compared at all.
+    assert!(
+        worst <= 0.5,
+        "the residual exceeds the half degree section 14.3 records: {worst}"
+    );
+    assert!(worst > 0.05, "the residual is suspiciously small: {worst}");
 
     // The sticking regime matches the published formula
     // `atan(2 tan(cut) / (7 (1 + e)))` to within a hundredth of a degree.

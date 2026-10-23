@@ -612,7 +612,10 @@ v_A′ = v_A − (J_n·n̂ + J_t·û)/m        v_B′ = v_B + (J_n·n̂ + J_t·�
 > ```
 >
 > A slow shot slips slowly, so it gets a *larger* friction coefficient and a larger throw —
-> which is the measured behaviour. §14.3 records what is left over.
+> which is the measured behaviour. The config's default is the fit's own 0.060, so the
+> normalisation is the rounding of the config value and the law in force is TP A.14's fit,
+> **unscaled**. (An earlier default of 0.05 rescaled the whole law by 0.83 and manufactured
+> about 0.7° of the residual §14.3 used to record.) §14.3 records what is left over.
 
 > **The slip is two-dimensional, and that is not a detail.** With the friction restricted to
 > the horizontal tangent (the older form of this section) the vertical component of the slip
@@ -638,10 +641,10 @@ During collision, the impact force between balls is ~400× gravity. The friction
    h = Δv_z² / (2g) = (μ_ball · U_i)² / (2g)
    ```
 
-   For `U_i = 10 m/s`, `μ_ball = 0.05`: `h ≈ 1.3 cm` (observable).
+   For `U_i = 10 m/s`, `μ_ball = 0.06`: `h ≈ 1.8 cm` (observable).
 
    > The frequently copied form `h ≈ μ_ball·U_i²/(2g)` is a typo — it is off by a factor `μ_ball`
-   > and gives 25 cm instead of 1.3 cm for the same inputs. The correct scaling is `(μ_ball·U_i)²`.
+   > and gives 31 cm instead of 1.8 cm for the same inputs. The correct scaling is `(μ_ball·U_i)²`.
 
 2. **Pushes the object ball down** into the cloth, activating large static friction.
 
@@ -2047,7 +2050,7 @@ above that; it is the Zeno case it is there for, not the slow roll.
 | Ball radius R | 0.028575 m |
 | Ball mass m | 0.170 kg (6 oz) |
 | Ball COR (ball-ball) e | 0.95 |
-| Ball-ball friction μ_ball | 0.05 at a 1 m/s slip (the law is speed-dependent, §4.4.5) |
+| Ball-ball friction μ_ball | 0.06 at a 1 m/s slip — TP A.14's own fit value there, so the law in force is the published one **unscaled** (the law is speed-dependent, §4.4.5) |
 | Sliding friction μ_s | 0.20 |
 | Rolling friction μ_r | 0.01 |
 | Cushion COR e_cushion | 0.75 |
@@ -2146,17 +2149,21 @@ Two of them are worth calling out because they are the ones that catch real bugs
   ≈ 18.8°) the throw is `atan(2·tan(cut)/(7·(1+e)))`, which gives 1.48° at a 10° cut against
   a measured 1.45° — agreement to 0.03°. In the *sliding* regime the Coulomb cap makes the
   throw `atan(μ_ball(u))`, where `u` is the slip speed, and because `μ_ball` falls with the
-  slip speed (§4.4.5) the throw is speed-dependent. There the model sits 0.6°–1.0° *below*
-  the measurement, at every speed and every cut angle — an offset, not a slope.
+  slip speed (§4.4.5) the throw is speed-dependent. There the model sits up to 0.5° *below*
+  the measurement, and the shortfall grows with the shot speed — small, and a slope, not
+  the degree-wide offset earlier versions recorded.
 
-> **The measured columns are not a calibration target, and the fixture now says so.** The
-> three columns at a 30° cut cannot be fitted by *any* friction law of the form
-> `A + B·e^(−K·u)`: their implied coefficients are 0.0813, 0.0796 and 0.0507 at slip speeds
-> of 0.224, 0.671 and 1.565 m/s, and for any such law with `K ≥ 0` the ratio of the
-> successive differences is bounded below by `(u₂−u₁)/(u₃−u₂) = 0.50`, while the measured
-> ratio is 0.061. So the three columns were not measured under one set of conditions, and
-> no value of the floor term and no value of the decay constant can fit them. They are
-> recorded as the deviation they are. TP A.14's own fit is the authority for the law.
+> **The residual is small, and the argument that it could not be closed was wrong.** With
+> the friction law used unscaled (`μ_ball = 0.06`, §13.2), the three measured columns at a
+> 30° cut come out at 4.83° (the sticking limit; measured 4.65°), 4.26° (measured 4.55°)
+> and 2.42° (measured 2.90°) — residuals of +0.2°, −0.3° and −0.5°. v1.7 claimed no law of
+> the form `A + B·e^(−K·u)` could fit those columns and recorded a 0.6°–1.0° offset at every
+> speed; both rested on a wrong premise, and §14.3 retracts them. The premise was the step
+> from a measured throw to an implied friction coefficient, `μ = tan(throw)`, which holds
+> only in the *sliding* regime: the slow column sits at the 4.83° sticking limit, where the
+> throw does not depend on μ at all, so it yields only a *lower* bound — which TP A.14's
+> fit clears. The rest of the old residual was the config: `μ_ball` shipped 17% below the
+> fit it called the authority (§4.4.5).
 
 ### 14.2 Schema
 
@@ -2194,35 +2201,48 @@ The `cut_throw_sweep` fixture records the one place where the model is knowingly
 
 **What the model does now.** The tangential impulse is capped at `μ_ball(u)·J_n`, and
 `μ_ball` is not a constant: it is TP A.14's fit to Marlow's data,
-`μ(v_rel) = 0.009951 + 0.108·e^(−0.77·v_rel)` (§4.4.5). A slow shot slips slowly, so it gets
-a larger friction coefficient and a larger throw — which is the measured behaviour, and the
-reason the measured throw is 4.65° at a 30° cut on a slow shot against 2.90° on a fast one.
+`μ(v_rel) = 0.009951 + 0.108·e^(−0.77·v_rel)` (§4.4.5), used **unscaled** — the config's
+default `μ_ball = 0.06` is the fit's own value at the 1 m/s reference slip. A slow shot
+slips slowly, so it gets a larger friction coefficient and a larger throw — which is the
+measured behaviour, and the reason the measured throw is 4.65° at a 30° cut on a slow shot
+against 2.90° on a fast one.
 
-**What is left.** Two things, and they are not the same kind of thing.
+**What is left.** A residual of at most half a degree, and it is not uniform. At the 30°
+cut the model gives 4.83° (sticking), 4.26° and 2.42° against the measured 4.65°, 4.55°
+and 2.90° — +0.2°, −0.3°, −0.5°. At 40°–60° cuts the shortfall stays between 0.03° and
+0.48° and is again largest at the fast speeds. The speed dependence of the throw is
+modelled correctly (the shape of the curve follows the slip speed); what is missing is a
+few tenths of a degree at the fast end.
 
-*The size of the residual.* In the sliding regime the model sits 0.6°–1.0° below the
-measured throw, at every speed and every cut angle, and in the sticking regime it agrees
-to 0.03°. The residual is an **offset, not a slope**: the speed dependence of the throw is
-modelled correctly (the shape of the curve follows the slip speed), and what is missing is
-about a degree of throw in the Coulomb branch.
+**What was claimed here in v1.7, and why it was wrong.** v1.7 recorded a 0.6°–1.0° offset
+"at every speed and every cut angle" and argued it could not be fitted away: the three
+measured columns at a 30° cut, it said, cannot be fitted by *any* law of the form
+`A + B·e^(−K·u)` — their implied coefficients are 0.0813, 0.0796 and 0.0507 at slip speeds
+of 0.224, 0.671 and 1.565 m/s, and the ratio bound says the measured ratio (0.061) cannot
+reach the legal minimum (0.50). The ratio bound is correct for convex laws of that form,
+but the implied coefficients were obtained from `μ = tan(throw)`, and that relation holds
+only in the *sliding* regime. The slow column (4.65°) sits at the sticking limit
+`atan(2·tan 30°/(7·1.95)) = 4.83°`: it is saturated, the throw there does not depend on μ
+at all, and the column yields only a *lower* bound on the coefficient — which TP A.14's
+fit (0.101 at that slip speed) clears. With the sticking branch taken into account, the
+law reproduces all three columns to within half a degree, so the conclusion that "the
+columns were not measured under one set of conditions" does not follow.
 
-*Why the residual cannot simply be fitted away.* The three measured columns at a 30° cut
-cannot be fitted by any friction law of the form `A + B·e^(−K·u)`, for any floor term and
-any decay constant: the implied coefficients are 0.0813, 0.0796 and 0.0507 at slip speeds
-of 0.224, 0.671 and 1.565 m/s, and for such a law the ratio of the successive differences
-is bounded below by `(u₂−u₁)/(u₃−u₂) = 0.50`, while the measured ratio is 0.061. The
-columns were therefore not measured under one set of conditions — the most likely
-explanation is that the shots differ in spin as well as in speed, and the published figures
-do not carry every condition. So the data is not a calibration target: **there is nothing to
-calibrate against**, and layering a correction on top of it would be fitting noise. TP
-A.14's own fit is the authority for the law, and the residual is recorded as a deviation.
+The rest of the v1.7 residual was self-inflicted: the config shipped `μ_ball = 0.05`
+"at 1 m/s" — 16.6% below the fit's own 0.05996 — and §4.4.5 rescaled the whole law by
+0.83 to match it, which alone accounted for about 0.7° in the sliding columns (with the
+scaled law the model sat 1.0° and 0.9° below the middle and fast columns at the 30° cut,
+while the slow column was already *above* the measurement — so even then the offset was
+not "at every speed"). The config now carries the fit's own value.
 
-**What used to be said here, and why it changed.** The older text said that closing the gap
-meant coupling the ball-cloth friction into the ball-ball impulse, which the 250 μs contact
-makes awkward. That was written before the speed dependence in TP A.14 was taken into
-account: with the friction coefficient itself a function of the slip speed, most of the gap
-closes without touching the cloth at all. Coupling the cloth friction into the impulse is
-still the remaining route to the last fraction of a degree, and it is still awkward.
+**What used to be said here before that, and why it changed.** The 1.6 text said that
+closing the gap meant coupling the ball-cloth friction into the ball-ball impulse, which
+the 250 μs contact makes awkward. That was written before the speed dependence in TP A.14
+was taken into account: with the friction coefficient itself a function of the slip speed
+(and the config not silently rescaling it), the gap is half a degree. Coupling the cloth
+friction into the impulse is still the remaining route to the last fraction of a degree,
+and it is still awkward — but it is now a half-degree question, and it wants a measurement
+(high-speed video of a cut throw) rather than a correction layered on the model.
 
 ### 14.4 Determinism fixture
 

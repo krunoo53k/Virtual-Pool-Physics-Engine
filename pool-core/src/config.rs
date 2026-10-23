@@ -100,6 +100,12 @@ pub struct BallBallConfig {
     /// The friction between the balls falls as the contact slides faster (TP A.14),
     /// so the model scales this value with the sliding speed - see
     /// [`crate::ball_ball::friction_at_speed`].
+    ///
+    /// The default is TP A.14's own fit value at the reference slip speed
+    /// (`0.009951 + 0.108 * exp(-0.77)` = 0.05996, rounded), so the law in force is
+    /// the published fit *unscaled*. An earlier default of 0.05 rescaled the whole
+    /// law by 0.83 and manufactured about 0.7 degrees of the throw deviation that
+    /// §14.3 then recorded (doc revision 1.8).
     pub mu_ball: f64,
 }
 
@@ -107,7 +113,7 @@ impl Default for BallBallConfig {
     fn default() -> Self {
         BallBallConfig {
             e_ball: 0.95,
-            mu_ball: 0.05,
+            mu_ball: 0.06,
         }
     }
 }
