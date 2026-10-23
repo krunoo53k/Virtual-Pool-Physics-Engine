@@ -1,7 +1,7 @@
 # Virtual Pool — a deterministic 8-ball pool physics engine
 
 A Rust implementation of the physics model specified in
-[`docs/virtual-pool-physics.md`](docs/virtual-pool-physics.md) (version 1.7).
+[`docs/virtual-pool-physics.md`](docs/virtual-pool-physics.md) (version 1.8).
 
 The engine is **event-driven and closed-form**: between two events every ball's
 state is given by an analytic expression, so nothing is ever integrated step by
@@ -95,7 +95,7 @@ Two versions move, and they mean different things:
 
 | | What it is |
 |---|---|
-| `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.7`) |
+| `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.8`) |
 | the crate version (`0.1.0`) | the version of the **API** |
 
 A change to the model bumps both; a change to the API only bumps the crate
