@@ -1,8 +1,8 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.7
-> **Date:** 2026-10-22
+> **Version:** 1.8
+> **Date:** 2026-10-23
 > **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, ball-cue and ball-pocket interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
 >
 > **Revision note (1.1):** corrected the sliding-state spin sign (§3.3), the ball-ball normal and
@@ -140,6 +140,54 @@
 >   agree bit for bit. The wasm32 baseline has *not* been established: there is no wasm
 >   toolchain here, and the document says so rather than implying a portability that has
 >   not been demonstrated.
+>
+> **Revision note (1.8) — what a third review of v1.7 asked for.** The throw residual
+> shrank because the model was wrong, not because the data was.
+>
+> * **The ball friction law is used unscaled** (§4.4.5, §13.2, §14.3). The config shipped
+>   `μ_ball = 0.05` "at a 1 m/s slip", 16.6% below TP A.14's own fit value there
+>   (0.05996), and §4.4.5 normalised the law onto it — so the whole law was rescaled by
+>   0.83, which manufactured about 0.7° of the throw residual that was then recorded as
+>   untouchable. The config carries the fit's own value (0.06) now, and against the
+>   measured throw the model sits at most 0.5° below, worst at the fast speeds.
+> * **The "no law can fit the measured columns" argument is retracted** (§14.1, §14.3). It
+>   turned measured throw into implied friction with `μ = tan(throw)`, which holds only in
+>   the sliding regime; the slow column at a 30° cut sits at the 4.83° sticking limit,
+>   where the throw does not depend on the friction coefficient at all, so it yields only
+>   a *lower* bound — which TP A.14's fit (0.101 there) clears. With the sticking branch
+>   accounted for, the law reproduces all three columns to within half a degree, and the
+>   conclusion that the columns were not measured under one set of conditions does not
+>   follow.
+> * **The cue impulse depends on the impact parameter** (§6.2). It responds against the
+>   ball's effective mass at the contact point, `m_eff = m/(1 + 5b²/2R²)`, so
+>   `v_ball = (1 + e)·V/(1 + m/M + 5b²/2R²)` — a tip at half a radius leaves the ball 31%
+>   slower than a centre hit, which is why firm draw is hard. §6.2 had claimed the
+>   impulse does not depend on `b`, and reported `m_eff` as `1.625·m` at `b = 0.5R`,
+>   inverting its own formula: 1.625 is the divisor, and `m_eff = 0.615·m`. The 1.6 note
+>   carried the same slip and is corrected where it reports what 1.6 established.
+> * **The pocket facing defaults to the reading that matches a real jaw** (§9.1). The
+>   default derivation is now the rail-line reading — 7° off the centreline at a corner,
+>   14° at a side pocket — instead of the throat reading, whose 38° a side would be a 76°
+>   V that no real jaw has. The side pocket's 14° replaces a 13° that was the BCA's 103°
+>   run through the rule rather than the WPA's 104°. The facing angle stays a config
+>   parameter, so a measured table can still be matched directly.
+> * **Three smaller corrections** (§4.4.5, §5.1). The component-wise sticking branch
+>   carries its `v_z` term (it was written for a ball on the bed); the slip `u_t` of §4.4.5
+>   is labelled along the horizontal tangent, not "along the rail" — there is no rail in a
+>   ball–ball contact; and §4.5's worked lift example uses the current μ.
+> * **The i686 confirmation says less than v1.7 claimed** (§14.4). Rust's
+>   `i686-unknown-linux-gnu` baseline includes SSE2, so that second target proves
+>   *word-size* portability, not a different floating-point path — x87's 80-bit
+>   intermediates are the `i586` target, which has not been run. A genuinely different
+>   arithmetic path is `aarch64` under qemu, close to the shipping targets; wasm is strict
+>   IEEE-754 like SSE2 and is not a different arithmetic path either.
+> * **The fixed-timestep determinism claim is scoped to the stepped architecture**
+>   (§11.1). §12.4 already said a fixed timestep does not give determinism in the
+>   event-driven core; §11.1 now says which architecture its bullets describe.
+> * **The portability scan is recursive** (§11.4). It covers every `.rs` file under
+>   `src/`, at any depth, so a module moved into a subdirectory cannot slip out of the
+>   check that made the ban list — which includes `powi`, `atan2`, `asin`, `acos`, `tan`,
+>   `ln` and `cbrt` — apply to everything the core runs.
 
 ---
 
@@ -1648,6 +1696,12 @@ loop:
 - No accumulation of floating-point drift across variable-length frames
 - Essential for replay systems and network lockstep
 
+> **This determinism is the *stepped* architecture's, and only that one's.** The bullets
+> above describe the fixed-step loop. The core is event-driven (§11.2, §12.4), and there a
+> fixed timestep is not what makes two runs agree — the closed forms are, together with the
+> total order the tie-break rule imposes on simultaneous events. "Same inputs → same
+> outputs" holds in both architectures; only the mechanism is different (§12.4).
+
 **What a fixed timestep does *not* do:** it does not prevent tunnelling. A fixed step makes
 tunnelling *consistent* across frame rates, but if a ball moves further than a diameter in one
 step, it will pass straight through another ball or through a cushion. At 240 Hz a 13 m/s break
@@ -2268,12 +2322,17 @@ Run it on every platform you ship. A mismatch between x86-64 and wasm is almost 
 transcendental function that leaked into the core (§11.4), not an arithmetic difference.
 
 **Where the golden hash has been confirmed.** The hash is currently an **x86-64** value, and
-it has been confirmed on a second target: `i686-unknown-linux-gnu`, which is a different
-word size and a different floating-point path (x87's 80-bit intermediates against SSE2's
-64-bit), and it agrees bit for bit. That is the check that says the *arithmetic* is
-portable. It is not the check that says the *transcendentals* are, because both targets run
-the same `libm`; for that, the guarantee is structural — the core calls `libm` and nothing
-else, and a test enforces it.
+it has been confirmed on a second target: `i686-unknown-linux-gnu`, which agrees bit for
+bit. That second target proves *word-size* portability — 32-bit against 64-bit — and
+nothing more: Rust's `i686-unknown-linux-gnu` baseline includes SSE2, so it runs the same
+64-bit floating-point instructions as x86-64 does. (x87's 80-bit intermediates are the
+`i586-unknown-linux-gnu` target, which has not been run.) A genuinely different
+floating-point path is `aarch64` — close to the shipping targets, and runnable under qemu —
+and that is the next confirmation to make. `wasm32` is *not* a different arithmetic path
+either: wasm floating point is strict IEEE-754, like SSE2, so its risk is the
+transcendental one below rather than an arithmetic one. Neither target checks the
+*transcendentals*, because both run the same `libm`; for that, the guarantee is structural —
+the core calls `libm` and nothing else, and a test enforces it.
 
 **The wasm baseline has not been established.** There is no wasm toolchain in the
 environment this document was written in, so the hash has not been run on
