@@ -1,7 +1,7 @@
 {
   "id": "cut_throw_sweep",
   "title": "Object-ball throw versus cut angle and shot speed",
-  "purpose": "Validates the 1/7 sticking constant, the Coulomb cap on the tangential impulse and the speed-dependent friction coefficient. Every row is at one of TP A.14's own speeds, so that the model and the measurement beside it are the same shot. Also records a known model limitation (see known_deviations).",
+  "purpose": "Validates the 1/7 sticking constant, the Coulomb cap on the tangential impulse and the speed-dependent friction coefficient. Every row is at one of TP A.14's own speeds, so that the model and the measurement beside it are the same shot. Also records the size of the residual against the measurement (see known_deviations).",
   "sources": [
     "Alciatore, 'The Amazing World of Billiards Physics' (2007), TP A-14 throw data",
     "doc section 4.4.5"
@@ -43,7 +43,7 @@
     ],
     "params": {
       "e_ball": 0.95,
-      "mu_ball": 0.05,
+      "mu_ball": 0.06,
       "note": "object ball placed along the cut-angle bisector per row; the cue ball is spinless, so the slip is purely horizontal and the slip speed is the cue ball's speed times sin(cut)"
     }
   },
@@ -76,15 +76,15 @@
       "cut_angle": 30,
       "cue_speed": 0.4472,
       "measured_speed": "slow",
-      "model_throw_deg": -4.8083,
-      "regime": "sliding",
+      "model_throw_deg": -4.8353,
+      "regime": "sticking",
       "measured_throw_deg": 4.65
     },
     {
       "cut_angle": 30,
       "cue_speed": 1.3411,
       "measured_speed": "medium",
-      "model_throw_deg": -3.5502,
+      "model_throw_deg": -4.2578,
       "regime": "sliding",
       "measured_throw_deg": 4.55
     },
@@ -92,7 +92,7 @@
       "cut_angle": 30,
       "cue_speed": 3.1293,
       "measured_speed": "fast",
-      "model_throw_deg": -2.0215,
+      "model_throw_deg": -2.4253,
       "regime": "sliding",
       "measured_throw_deg": 2.9
     },
@@ -100,7 +100,7 @@
       "cut_angle": 40,
       "cue_speed": 0.4472,
       "measured_speed": "slow",
-      "model_throw_deg": -4.6013,
+      "model_throw_deg": -5.5164,
       "regime": "sliding",
       "measured_throw_deg": 5.55
     },
@@ -108,7 +108,7 @@
       "cut_angle": 40,
       "cue_speed": 1.3411,
       "measured_speed": "medium",
-      "model_throw_deg": -3.1295,
+      "model_throw_deg": -3.7537,
       "regime": "sliding",
       "measured_throw_deg": 4.1
     },
@@ -116,7 +116,7 @@
       "cut_angle": 40,
       "cue_speed": 3.1293,
       "measured_speed": "fast",
-      "model_throw_deg": -1.5716,
+      "model_throw_deg": -1.8857,
       "regime": "sliding",
       "measured_throw_deg": 2.35
     },
@@ -124,7 +124,7 @@
       "cut_angle": 50,
       "cue_speed": 0.4472,
       "measured_speed": "slow",
-      "model_throw_deg": -4.4305,
+      "model_throw_deg": -5.312,
       "regime": "sliding",
       "measured_throw_deg": 5.4
     },
@@ -132,7 +132,7 @@
       "cut_angle": 50,
       "cue_speed": 1.3411,
       "measured_speed": "medium",
-      "model_throw_deg": -2.8127,
+      "model_throw_deg": -3.3741,
       "regime": "sliding",
       "measured_throw_deg": 3.75
     },
@@ -140,7 +140,7 @@
       "cut_angle": 50,
       "cue_speed": 3.1293,
       "measured_speed": "fast",
-      "model_throw_deg": -1.29,
+      "model_throw_deg": -1.5479,
       "regime": "sliding",
       "measured_throw_deg": 1.95
     },
@@ -148,7 +148,7 @@
       "cut_angle": 60,
       "cue_speed": 0.4472,
       "measured_speed": "slow",
-      "model_throw_deg": -4.2971,
+      "model_throw_deg": -5.1523,
       "regime": "sliding",
       "measured_throw_deg": 5.25
     },
@@ -156,7 +156,7 @@
       "cut_angle": 60,
       "cue_speed": 1.3411,
       "measured_speed": "medium",
-      "model_throw_deg": -2.5838,
+      "model_throw_deg": -3.0996,
       "regime": "sliding",
       "measured_throw_deg": 3.5
     },
@@ -164,7 +164,7 @@
       "cut_angle": 60,
       "cue_speed": 3.1293,
       "measured_speed": "fast",
-      "model_throw_deg": -1.1157,
+      "model_throw_deg": -1.3387,
       "regime": "sliding",
       "measured_throw_deg": 1.7
     }
@@ -185,31 +185,31 @@
     {
       "cut_angle": 30,
       "cue_speed": 2.0,
-      "model_throw_deg": -2.8624,
+      "model_throw_deg": -3.4336,
       "regime": "sliding"
     },
     {
       "cut_angle": 40,
       "cue_speed": 2.0,
-      "model_throw_deg": -2.3918,
+      "model_throw_deg": -2.8694,
       "regime": "sliding"
     },
     {
       "cut_angle": 50,
       "cue_speed": 2.0,
-      "model_throw_deg": -2.0607,
+      "model_throw_deg": -2.4724,
       "regime": "sliding"
     },
     {
       "cut_angle": 60,
       "cue_speed": 2.0,
-      "model_throw_deg": -1.8346,
+      "model_throw_deg": -2.2012,
       "regime": "sliding"
     }
   ],
   "known_deviations": [
-    "The model is below the measured throw by 0.6 to 1.0 degrees in the sliding regime (cut angles of 30 degrees and above), at every speed, and it agrees with the measurement to 0.03 degrees in the sticking regime (10 degrees). The residual is an offset, not a slope.",
-    "The three measured columns at a 30 degree cut CANNOT be fitted by any friction law of the form A + B exp(-K u): the implied coefficients are 0.0813, 0.0796 and 0.0507 at slip speeds of 0.224, 0.671 and 1.565 m/s, and for any K >= 0 the ratio of the successive differences of such a law is at least (u2-u1)/(u3-u2) = 0.50, while the measured ratio is 0.061. So the columns were not measured under one set of conditions, and they are not a calibration target for the friction law: TP A.14's own fit is the authority, and the residual is a known deviation.",
+    "The model is below the measured throw by at most 0.5 degrees over the whole sweep (the worst row is a 30 degree cut at 7 mph, at 0.48 degrees), and the shortfall grows with the shot speed at a fixed cut angle. In the sticking regime (10 degrees) it agrees with the measurement to 0.03 degrees.",
+    "An earlier version of this fixture recorded a degree-wide offset and claimed the three columns at a 30 degree cut could not be fitted by any law of the form A + B exp(-K u). That claim turned the measured throw into an implied friction coefficient with mu = tan(throw), which is valid only in the sliding regime: the slow column (4.65 degrees) sits at the 4.83 degree sticking limit, where the throw does not depend on the friction coefficient at all, so it gives only a LOWER bound on it. Taking the sticking branch into account, TP A.14's own law reproduces all three columns to within half a degree (doc section 14.3).",
     "The measured throw depends on the cue ball's spin as well as its speed, and the published figures do not carry every shot condition (doc section 14.3)."
   ]
 }

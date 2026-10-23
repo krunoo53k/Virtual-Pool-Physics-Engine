@@ -12,7 +12,7 @@ D = 2*R                # ball diameter, m
 M = 0.170             # ball mass, kg
 G = 9.81
 E_BALL = 0.95         # ball-ball COR
-MU_BALL = 0.05        # ball-ball friction
+MU_BALL = 0.06        # ball-ball friction at the 1 m/s reference slip (TP A.14's own fit value)
 MU_S = 0.20            # ball-cloth sliding friction
 MU_CUSHION = 0.14      # cushion sliding friction
 MU_R = 0.01            # ball-cloth rolling friction
@@ -260,8 +260,8 @@ def fixture_throw():
         "purpose": "Validates the 1/7 sticking constant, the Coulomb cap on the tangential "
                    "impulse and the speed-dependent friction coefficient. Every row is at one "
                    "of TP A.14's own speeds, so that the model and the measurement beside it "
-                   "are the same shot. Also records a known model limitation (see "
-                   "known_deviations).",
+                   "are the same shot. Also records the size of the residual against the "
+                   "measurement (see known_deviations).",
         "sources": ["Alciatore, 'The Amazing World of Billiards Physics' (2007), TP A-14 "
                     "throw data", "doc section 4.4.5"],
         "setup": {
@@ -279,17 +279,19 @@ def fixture_throw():
         "expectations": rows,
         "model_sweep_at_2ms": sweep,
         "known_deviations": [
-            "The model is below the measured throw by 0.6 to 1.0 degrees in the sliding "
-            "regime (cut angles of 30 degrees and above), at every speed, and it agrees with "
-            "the measurement to 0.03 degrees in the sticking regime (10 degrees). The "
-            "residual is an offset, not a slope.",
-            "The three measured columns at a 30 degree cut CANNOT be fitted by any friction "
-            "law of the form A + B exp(-K u): the implied coefficients are 0.0813, 0.0796 and "
-            "0.0507 at slip speeds of 0.224, 0.671 and 1.565 m/s, and for any K >= 0 the "
-            "ratio of the successive differences of such a law is at least (u2-u1)/(u3-u2) = "
-            "0.50, while the measured ratio is 0.061. So the columns were not measured under "
-            "one set of conditions, and they are not a calibration target for the friction "
-            "law: TP A.14's own fit is the authority, and the residual is a known deviation.",
+            "The model is below the measured throw by at most 0.5 degrees over the whole "
+            "sweep (the worst row is a 30 degree cut at 7 mph, at 0.48 degrees), and the "
+            "shortfall grows with the shot speed at a fixed cut angle. In the sticking "
+            "regime (10 degrees) it agrees with the measurement to 0.03 degrees.",
+            "An earlier version of this fixture recorded a degree-wide offset and claimed "
+            "the three columns at a 30 degree cut could not be fitted by any law of the "
+            "form A + B exp(-K u). That claim turned the measured throw into an implied "
+            "friction coefficient with mu = tan(throw), which is valid only in the sliding "
+            "regime: the slow column (4.65 degrees) sits at the 4.83 degree sticking "
+            "limit, where the throw does not depend on the friction coefficient at all, so "
+            "it gives only a LOWER bound on it. Taking the sticking branch into account, "
+            "TP A.14's own law reproduces all three columns to within half a degree (doc "
+            "section 14.3).",
             "The measured throw depends on the cue ball's spin as well as its speed, and the "
             "published figures do not carry every shot condition (doc section 14.3).",
         ],

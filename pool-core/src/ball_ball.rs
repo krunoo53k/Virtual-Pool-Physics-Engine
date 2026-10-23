@@ -48,7 +48,9 @@ pub struct BallBallOutcome {
 ///
 /// The configuration's `mu_ball` is the coefficient at the reference slip speed of
 /// 1 m/s, so the law is normalised there: at that speed the model uses `mu_ball`
-/// itself, and the *shape* of the curve is TP A.14's.
+/// itself, and the *shape* of the curve is TP A.14's. The default `mu_ball` is the
+/// fit's own value at that speed (0.05996, used as 0.06), so the normalisation is
+/// the rounding of the config value and the law in force is TP A.14's, unscaled.
 pub fn friction_at_speed(mu_ball: f64, slip: f64) -> f64 {
     /// TP A.14's fit: `mu(v) = 0.009951 + 0.108 * exp(-0.77 * v)`.
     const A: f64 = 0.009951;
@@ -286,11 +288,11 @@ mod tests {
         let sep = (out.velocity_b.y.atan2(out.velocity_b.x)
             - out.velocity_a.y.atan2(out.velocity_a.x))
         .to_degrees();
-        assert!((sep - 84.42982481306461).abs() < 1e-9);
+        assert!((sep - 83.80779436009911).abs() < 1e-9);
         let throw = (out.velocity_b.y.atan2(out.velocity_b.x) - angle).to_degrees();
-        assert!((throw - -2.8624052261117545).abs() < 1e-9);
-        assert!((out.velocity_a.norm() - 0.9165859118282551).abs() < 1e-12);
-        assert!((out.velocity_b.norm() - 1.6908591566124014).abs() < 1e-12);
+        assert!((throw - -3.4336303624505273).abs() < 1e-9);
+        assert!((out.velocity_a.norm() - 0.8997176254328026).abs() < 1e-12);
+        assert!((out.velocity_b.norm() - 1.6917865556860299).abs() < 1e-12);
     }
 
     #[test]

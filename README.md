@@ -229,16 +229,18 @@ rest, but nothing decides who won.
 
 The document lists its own limitations, and they are reproduced faithfully here:
 
-* **The throw follows the measured speed dependence, and the rest is a recorded
-  deviation.** The friction between the balls falls with the sliding speed
+* **The throw follows the measured speed dependence, and what is left is half a
+  degree.** The friction between the balls falls with the sliding speed
   (§4.4.5, TP A.14: `mu(v) = 0.009951 + 0.108 e^(−0.77 v)`, normalised at a 1 m/s
-  slip onto `mu_ball`), so the throw is larger on slow shots, as the measurement
-  says. In the sticking regime it matches the published formula
-  `atan(2 tan(cut) / (7 (1 + e)))`. What is knowingly wrong is the rest: the three
-  measured columns at a 30 degree cut cannot be fitted by *any* law of the form
-  `A + B e^(−K u)`, for any floor term and any decay constant, so the residual
-  (up to about a degree) is left as a deviation and no calibration is layered on
-  top of it. The `cut_throw_sweep` fixture pins it at 1.05 degrees (§14.1, §14.3).
+  slip onto `mu_ball`, whose default is the fit's own value there, so the law is
+  the published one unscaled), so the throw is larger on slow shots, as the
+  measurement says. In the sticking regime it matches the published formula
+  `atan(2 tan(cut) / (7 (1 + e)))`. Against TP A.14's measured throw the model
+  sits at most 0.5 degrees below, worst at the fast speeds, and that residual is
+  left as a deviation rather than calibrated away (§14.1, §14.3 — which also
+  retracts an earlier claim that no law could fit the measurements: that claim
+  mishandled the sticking regime, where the throw does not depend on the
+  friction coefficient at all).
 * **The vertical spin decay is linear, and stops at zero.** §3.2 writes
   `w_z(t) = w0 - (5 mu_sp g / 2R) t`, and a linear decay has to be told where
   zero is: it acts towards zero and stops there. Without that, a ball whose

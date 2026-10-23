@@ -43,7 +43,7 @@
     ],
     "params": {
       "e_ball": 0.95,
-      "mu_ball": 0.05
+      "mu_ball": 0.06
     }
   },
   "expectations": [
@@ -58,26 +58,26 @@
     ],
     {
       "quantity": "separation_angle",
-      "expected": 84.42982481306461,
+      "expected": 83.80779436009911,
       "tolerance": 0.5,
       "unit": "deg",
       "notes": "85-89 deg expected; frictionless elastic would be exactly 90"
     },
     {
       "quantity": "cue_speed_after",
-      "expected": 0.9165859118282551,
+      "expected": 0.8997176254328026,
       "tolerance": 1e-09,
       "unit": "m/s"
     },
     {
       "quantity": "object_speed_after",
-      "expected": 1.6908591566124014,
+      "expected": 1.6917865556860299,
       "tolerance": 1e-09,
       "unit": "m/s"
     },
     {
       "quantity": "object_throw_angle",
-      "expected": -2.8624052261117545,
+      "expected": -3.4336303624505273,
       "tolerance": 0.2,
       "unit": "deg",
       "notes": "object ball is thrown toward the cue ball's post-collision direction"

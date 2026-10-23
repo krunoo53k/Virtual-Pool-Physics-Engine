@@ -32,3 +32,4 @@ godot-project/bin/*.so
 godot-project/bin/*.dll
 godot-project/bin/*.dylib
 godot-project/.godot/
+__pycache__/
