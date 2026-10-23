@@ -10,6 +10,13 @@
 //! that, in the source, on every build: a platform `sin` that leaks into the core is
 //! found here, on the machine that wrote it, instead of as a hash mismatch on the
 //! platform that did not.
+//!
+//! The scan covers every `.rs` file under `src/`, at any depth, so a module moved into
+//! a subdirectory cannot slip out of it. The core's own vector helpers (`normalize` and
+//! the rest) live in that tree and are checked like everything else; they get away with
+//! `sqrt` because IEEE-754 requires it to be correctly rounded. The ban list includes
+//! the LLVM intrinsic `powi` (folded differently from `powf` at compile time) and the
+//! transcendentals that are easy to miss: `atan2`, `asin`, `acos`, `tan`, `ln`, `cbrt`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -79,14 +86,28 @@ fn strip_comments(text: &str) -> String {
     out
 }
 
+/// Every `.rs` file under `src/`, at any depth.
+///
+/// The scan is recursive on purpose: a module moved into a subdirectory (`src/math/…`)
+/// must not slip out of the check, because the functions it may not call are the same
+/// wherever the file lives.
+fn source_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).expect("the source directory") {
+        let path = entry.expect("a file").path();
+        if path.is_dir() {
+            source_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+}
+
 #[test]
 fn the_core_calls_no_platform_transcendental_function() {
+    let mut files = Vec::new();
+    source_files(&source_dir(), &mut files);
     let mut checked = 0;
-    for entry in fs::read_dir(source_dir()).expect("the source directory") {
-        let path = entry.expect("a file").path();
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            continue;
-        }
+    for path in files {
         let text = fs::read_to_string(&path).expect("a source file");
         // The test modules are allowed to use the platform's functions: they are not
         // part of the simulation, and a test that reads an angle in degrees wants the
