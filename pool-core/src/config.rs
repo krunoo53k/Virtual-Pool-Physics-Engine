@@ -210,13 +210,17 @@ pub struct TableGeometryConfig {
     pub side_cut_angle_deg: f64,
     /// The corner pocket's facing angle from the centreline, in degrees.
     ///
-    /// Zero means "derive it from the cut angle", which is the rule of §9.1:
-    /// `(180 - cut angle) / 2`. The derivation is a *reading* of the specified cut
-    /// angle, and a table that has been measured can be matched by giving the
-    /// facing angle directly.
+    /// Zero means "derive it from the cut angle", which is the default rule of §9.1:
+    /// the cut angle is read as the angle between a facing and its own rail line, and
+    /// the corner's centreline is 45° from either rail, so the facing is
+    /// `cut angle - 135` from the centreline — 7° for the WPA's 142°. The derivation
+    /// is a *reading* of the specified cut angle, and a table that has been measured
+    /// can be matched by giving the facing angle directly.
     pub corner_facing_angle_deg: f64,
     /// The side pocket's facing angle from the centreline, in degrees. Zero means
-    /// "derive it from the cut angle" (see `corner_facing_angle_deg`).
+    /// "derive it from the cut angle" (see `corner_facing_angle_deg`; the side
+    /// pocket's centreline is perpendicular to its rail, so the rule gives
+    /// `cut angle - 90` — 14° for the WPA's 104°).
     pub side_facing_angle_deg: f64,
     /// Slate cut angle at the lip, from vertical (13.5 deg).
     pub pocket_angle_deg: f64,

@@ -161,10 +161,12 @@ impl TableGeometry {
         let corner_facing = facing_angle(
             cfg.table.corner_facing_angle_deg,
             cfg.table.corner_cut_angle_deg,
+            45.0, // the corner's centreline is 45 degrees from either rail
         );
         let side_facing = facing_angle(
             cfg.table.side_facing_angle_deg,
             cfg.table.side_cut_angle_deg,
+            90.0, // the side pocket's centreline is perpendicular to its rail
         );
 
         let corner_specs = [
@@ -449,16 +451,20 @@ fn pocket_label(index: usize) -> &'static str {
 /// The facing angle of a pocket, in radians.
 ///
 /// The WPA specifies the pocket's *cut angle*, and the step from the cut angle to the
-/// direction of the facing is a reading rather than a specification (§9.1): the rule is
-/// that the two facings meet at the throat at the cut angle, so each lies
-/// `(180 - cut angle) / 2` away from the pocket's centreline. A measured table can be
-/// matched by giving the facing angle directly, which is what a non-zero `override`
-/// does.
-fn facing_angle(override_deg: f64, cut_angle_deg: f64) -> f64 {
+/// direction of the facing is a reading rather than a specification (§9.1). The default
+/// reading is that the cut angle is the angle between a facing and its own rail line: the
+/// facing is then `180 - cut` from that rail line measured into the pocket, and
+/// `rail_angle - (180 - cut)` from the pocket's centreline, where `rail_angle` is the
+/// angle between the rail and the centreline — 45° at a corner, 90° at a side pocket. (The
+/// other reading, where the two facings meet at the throat at the cut angle, gives a 76° V
+/// at a side pocket, which is not how jaws look; §9.1 rejects it as the default.) A
+/// measured table can be matched by giving the facing angle directly, which is what a
+/// non-zero `override` does.
+fn facing_angle(override_deg: f64, cut_angle_deg: f64, rail_angle_deg: f64) -> f64 {
     if override_deg > 0.0 {
         override_deg.to_radians()
     } else {
-        (180.0 - cut_angle_deg).to_radians() / 2.0
+        (rail_angle_deg - (180.0 - cut_angle_deg)).to_radians()
     }
 }
 
@@ -523,11 +529,11 @@ mod tests {
         // The throat is well behind the mouth line.
         assert!(pocket.mouth_distance(pocket.jaws[0].end) > cfg.table.shelf_depth_corner);
         // The facings are tilted by the facing angle away from the centreline:
-        // (180 - 142) / 2 = 19 degrees.
+        // 45 - (180 - 142) = 7 degrees (the default reading of section 9.1).
         let d = pocket.jaws[0].direction();
         let c = pocket.centreline;
         let cos = d.dot(c);
-        let facing = (180.0 - cfg.table.corner_cut_angle_deg).to_radians() / 2.0;
+        let facing = (cfg.table.corner_cut_angle_deg - 135.0).to_radians();
         assert!((cos - facing.cos()).abs() < 1e-12);
     }
 
@@ -540,16 +546,16 @@ mod tests {
         let pocket = &geom.pockets[0];
         let c = pocket.centreline;
         let d = pocket.jaws[0].direction();
-        let derived = (180.0 - cfg.table.corner_cut_angle_deg).to_radians() / 2.0;
+        let derived = (cfg.table.corner_cut_angle_deg - 135.0).to_radians();
         assert!((d.dot(c) - derived.cos()).abs() < 1e-12);
 
         let mut measured = TableConfig::default();
-        measured.table.corner_facing_angle_deg = 7.0;
+        measured.table.corner_facing_angle_deg = 19.0;
         let geom = TableGeometry::new(&measured);
         let pocket = &geom.pockets[0];
         let c = pocket.centreline;
         let d = pocket.jaws[0].direction();
-        assert!((d.dot(c) - 7.0_f64.to_radians().cos()).abs() < 1e-12);
+        assert!((d.dot(c) - 19.0_f64.to_radians().cos()).abs() < 1e-12);
     }
 
     #[test]
