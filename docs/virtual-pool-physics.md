@@ -73,8 +73,9 @@
 >   `+ŷ` is the shooter's *left*, and a positive `contact_offset_x` is a strike on the left.
 > * **The cue strike's offset case is written out** (§6.2): the centre-hit formula is the
 >   *longitudinal* response; an offset hit also has a *transverse* response, in which the
->   ball's effective mass is `m/(1 + 5b²/2R²)` — 1.625·m at `b = 0.5R`. The full cue mass
->   belongs to the longitudinal response and the ~12 g effective end mass to the
+>   ball's effective mass is `m/(1 + 5b²/2R²)` — `m/1.625 = 0.615·m` at `b = 0.5R` (1.8
+>   corrected the report of this: the 1.625 is the divisor, not the multiplier). The full
+>   cue mass belongs to the longitudinal response and the ~12 g effective end mass to the
 >   transverse one. The two are not in conflict; the document now says which is which.
 > * **The friction between two balls is two-dimensional** (§4.4.5): the slip at a
 >   ball–ball contact has a vertical component, the friction acts along the slip in the
@@ -1120,34 +1121,40 @@ Given a cue velocity `V_cue`, impact parameter `b`, and cue elevation angle `θ`
 
 **Linear velocity of the ball:**
 ```
-v_ball = (1 + e_cue) · M_cue · V_cue / (m_ball + M_cue)
+v_ball = (1 + e_cue) · V_cue / (1 + m_ball/M_cue + 5b²/(2R²))
 ```
-(for a centre-ball hit; `e_cue` is the tip COR, 0.71–0.75 leather / 0.81–0.87 phenolic)
+(the rigid-cue longitudinal response; `e_cue` is the tip COR, 0.71–0.75 leather /
+0.81–0.87 phenolic. At `b = 0` this is the centre-hit form
+`(1 + e_cue)·M_cue·V_cue/(m_ball + M_cue)` — for a 19 oz cue at 2 m/s, 1.45 m/s)
 
-> **This is the *longitudinal* response, and it is the whole cue's mass.** The tip pushes the
-> ball along the cue's axis; the cue is rigid in compression, so the mass that resists is the
-> cue's whole mass, and the impulse is `J = (1 + e_cue)·M_cue·V_cue/(m_cue + M_cue)`. The
-> impulse does not depend on the offset `b`: the ball's contact point is not moving before
-> the strike, so the restitution acts on the same relative speed whatever `b` is. The offset
-> goes into the *torque* (`ω = (5/2)(b/R)(v_ball/R)`, below) and into the *transverse*
-> response, which is the squirt.
->
-> The transverse response is a different direction and therefore a different pair of masses.
-> A force applied at the contact, `b` off the ball's centre, is resisted by the ball's
-> **effective mass** for that direction,
+> **The impulse *does* depend on `b` — through the ball's effective mass.** The tip pushes the
+> ball along the cue's axis; the cue is rigid in compression, so the mass on the cue's side is
+> the cue's whole mass `M_cue`. The restitution acts on the relative speed at the contact
+> point, which starts at zero however large `b` is — but the mass that *responds* at an offset
+> contact point is not `m_ball`: it is the ball's **effective mass** there,
 >
 > ```
 > 1/m_eff = 1/m_ball + b²/I     →     m_eff = m_ball / (1 + 5b²/2R²)
 > ```
 >
-> which is 1.625·`m_ball` at `b = 0.5R`. On the cue's side the mass is the **effective end
-> mass** of ~12 g, not the 454 g of the whole cue, because only the last ~12 cm of the shaft
-> moves during the ~2 ms contact (§6.1).
+> because an off-centre impulse both translates and spins the ball. The impulse is
+> `J = (1 + e_cue)·V_cue/(1/M_cue + 1/m_eff)`, and dividing by `m_ball` gives the formula
+> above (Leckie & Greenspan's form). An off-centre hit is a *slower* hit: at `b = 0.5R`,
+> `m_eff = m_ball/1.625 = 0.615·m_ball`, and for a 454 g cue and a 170 g ball the ball
+> leaves 31% slower than on a centre hit — which is why firm draw is hard. The offset also
+> goes into the *torque* (`ω = (5/2)(b/R)(v_ball/R)`, below) and into the *transverse*
+> response, which is the squirt.
+>
+> The transverse response is a different direction and therefore a different pair of masses
+> *on the cue's side*: the ball's `m_eff` is the same formula above, but the cue resists with
+> its **effective end mass** of ~12 g, not the 454 g of the whole cue, because only the last
+> ~12 cm of the shaft moves during the ~2 ms contact (§6.1).
 >
 > So the two rules do not contradict each other, and the document has to say which is which:
-> **the total cue mass belongs to the longitudinal response (the ball's speed), and the
-> effective end mass belongs to the transverse one (the squirt).** A formula that mixes them —
-> the total cue mass in a squirt expression, or the end mass in a speed expression — is wrong.
+> **the total cue mass belongs to the longitudinal response — the ball's speed, together with
+> the ball's own effective mass at the contact point — and the effective end mass belongs to
+> the transverse one (the squirt).** A formula that mixes them — the total cue mass in a
+> squirt expression, or the end mass in a speed expression — is wrong.
 
 **Angular velocity (spin) from offset hit:**
 
