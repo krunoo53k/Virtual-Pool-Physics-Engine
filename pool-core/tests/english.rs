@@ -155,18 +155,24 @@ fn a_tip_above_or_below_the_centre_does_not_squirt() {
 #[test]
 fn the_squirt_depends_only_on_the_sideways_offset() {
     // The same english with and without follow or draw squirts the same way:
-    // the sideways offset is what makes the tip slide.
+    // the sideways offset is what makes the tip slide. The *direction* is what
+    // is compared: an offset hit also leaves the ball slower than a centre one
+    // (section 6.2), and a vertical offset makes it slower again, so the
+    // sideways component of the velocity scales with the speed even though the
+    // deflection angle does not change.
     let cfg = TableConfig::default();
-    let plain = cue::strike(&shot(&cfg, 0.010), &cfg).velocity;
+    let plain = cue::strike(&shot(&cfg, 0.010), &cfg);
+    let plain_tangent = plain.velocity.y / plain.velocity.x;
     for height in [0.005, -0.005, 0.010] {
         let mut input = shot(&cfg, 0.010);
         input.contact_offset_y = height;
         let strike = cue::strike(&input, &cfg);
+        let tangent = strike.velocity.y / strike.velocity.x;
         assert!(
-            (strike.velocity.y - plain.y).abs() < 1e-12,
+            (tangent - plain_tangent).abs() < 1e-12,
             "a follow of {height} changed the squirt: {:?} against {:?}",
             strike.velocity,
-            plain
+            plain.velocity
         );
     }
 }

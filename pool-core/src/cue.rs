@@ -71,8 +71,21 @@ pub fn strike(input: &ShotInput, cfg: &TableConfig) -> CueStrike {
     }
 
     // The linear velocity of the ball (§6.2).
-    let speed =
-        (1.0 + cfg.cue.e_cue) * cfg.cue.cue_mass * input.cue_speed / (mass + cfg.cue.cue_mass);
+    //
+    // The impulse responds against the ball's effective mass at the contact
+    // point, `1/m_eff = 1/m + b²/I = (1 + 5b²/(2R²))/m`, so
+    //
+    //     v_ball = (1 + e)·V / (1 + m/M + 5b²/(2R²))
+    //
+    // and an off-centre hit leaves the ball slower than a centre one (at
+    // b = 0.5R it is 31% slower for a standard cue and ball). At `b = 0` this
+    // is the centre-hit formula `(1 + e)·M·V/(m + M)`. The impact parameter is
+    // the clamped one: the tip slips off at the miscue limit, so that is where
+    // it strikes.
+    let impact = offset.cross(direction).norm();
+    let impact_ratio = if radius > 0.0 { impact / radius } else { 0.0 };
+    let speed = (1.0 + cfg.cue.e_cue) * input.cue_speed
+        / (1.0 + mass / cfg.cue.cue_mass + 2.5 * impact_ratio * impact_ratio);
     let speed = if speed.is_finite() { speed } else { 0.0 };
 
     // The squirt (§6.1): the calibration curve is looked up at the impact
@@ -220,6 +233,35 @@ mod tests {
         assert!(out.miscue);
         // The tip slipped off: the attempt was beyond the limit.
         assert!(out.impact_parameter > cfg.max_offset_without_miscue());
+    }
+
+    #[test]
+    fn an_off_centre_hit_leaves_the_ball_slower() {
+        // The impulse responds against the ball's effective mass at the contact
+        // point (section 6.2): `v_ball = (1 + e)·V / (1 + m/M + 5b²/2R²)`, so a
+        // tip at `b = 0.5R` leaves the ball about 31% slower than a centre hit,
+        // and the centre-hit formula is the `b = 0` case of it.
+        let cfg = TableConfig::default();
+
+        let centre = ShotInput::new(2.0, Vec3::X, vec![ball(&cfg)]);
+        let centre_speed = strike(&centre, &cfg).velocity.norm();
+        let centre_formula = (1.0 + cfg.cue.e_cue) * 2.0 * cfg.cue.cue_mass
+            / (cfg.ball.mass + cfg.cue.cue_mass);
+        assert!((centre_speed - centre_formula).abs() < 1e-12);
+
+        let mut tipped = ShotInput::new(2.0, Vec3::X, vec![ball(&cfg)]);
+        tipped.contact_offset_y = 0.5 * cfg.ball.radius;
+        let out = strike(&tipped, &cfg);
+        assert!(!out.miscue);
+        let expected = (1.0 + cfg.cue.e_cue) * 2.0
+            / (1.0 + cfg.ball.mass / cfg.cue.cue_mass + 2.5 * 0.25);
+        assert!((out.velocity.norm() - expected).abs() < 1e-12);
+
+        let ratio = out.velocity.norm() / centre_speed;
+        assert!(
+            (ratio - 0.6874).abs() < 1e-3,
+            "a tip at half a radius leaves the ball at {ratio} of the centre-hit speed"
+        );
     }
 
     impl CueStrike {
