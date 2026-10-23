@@ -556,7 +556,7 @@ the horizontal one along `t̂` and the vertical one along `ẑ`. The relative sl
 the contact point (including the contribution of both balls' spin) is
 
 ```
-u_t = (v_A + ω_A × r_A)·t̂ - (v_B + ω_B × r_B)·t̂      (slip along the rail)
+u_t = (v_A + ω_A × r_A)·t̂ - (v_B + ω_B × r_B)·t̂      (slip along the horizontal tangent)
 u_z = (v_A + ω_A × r_A)·ẑ - (v_B + ω_B × r_B)·ẑ      (slip in the vertical)
 u   = sqrt(u_t² + u_z²)                              (the slip speed)
 ```
@@ -889,14 +889,17 @@ Written out component-wise, the sticking branch is:
 ```
 v_x' = v_x - (1 + e)·c·cos θ - (2/7)·s_x·sin θ
 v_y' = v_y - (2/7)·s_y
-v_z' =         -(1 + e)·c·sin θ + (2/7)·s_x·cos θ
+v_z' = v_z - (1 + e)·c·sin θ + (2/7)·s_x·cos θ
 ```
 
 > **Erratum.** The `v_x` term is missing from the x-equation as printed in Han (2005) (and from
 > Kiefl's transcription of it). The term is required: the same term is present in the z-equation,
 > and without it the `θ = 0, e = 1` limit returns `-2·v_x` instead of `-v_x`, i.e. the ball
 > rebounds at twice its incident speed, which violates energy conservation. The corrected form is
-> used throughout this document.
+> used throughout this document. The z-equation above also carries its own `v_z` term, which Han
+> elides by writing the model for a ball on the bed (`v_z = 0`); an airborne ball arriving at the
+> rail needs it, and the slip `s_x` of the line above already carries `v_z·cos θ` for the same
+> reason (§5.1's opening).
 
 **Key effects the model captures:**
 1. **Angle of reflection ≠ angle of incidence** (cushion friction and spin).
@@ -1390,7 +1393,7 @@ Per pocket (dimensions in §2.3):
 |---|---|---|
 | Mouth (jaw tip to jaw tip) | 4.5"–4.625" | 5.0"–5.125" |
 | Cut angle (the specified angle) | 142° ± 1° | 104° ± 1° |
-| Facing angle from the pocket centreline | 19° | 38° |
+| Facing angle from the pocket centreline (the default reading, below) | 7° | 14° |
 | Slate cut angle at the lip (from vertical) | 12°–15° | 12°–15° |
 | Shelf depth behind the mouth | 1"–2¼" | 0"–3/8" |
 | Drop point radius | 1/8"–1/4" | 1/8"–1/4" |
@@ -1400,26 +1403,29 @@ Per pocket (dimensions in §2.3):
 > (rail liner) for both sides of the corner pocket entrance must be 142 degrees (+1)" — and
 > it is a per-side angle: the same on both sides of the entrance. But the specification is
 > text: it has no drawing, and it does not say which two lines the cut angle is measured
-> between. The step from the cut angle to the direction of the facing therefore has to be
-> argued, and the argument used here is:
+> between. Two readings are possible, and the model has to pick one:
 >
-> * the cut angle is the angle at which the two facings meet at the throat of the pocket,
->   symmetric about the pocket's centreline, so each facing lies
->   `(180° − cut angle)/2` away from the centreline — 19° for a 142° corner pocket and 38°
->   for a 104° side pocket;
-> * the normal of a facing is therefore rotated by the same angle away from the perpendicular
->   to the centreline, and that is the normal used for the jaw collision.
+> * **The default: the cut angle is the angle between a facing and its own rail line.** The
+>   facing is then `180° − cut` from that rail line, measured into the pocket; subtract that
+>   from the angle between the rail and the pocket's centreline — 45° at a corner, 90° at a
+>   side — and each facing lies **7°** off a corner's centreline (`45° − (180° − 142°)`) and
+>   **14°** off a side pocket's (`90° − (180° − 104°)`). The included funnel angles are then
+>   14° and 28°, which is what real jaws look like. (Earlier versions printed 13° for the
+>   side pocket here; that was the BCA's 103° run through this rule, not the WPA's 104°.)
+> * **The rejected reading: the cut angle is the angle at which the two facings meet at the
+>   throat.** Then each facing is `(180° − cut)/2` from the centreline — 19° for the corner,
+>   but *38°* for the side pocket: a 76° V, wide enough for a ball to cross the mouth
+>   anywhere without converging on either jaw. Real side-pocket jaws do not look like that,
+>   so this reading is not the default. Nothing in the WPA text settles it; the default is
+>   the one that matches a table you can look at, until someone measures one.
 >
-> **The alternative reading is worth stating, because it changes the game.** If the 142° is
-> instead the angle between a facing and *its own rail line*, each facing lies 7° from the
-> corner's centreline (and 13° for the side pocket), the pocket's throat opens much wider,
-> and the rattle behaviour changes completely. Nothing in the WPA text settles it.
->
-> The consequence for the implementation is that **the facing angle has to be a config
-> parameter, not a derived constant**: the table config carries the cut angle, the facing
-> angle is derived from it by the rule above, and a table that has been measured can be
-> matched by overriding the facing angle directly. The `pocket_drop` fixture (§14) checks the
-> resulting rattle behaviour.
+> The normal of a facing is rotated by the facing angle away from the perpendicular to the
+> centreline, and that is the normal used for the jaw collision. The consequence for the
+> implementation is that **the facing angle has to be a config parameter, not a derived
+> constant**: the table config carries the cut angle, the facing angle is derived from it by
+> the default rule above, and a table that has been measured can be matched by overriding the
+> facing angle directly. The `pocket_drop` fixture (§14) checks the resulting rattle
+> behaviour.
 
 Everything here is table-dependent. Pockets vary between manufacturers, and many tables are
 "shimmed" to make the openings smaller. Treat the numbers above as the WPA reference
