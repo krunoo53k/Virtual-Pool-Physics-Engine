@@ -4,7 +4,7 @@
 //!
 //! * the motion between events is closed form (§3), never integrated;
 //! * every number is `f64` (§11.1);
-////! * the transcendental functions come from the pure-Rust `libm` crate, never from
+//! * the transcendental functions come from the pure-Rust `libm` crate, never from
 //!   the platform's libm (§11.4);
 //! * the event order is a total order, so two runs agree bit for bit (§11.4);
 //! * every tunable parameter lives in [`TableConfig`]; the cushion contact height is
@@ -57,4 +57,4 @@ pub use trace::{Segment, SegmentKind, Trace};
 /// which physics it is running: the extension is a library that is loaded when
 /// the game starts, and a game that is left running keeps the physics it was
 /// started with, however new the library on disk is.
-pub const MODEL_VERSION: &str = "1.5";
+pub const MODEL_VERSION: &str = "1.7";

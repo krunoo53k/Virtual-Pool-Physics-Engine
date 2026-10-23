@@ -67,19 +67,6 @@ fn direction(degrees: f64) -> Vec3 {
     Vec3::new(radians.cos(), radians.sin(), 0.0)
 }
 
-/// The aim that makes up for the model's squirt.
-///
-/// The core applies the squirt as a *horizontal* deflection of `ψ` whatever the
-/// direction of the contact offset is (§6.1 of the model), so a shot with a
-/// vertical offset - a draw or a follow - leaves the line by `ψ`. A player aims
-/// off to make up for it, and so do these scenes: what they are meant to show is
-/// the spin, not the squirt. The squirt has a scene of its own (`english`).
-fn squirt_corrected(cfg: &TableConfig, degrees: f64, impact_r: f64) -> Vec3 {
-    let psi = pool_core::cue::squirt_angle(impact_r, cfg).to_radians();
-    let radians = degrees.to_radians() + psi;
-    Vec3::new(radians.cos(), radians.sin(), 0.0)
-}
-
 /// The break: a full rack, the cue ball into the head ball.
 ///
 /// The rack is the standard triangle with the 1 at the apex and the 8 in the
@@ -113,7 +100,10 @@ fn break_scene(cfg: &TableConfig) -> Scene {
         }
     }
 
-    let mut input = ShotInput::new(8.0, squirt_corrected(cfg, 0.0, 0.1), balls);
+    let mut input = ShotInput::new(8.0, Vec3::X, balls);
+    // A tip 0.1 R above the centre: a hair of follow. It is a *vertical* offset,
+    // so the squirt looks the curve up at a sideways offset of zero and the ball
+    // leaves straight down the aim line (§6.1) - no aim correction is needed.
     input.contact_offset_y = 0.1 * radius;
 
     Scene {
@@ -122,7 +112,7 @@ fn break_scene(cfg: &TableConfig) -> Scene {
         subtitle: "a full rack, the cue ball into the head ball".into(),
         shots: vec![Shot {
             name: "break".into(),
-            note: "cue speed 6.0 m/s".into(),
+            note: "cue speed 8.0 m/s".into(),
             description: "The cue ball strikes the apex of the rack head on. The \
                           burst, the cushions and the drops are all events of the \
                           core, resolved in their total order."
@@ -147,9 +137,12 @@ fn trio_scene(cfg: &TableConfig) -> Scene {
     ];
     let mut shots = Vec::new();
     for (name, note, spin) in variants {
+        // The offset is *vertical* (follow or draw), so the squirt looks the
+        // curve up at a sideways offset of zero: the ball leaves straight down
+        // the aim line (§6.1) and the shot is aimed at the object ball.
         let mut input = ShotInput::new(
             2.2,
-            squirt_corrected(cfg, 0.0, spin.abs()),
+            Vec3::X,
             vec![
                 cue_ball(cfg, cue.0, cue.1),
                 object_ball(cfg, 1, object.0, object.1),
@@ -183,9 +176,7 @@ fn trio_scene(cfg: &TableConfig) -> Scene {
     Scene {
         name: "trio",
         title: "Draw, stun, follow".into(),
-        subtitle: "one shot, three spins - the cue ball goes three different ways \
-                   (the aim makes up for the model's squirt)"
-            .into(),
+        subtitle: "one shot, three spins - the cue ball goes three different ways".into(),
         shots,
     }
 }
