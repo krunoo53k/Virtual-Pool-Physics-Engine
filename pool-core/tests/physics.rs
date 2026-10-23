@@ -516,15 +516,16 @@ fn a_ball_can_rattle_out_of_the_pocket() {
 #[test]
 fn a_ball_can_be_rattled_into_the_pocket() {
     // The third failure mode of §9.2: the ball hits a facing on its way in and still
-    // drops.
+    // drops. The funnel is narrow (7 degrees a side, section 9.1), so the ball has to
+    // run close to a facing to meet it before the drop line 4.4 cm behind the mouth.
     let cfg = TableConfig::default();
-    let state = shoot_into_the_corner_pocket(&cfg, 1.8, 0.3);
+    let state = shoot_into_the_corner_pocket(&cfg, 1.8, 0.5);
     assert!(state.balls[0].is_pocketed, "the ball did not drop");
 
-    let (_, kinds) = simulate_into_the_corner_pocket(&cfg, 1.8, 0.3, 0.25);
-    assert!(kinds.contains(&EventKind::PocketEnter));
-    assert!(kinds.contains(&EventKind::Jaw));
-    assert!(kinds.contains(&EventKind::PocketDrop));
+    let (_, kinds) = simulate_into_the_corner_pocket(&cfg, 1.8, 0.5, 0.25);
+    assert!(kinds.contains(&EventKind::PocketEnter), "{kinds:?}");
+    assert!(kinds.contains(&EventKind::Jaw), "{kinds:?}");
+    assert!(kinds.contains(&EventKind::PocketDrop), "{kinds:?}");
 }
 
 #[test]
