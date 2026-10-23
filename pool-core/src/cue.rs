@@ -99,11 +99,7 @@ pub fn strike(input: &ShotInput, cfg: &TableConfig) -> CueStrike {
     // impact parameter, which counts a tip that is above or below the centre
     // as an off-centre hit as well.
     let lateral = offset.dot(side).abs();
-    let b_over_r = if radius > 0.0 {
-        lateral / radius
-    } else {
-        0.0
-    };
+    let b_over_r = if radius > 0.0 { lateral / radius } else { 0.0 };
     let squirt_deg = squirt_angle(b_over_r, cfg);
     let squirt_sign = if input.contact_offset_x >= 0.0 {
         -1.0
@@ -245,16 +241,16 @@ mod tests {
 
         let centre = ShotInput::new(2.0, Vec3::X, vec![ball(&cfg)]);
         let centre_speed = strike(&centre, &cfg).velocity.norm();
-        let centre_formula = (1.0 + cfg.cue.e_cue) * 2.0 * cfg.cue.cue_mass
-            / (cfg.ball.mass + cfg.cue.cue_mass);
+        let centre_formula =
+            (1.0 + cfg.cue.e_cue) * 2.0 * cfg.cue.cue_mass / (cfg.ball.mass + cfg.cue.cue_mass);
         assert!((centre_speed - centre_formula).abs() < 1e-12);
 
         let mut tipped = ShotInput::new(2.0, Vec3::X, vec![ball(&cfg)]);
         tipped.contact_offset_y = 0.5 * cfg.ball.radius;
         let out = strike(&tipped, &cfg);
         assert!(!out.miscue);
-        let expected = (1.0 + cfg.cue.e_cue) * 2.0
-            / (1.0 + cfg.ball.mass / cfg.cue.cue_mass + 2.5 * 0.25);
+        let expected =
+            (1.0 + cfg.cue.e_cue) * 2.0 / (1.0 + cfg.ball.mass / cfg.cue.cue_mass + 2.5 * 0.25);
         assert!((out.velocity.norm() - expected).abs() < 1e-12);
 
         let ratio = out.velocity.norm() / centre_speed;
