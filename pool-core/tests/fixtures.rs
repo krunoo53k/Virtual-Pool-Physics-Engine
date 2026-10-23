@@ -7,7 +7,7 @@
 mod common;
 
 use common::{
-    array, assert_close, expectations, field, fixture, number, optional_number, setup_balls, text,
+    array, assert_close, expectations, fixture, number, optional_number, setup_balls, text,
     tolerance,
 };
 use pool_core::ball_ball;

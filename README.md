@@ -1,7 +1,7 @@
 # Virtual Pool — a deterministic 8-ball pool physics engine
 
 A Rust implementation of the physics model specified in
-[`docs/virtual-pool-physics.md`](docs/virtual-pool-physics.md) (version 1.5).
+[`docs/virtual-pool-physics.md`](docs/virtual-pool-physics.md) (version 1.7).
 
 The engine is **event-driven and closed-form**: between two events every ball's
 state is given by an analytic expression, so nothing is ever integrated step by
@@ -95,7 +95,7 @@ Two versions move, and they mean different things:
 
 | | What it is |
 |---|---|
-| `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.5`) |
+| `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.7`) |
 | the crate version (`0.1.0`) | the version of the **API** |
 
 A change to the model bumps both; a change to the API only bumps the crate
@@ -229,24 +229,32 @@ rest, but nothing decides who won.
 
 The document lists its own limitations, and they are reproduced faithfully here:
 
-* **The throw is capped.** The tangential impulse is limited to `mu_ball * J_n`, so
-  the throw is a constant `atan(mu_ball) = 2.86 deg` once the balls slip. The
-  measured throw is speed dependent and larger on slow shots. This is the one
-  place where the model is knowingly wrong, and the `cut_throw_sweep` fixture
-  records it.
+* **The throw follows the measured speed dependence, and the rest is a recorded
+  deviation.** The friction between the balls falls with the sliding speed
+  (§4.4.5, TP A.14: `mu(v) = 0.009951 + 0.108 e^(−0.77 v)`, normalised at a 1 m/s
+  slip onto `mu_ball`), so the throw is larger on slow shots, as the measurement
+  says. In the sticking regime it matches the published formula
+  `atan(2 tan(cut) / (7 (1 + e)))`. What is knowingly wrong is the rest: the three
+  measured columns at a 30 degree cut cannot be fitted by *any* law of the form
+  `A + B e^(−K u)`, for any floor term and any decay constant, so the residual
+  (up to about a degree) is left as a deviation and no calibration is layered on
+  top of it. The `cut_throw_sweep` fixture pins it at 1.05 degrees (§14.1, §14.3).
 * **The vertical spin decay is linear, and stops at zero.** §3.2 writes
   `w_z(t) = w0 - (5 mu_sp g / 2R) t`, and a linear decay has to be told where
   zero is: it acts towards zero and stops there. Without that, a ball whose
   spin reached zero would go on past it into a backspin, and a backspin would
   grow instead of dying - and the ball would never come to rest, because the
   state it reaches depends on a spin that never ends.
-* **The squirt is applied sideways.** The core applies the squirt as a *horizontal*
-  deflection of `psi` whatever the direction of the contact offset is, so a shot
-  with a vertical offset - a draw or a follow - leaves the line by `psi` as well.
-  §6.1 describes the deflection as the resultant of the normal force and the
-  friction of the tip sliding on the ball, which for a vertical offset is
-  vertical. The `english` scene shows the squirt as it is; the `trio` scene makes
-  up for it in the aim, the way a player does.
+* **The squirt comes from the sideways offset, and the curve behind it is
+  uncalibrated.** The core looks the squirt curve up at the *sideways* part of the
+  contact only (§6.1): the tip slides around the ball, so only a sideways offset
+  makes it slide sideways, and a draw or a follow - a vertical offset - goes
+  straight down the aim line. The spin and the miscue limit keep using the whole
+  impact parameter, because a tip above the centre does give topspin and does slip
+  off at the same offset. What is not known is the curve itself: the anchors are
+  still `null` and marked `TO BE CALIBRATED` (Cross 2008 has not been transcribed),
+  so the squirt is the shape of the curve and not a measurement (§14.5). The
+  `english` scene shows the squirt as the model has it.
 * **The hop over-predicts at break speed.** The rigid cushion model scales the hop
   with `v^2`. `TableConfig::slate.max_cushion_rebound` is the compliant-contact
   correction the document asks for: it leaves the behaviour the fixture pins (a

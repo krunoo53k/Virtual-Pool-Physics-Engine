@@ -301,7 +301,6 @@ mod tests {
     #[test]
     fn low_nose_launches_the_ball_upward() {
         let cfg = TableConfig::default();
-        let geom = TableGeometry::new(&cfg);
         // 0.500 D: the nose sits at the ball's centre, so eps = 0 and theta = 0.
         let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.5, cfg.ball.radius));
         ball.velocity = Vec3::new(2.0, 0.0, 0.0);
