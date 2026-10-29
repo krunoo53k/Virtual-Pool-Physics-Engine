@@ -32,7 +32,7 @@ where the model says the pocket begins.
 | | |
 |---|---|
 | the mouse | aims |
-| **S** | draws the cue back; a flick forward lets it go |
+| **S** | draws the cue back; push the mouse home, and the speed of the push is the power |
 | **E** | holds the english: the mouse then moves the tip on the cue ball |
 | **B** | holds the fine aim: the mouse then trims the angle |
 | **D** | raises the debug panel: the numbers of the shot, on the screen |
@@ -40,9 +40,11 @@ where the model says the pocket begins.
 While **B** or **E** is held the mouse stops aiming and only trims or moves
 the tip, so the two never fight.
 
-The power of the shot is how far the cue is drawn back, up to 30 cm, and the
-flick decides how much of that power the shot gets: a full draw with a lazy
-flick is a soft shot, and a full draw with a hard flick is a break.
+The power of the shot is the speed the cue is running at when it meets the
+ball, up to 9 m/s: a full draw brought home slowly is a stun, and a full draw
+flicked home hard is a break. How far the cue went back only says how far it
+had to run over to get there: the bar and the read-out show the speed while
+the stroke runs.
 
 Once the stroke is taken, the mouse stops aiming: the flick that fires the
 shot may land anywhere, and its sideways wobble does not turn the shot on

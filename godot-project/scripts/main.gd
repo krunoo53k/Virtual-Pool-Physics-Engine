@@ -11,7 +11,11 @@ extends Node3D
 ## * the mouse turns the shot, the way it turns the view in a first person
 ##   game - the view is locked level, and the shot is the only thing the
 ##   mouse turns;
-## * **S** draws the cue back, and pushing the mouse forward shoots;
+## * **S** draws the cue back, and pushing the mouse forward shoots: the power
+##   of the shot is the speed the cue was running at when it met the ball,
+##   exactly the number the physics is given (§6.2). How far the cue went
+##   back only says how far it had to run over; a full draw brought home
+##   slowly is a stun, and a full draw flicked home hard is a break;
 ## * **E** holds the english: the mouse then moves the tip on the cue ball;
 ## * **B** holds the fine aim: the mouse then turns the shot more slowly.
 ##
@@ -29,11 +33,26 @@ const PoolTable := preload("res://scripts/table.gd")
 ## How far the cue can be drawn back, in metres.
 const MAX_PULL := 0.30
 
-## The speed of the cue at a full draw, in metres per second.
+## The fastest stroke the game accepts, in metres per second of the cue tip as
+## it meets the ball. A break stroke runs at 5 to 7 m/s, so this is the ceiling
+## a hard flick reaches and not what a stroke normally comes in at.
 const MAX_CUE_SPEED := 9.0
 
-## How long the cue takes to travel into the ball, in seconds.
-const STRIKE_TIME := 0.06
+## The slowest stroke that is still a stroke, in metres per second. Under this
+## the tip is only resting the cue ball and the ball rolls off a nudge.
+const MIN_CUE_SPEED := 0.15
+
+## The cue's speed at the ball, per metre per second of the mean speed it ran
+## at over its backswing. The hand takes the cue from rest at the top of the
+## backswing and accelerates it into the strike, so a cue that covers its
+## distance in a given time meets the ball at twice the mean it ran at.
+const STROKE_AT_IMPACT := 2.0
+
+## The shortest and longest the cue's travel into the ball may look like, in
+## seconds. The duration belongs to the stroke - a fast one is a blur and a
+## soft one creeps - and these two keep it out of being invisible or a crawl.
+const STRIKE_MIN_TIME := 0.02
+const STRIKE_MAX_TIME := 0.25
 
 ## How fast the mouse turns the shot, in radians per pixel. A first person
 ## camera turns with the mouse, not towards it.
@@ -136,9 +155,36 @@ var contact := Vector2.ZERO
 ## How far the cue is drawn back now, in metres.
 var draw := 0.0
 
-## How far the cue has been drawn back at its furthest, in metres: that is
-## the power of the shot.
+## How far the cue has been drawn back at its furthest, in metres: the backswing
+## the stroke comes from. It is not the power on its own - the power is the speed
+## the cue was running at when it met the ball, and this is the distance that
+## speed is measured over.
 var pulled := 0.0
+
+## How fast the cue was travelling into the ball, in metres per second: the power
+## of the stroke, and what the core is asked for (§6.2 takes the cue's velocity
+## at the strike). The player sets it by how fast the mouse comes forward, not by
+## how far the cue went back: a full draw brought home slowly is a soft shot, and
+## a hard flick is a break.
+var stroke_speed := 0.0
+
+## The metres the cue has come forward out of its backswing.
+var stroke_forward := 0.0
+
+## The seconds the cue has spent coming forward: the time the stroke ran over.
+var stroke_clock := 0.0
+
+## The metres the cue still has to come through before the tip meets the ball:
+## the part of the stroke the picture is still playing.
+var strike_travel := 0.0
+
+## The engine's clock, in seconds: every frame adds its delta to it, so the time
+## between two mouse motions - which is the time the cue ran over - can be read
+## off it.
+var clock := 0.0
+
+## The engine's clock at the last mouse motion, in seconds.
+var motion_clock := 0.0
 
 ## Whether the mouse turns the shot.
 ##
@@ -405,16 +451,18 @@ func _read_the_arguments() -> void:
 
 
 func _process(delta: float) -> void:
+	clock += delta
 	match phase:
 		Phase.AIMING:
 			_draw_aim()
+			_draw_power()
 		Phase.CHARGING:
 			_draw_aim()
 			_draw_power()
 		Phase.STRIKING:
 			strike_time += delta
 			_draw_aim()
-			if strike_time >= STRIKE_TIME:
+			if strike_time >= _strike_duration():
 				_fire()
 		Phase.ROLLING:
 			shot_time += delta
@@ -631,9 +679,21 @@ func _first_contact(aim: Vector3) -> Vector3:
 func _vector(v: Vector3) -> String:
 	return "(%.4f, %.4f, %.4f)" % [v.x, v.y, v.z]
 
-## Draws the power bar.
+## Draws the power bar: how fast the stroke is running, against the fastest
+## stroke the game accepts. The bar answers the question the player is asking
+## their own hand for: is this flick a stun or a break.
 func _draw_power() -> void:
-	power.size = Vector2(4.0 + 200.0 * pulled / MAX_PULL, 14)
+	var ratio := clampf(stroke_speed / MAX_CUE_SPEED, 0.0, 1.0)
+	power.size = Vector2(4.0 + 200.0 * ratio, 14)
+
+
+## How long the cue takes to come through the rest of its back and strike:
+## the distance it still has to run, at the speed the stroke was run at. The
+## picture plays the real tempo of the stroke, so a hard one is a blur and a
+## soft one creeps home; the clamp keeps either end of it worth watching.
+func _strike_duration() -> float:
+	var speed := maxf(stroke_speed, MIN_CUE_SPEED)
+	return clampf(maxf(strike_travel, 0.0) / speed, STRIKE_MIN_TIME, STRIKE_MAX_TIME)
 
 
 ## Puts the cue where it belongs: behind the cue ball, along the aim, drawn
@@ -644,7 +704,10 @@ func _update_cue() -> void:
 	var tip := _tip(cue_ball.position, aim)
 	var travel := draw
 	if phase == Phase.STRIKING:
-		travel = draw * (1.0 - clampf(strike_time / STRIKE_TIME, 0.0, 1.0))
+		# The cue comes home at the speed the stroke was run at: the picture
+		# shows the power the shot really has, and a hard stroke is over
+		# before the eye can catch it.
+		travel = maxf(strike_travel - stroke_speed * strike_time, 0.0)
 	cue.visible = phase != Phase.ROLLING
 	cue.position = tip - aim * (cue_length / 2.0 + travel)
 	cue.basis = _basis_along_y(aim)
@@ -663,9 +726,18 @@ func _tip(centre: Vector3, aim: Vector3) -> Vector3:
 
 ## Fires the shot at once, without the mouse.
 ##
-## This is the way the play test starts a shot: the mouse is not there.
+## This is the way the play test starts a shot: the mouse is not there, so the
+## stroke is stated rather than run: the speed it asks for is the speed the cue
+## meets the ball at, and the backswing is the one that stroke would have come
+## from.
 func fire_now(speed: float) -> void:
+	stroke_speed = clampf(speed, MIN_CUE_SPEED, MAX_CUE_SPEED)
 	pulled = MAX_PULL * clampf(speed / MAX_CUE_SPEED, 0.0, 1.0)
+	stroke_forward = pulled
+	# The run that made that speed crossed its backswing at half the speed,
+	# from rest, so its time is the distance over half the speed.
+	stroke_clock = pulled * STROKE_AT_IMPACT / maxf(stroke_speed, MIN_CUE_SPEED)
+	strike_travel = pulled
 	phase = Phase.STRIKING
 	strike_time = 0.0
 
@@ -679,8 +751,11 @@ func _fire() -> void:
 		positions.append(balls[index].position)
 		numbers.append(balls[index].number)
 
-	# The power of the shot is how far the cue was drawn back.
-	var speed := maxf(pulled / MAX_PULL * MAX_CUE_SPEED, 0.15)
+	# The power of the shot is the speed the cue was running at when it met the
+	# ball: the impulse the stroke delivered, and the number the core takes as
+	# the cue's velocity (§6.2). How far the cue was drawn back says only how far
+	# it had to run over to get there.
+	var speed := maxf(stroke_speed, MIN_CUE_SPEED)
 	shot = core.simulate(speed, aim, contact, positions, numbers)
 	shot_aim = aim
 	aim_line.visible = false
@@ -710,6 +785,12 @@ func _settle() -> void:
 	phase = Phase.AIMING
 	pulled = 0.0
 	draw = 0.0
+	# The stroke is over: the next one starts from rest, and its speed is
+	# measured again from nothing.
+	stroke_speed = 0.0
+	stroke_forward = 0.0
+	stroke_clock = 0.0
+	strike_travel = 0.0
 	# The tip comes home: the next shot is a centre-ball stroke unless the
 	# player asks for the english again.
 	contact = Vector2.ZERO
@@ -742,7 +823,9 @@ func _update_status() -> void:
 		Phase.AIMING:
 			status.text = _aiming_status()
 		Phase.CHARGING:
-			status.text = "draw  -  push the mouse forward to shoot"
+			# The stroke's speed is read out while it runs, so the player can see
+			# the power they are asking for rather than feel for it.
+			status.text = "draw  -  the cue is back %.2f m, the stroke is running at %.2f m/s: push the mouse forward to shoot" % [pulled, stroke_speed]
 		Phase.STRIKING:
 			status.text = "..."
 		Phase.ROLLING:
@@ -758,7 +841,7 @@ func _update_status() -> void:
 ## the ball leaves the other way - the way of it comes from the preview, the
 ## only source that cannot be wrong on one side of it.
 func _aiming_status() -> String:
-	var text := "aim  -  the mouse turns the shot; S draws the cue back, E for the english, B for a finer aim, D for the debug panel"
+	var text := "aim  -  the mouse turns the shot; S draws the cue back and the stroke home sets the power, E for the english, B for a finer aim, D for the debug panel"
 	if contact.length_squared() < 1e-12:
 		return text
 	var aim := _aim()
@@ -813,8 +896,10 @@ func _debug_the_shot() -> void:
 		lines.append("the ghost  ball %d in %.2f m" % [balls[aim_hit_ball].number, ghost.position.distance_to(cue_ball.position)])
 	else:
 		lines.append("the ghost  nothing on the line")
-	var speed := maxf(pulled / MAX_PULL * MAX_CUE_SPEED, 0.15)
-	lines.append("the stroke %.2f m/s (a full draw is %.2f)" % [speed, MAX_CUE_SPEED])
+	if stroke_speed > 0.0:
+		lines.append("the stroke %.2f m/s, the cue back %.2f m (the fastest stroke the game takes is %.2f)" % [stroke_speed, pulled, MAX_CUE_SPEED])
+	else:
+		lines.append("the stroke  no stroke yet: %.2f m of backswing, and the speed it is crossed at is the power" % pulled)
 	debug_panel.text = "\n".join(lines)
 
 
@@ -976,14 +1061,55 @@ func _mouse_motion(event: InputEventMouseMotion) -> void:
 		# The cue is drawn back by dragging the mouse towards the player - down
 		# the screen - and the shot is on when the cue comes back to the ball,
 		# so the key never has to be let go of.
+		# The power is the cue's speed when it meets the ball (§6.2 takes that
+		# speed), and the speed is the cue's travel over the time it travelled
+		# in: the mouse carries the cue, so the stroke's tempo is the distance
+		# it carried it by, over the time it took to carry it. The hand takes
+		# the cue from rest at the back of the swing, so by the time the cue
+		# meets the ball it is running at twice the tempo it ran over.
+		var since := maxf(clock - motion_clock, 0.0001)
+		motion_clock = clock
+		var was := draw
 		var was_drawn := pulled > 0.0
 		draw = clampf(draw + event.relative.y * DRAW_SPEED, 0.0, MAX_PULL)
+		if draw > pulled:
+			# The cue is deeper than it has ever been: the run of the stroke
+			# starts again, from the cue's furthest back.
+			pulled = draw
+			stroke_forward = 0.0
+			stroke_clock = 0.0
+		var travelled := was - draw
+		if travelled > 0.0:
+			# The cue came forward this motion, so its distance and its time
+			# both count. A motion that did not move the cue adds neither,
+			# which is why a still hand at the back of the swing costs the
+			# stroke nothing: a pause there and a snap home is as strong a
+			# shot as a snap run in one go, the way it is on a table. The
+			# backswing caps the run: the cue cannot come forward further
+			# than it went back, and the power is the tempo of the cue over
+			# its distance: a lazy flick home is a soft shot, and a hard
+			# flick is a break.
+			stroke_forward = minf(stroke_forward + travelled, pulled)
+			# The time the stroke ran over is the time of the motions that
+			# moved it, which is what the clock counts.
+			stroke_clock += since
+			# Twice the tempo, from rest, is the speed the cue meets the ball
+			# at (§6.2), clamped to the strokes the game takes: the power of
+			# the shot. The bar and the panel read it out while it runs.
+			stroke_speed = clampf(STROKE_AT_IMPACT * stroke_forward / maxf(stroke_clock, 0.0001), MIN_CUE_SPEED, MAX_CUE_SPEED)
+		# The cue is home: the stroke is over, and the speed it crossed the
+		# backswing at is the power the shot gets.
 		if was_drawn and event.relative.y < 0.0 and draw <= 0.0:
-			# The cue is home: the stroke is over.
 			phase = Phase.STRIKING
 			strike_time = 0.0
+			# The cue still has this much of its back left to come through:
+			# the picture plays that part of the stroke at the speed the
+			# stroke ran at, so a hard stroke is a blur and a soft one
+			# creeps home.
+			strike_travel = was
 			return
-		pulled = maxf(pulled, draw)
+		# The cue is still out on its backswing: the stroke is running, and
+		# the mouse is still carrying it. The aim is left as it was.
 		return
 
 	# The mouse turns the shot, the way it turns the view in a first person
@@ -1003,16 +1129,26 @@ func _key(event: InputEventKey) -> void:
 			phase = Phase.CHARGING
 			draw = 0.0
 			pulled = 0.0
+			# The stroke is measured from rest, and the clock runs from here:
+			# a still hand between the key and the draw is not part of the
+			# stroke, and the last stroke is forgotten - the bar does not
+			# carry a speed over from shot to shot.
+			stroke_speed = 0.0
+			stroke_forward = 0.0
+			stroke_clock = 0.0
+			motion_clock = clock
 		elif not event.pressed and phase == Phase.CHARGING:
 			# The key is let go of: back to the default, the draw is
 			# forgotten, and no shot is on.
 			phase = Phase.AIMING
 			draw = 0.0
 			pulled = 0.0
+			stroke_speed = 0.0 # a cue that never came home struck nothing, so its speed is no power
 	elif event.keycode == KEY_ESCAPE and phase == Phase.CHARGING:
 		phase = Phase.AIMING
 		draw = 0.0
 		pulled = 0.0
+		stroke_speed = 0.0 # the cancel drops the stroke in progress just as letting go of S does
 	elif event.keycode == KEY_C:
 		camera_mode = 1 - camera_mode
 	elif event.keycode == KEY_D and event.pressed and not event.echo:
