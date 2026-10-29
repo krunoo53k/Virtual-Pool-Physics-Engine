@@ -235,9 +235,10 @@ The document lists its own limitations, and they are reproduced faithfully here:
   slip onto `mu_ball`, whose default is the fit's own value there, so the law is
   the published one unscaled), so the throw is larger on slow shots, as the
   measurement says. In the sticking regime it matches the published formula
-  `atan(2 tan(cut) / (7 (1 + e)))`. Against TP A.14's measured throw the model
-  sits at most 0.5 degrees below, worst at the fast speeds, and that residual is
-  left as a deviation rather than calibrated away (§14.1, §14.3 — which also
+  `atan(2 tan(cut) / (7 (1 + e)))`. Against TP A.14's measured throw the residual is
+  at most half a degree either way: slightly above the measurement in the slow
+  columns, up to 0.5 degrees below in the faster ones. It is left as a deviation
+  rather than calibrated away (§14.1, §14.3 — which also
   retracts an earlier claim that no law could fit the measurements: that claim
   mishandled the sticking regime, where the throw does not depend on the
   friction coefficient at all).

@@ -149,7 +149,8 @@
 >   (0.05996), and §4.4.5 normalised the law onto it — so the whole law was rescaled by
 >   0.83, which manufactured about 0.7° of the throw residual that was then recorded as
 >   untouchable. The config carries the fit's own value (0.06) now, and against the
->   measured throw the model sits at most 0.5° below, worst at the fast speeds.
+>   measured throw the residual is at most half a degree either way — slightly above
+>   the measurement in the slow columns, up to 0.5° below in the faster ones (§14.3).
 > * **The "no law can fit the measured columns" argument is retracted** (§14.1, §14.3). It
 >   turned measured throw into implied friction with `μ = tan(throw)`, which holds only in
 >   the sliding regime; the slow column at a 30° cut sits at the 4.83° sticking limit,
@@ -1176,7 +1177,8 @@ v_ball = (1 + e_cue) · V_cue / (1 + m_ball/M_cue + 5b²/(2R²))
 ```
 (the rigid-cue longitudinal response; `e_cue` is the tip COR, 0.71–0.75 leather /
 0.81–0.87 phenolic. At `b = 0` this is the centre-hit form
-`(1 + e_cue)·M_cue·V_cue/(m_ball + M_cue)` — for a 19 oz cue at 2 m/s, 1.45 m/s)
+`(1 + e_cue)·M_cue·V_cue/(m_ball + M_cue)` — for the default 454 g cue at
+2 m/s, 2.5 m/s)
 
 > **The impulse *does* depend on `b` — through the ball's effective mass.** The tip pushes the
 > ball along the cue's axis; the cue is rigid in compression, so the mass on the cue's side is
@@ -1472,8 +1474,10 @@ Per pocket (dimensions in §2.3):
 > implementation is that **the facing angle has to be a config parameter, not a derived
 > constant**: the table config carries the cut angle, the facing angle is derived from it by
 > the default rule above, and a table that has been measured can be matched by overriding the
-> facing angle directly. The `pocket_drop` fixture (§14) checks the resulting rattle
-> behaviour.
+> facing angle directly. The derivation floors at a parallel slot: a cut angle below
+> `180° − rail_angle` (135° at a corner, 90° at a side) would place the facings *outside*
+> the pocket, so the derived angle stops at zero there. The `pocket_drop` fixture (§14)
+> checks the resulting rattle behaviour.
 
 Everything here is table-dependent. Pockets vary between manufacturers, and many tables are
 "shimmed" to make the openings smaller. Treat the numbers above as the WPA reference
@@ -2216,9 +2220,10 @@ Two of them are worth calling out because they are the ones that catch real bugs
   ≈ 18.8°) the throw is `atan(2·tan(cut)/(7·(1+e)))`, which gives 1.48° at a 10° cut against
   a measured 1.45° — agreement to 0.03°. In the *sliding* regime the Coulomb cap makes the
   throw `atan(μ_ball(u))`, where `u` is the slip speed, and because `μ_ball` falls with the
-  slip speed (§4.4.5) the throw is speed-dependent. There the model sits up to 0.5° *below*
-  the measurement, and the shortfall grows with the shot speed — small, and a slope, not
-  the degree-wide offset earlier versions recorded.
+  slip speed (§4.4.5) the throw is speed-dependent. There the residual is at most
+  half a degree, and it is not one-sided: slightly *above* the measurement in the
+  slow columns, up to 0.5° *below* in the faster ones — a slope, not the degree-wide
+  offset earlier versions recorded.
 
 > **The residual is small, and the argument that it could not be closed was wrong.** With
 > the friction law used unscaled (`μ_ball = 0.06`, §13.2), the three measured columns at a
@@ -2276,10 +2281,11 @@ against 2.90° on a fast one.
 
 **What is left.** A residual of at most half a degree, and it is not uniform. At the 30°
 cut the model gives 4.83° (sticking), 4.26° and 2.42° against the measured 4.65°, 4.55°
-and 2.90° — +0.2°, −0.3°, −0.5°. At 40°–60° cuts the shortfall stays between 0.03° and
-0.48° and is again largest at the fast speeds. The speed dependence of the throw is
+and 2.90° — +0.2°, −0.3°, −0.5°. At 40°–60° cuts it stays between 0.03° and
+0.48° below the measurement, largest at the faster speeds (the 60° column peaks
+at the medium one). The speed dependence of the throw is
 modelled correctly (the shape of the curve follows the slip speed); what is missing is a
-few tenths of a degree at the fast end.
+few tenths of a degree in the faster columns.
 
 **What was claimed here in v1.7, and why it was wrong.** v1.7 recorded a 0.6°–1.0° offset
 "at every speed and every cut angle" and argued it could not be fitted away: the three

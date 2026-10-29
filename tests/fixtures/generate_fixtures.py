@@ -279,10 +279,13 @@ def fixture_throw():
         "expectations": rows,
         "model_sweep_at_2ms": sweep,
         "known_deviations": [
-            "The model is below the measured throw by at most 0.5 degrees over the whole "
-            "sweep (the worst row is a 30 degree cut at 7 mph, at 0.48 degrees), and the "
-            "shortfall grows with the shot speed at a fixed cut angle. In the sticking "
-            "regime (10 degrees) it agrees with the measurement to 0.03 degrees.",
+            "The residual is at most half a degree over the whole sweep (the worst row is "
+            "a 30 degree cut at 7 mph, at 0.48 degrees). It is not one-sided: in the slow "
+            "columns the model sits slightly ABOVE the measurement (up to +0.2 degrees at "
+            "a 30 degree cut) and in the faster columns up to 0.5 degrees BELOW it. The "
+            "shortfall below the measurement grows with the speed, except at a 60 degree "
+            "cut where the medium speed is the peak. In the sticking regime (10 degrees) "
+            "it agrees with the measurement to 0.03 degrees.",
             "An earlier version of this fixture recorded a degree-wide offset and claimed "
             "the three columns at a 30 degree cut could not be fitted by any law of the "
             "form A + B exp(-K u). That claim turned the measured throw into an implied "
