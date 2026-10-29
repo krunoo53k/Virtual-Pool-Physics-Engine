@@ -35,6 +35,7 @@ where the model says the pocket begins.
 | **S** | draws the cue back; a flick forward lets it go |
 | **E** | holds the english: the mouse then moves the tip on the cue ball |
 | **B** | holds the fine aim: the mouse then trims the angle |
+| **D** | raises the debug panel: the numbers of the shot, on the screen |
 
 While **B** or **E** is held the mouse stops aiming and only trims or moves
 the tip, so the two never fight.
@@ -48,6 +49,25 @@ contact offset along `up x direction`, which is the shooter's **left**, so a
 tip dragged to the shooter's right is a **negative** offset, and right english
 throws the object ball to the shooter's left. The tests in
 `../pool-godot/tests/mapping.rs` pin that with the physics.
+
+## The debug panel and the log
+
+**D** raises the debug panel: while the player aims it names the line of the
+cue, the line the ball really leaves on (the squirt included), the tip in
+millimetres and the ghost in metres; while the shot runs it names the speed
+and direction of the cue ball, the spin it carries in radians a second and
+the events resolved so far.
+
+The whole report of every shot is printed to the log whether the panel is up
+or not, so the numbers behind a shot can be handed over when a picture
+cannot show them:
+
+```sh
+godot --path godot-project 2>&1 | tee /tmp/pool.log
+```
+
+The panel and the log quote the core's numbers rather than the picture's,
+and the core is the only physics: what the panel says, a test can check.
 
 ## Building
 

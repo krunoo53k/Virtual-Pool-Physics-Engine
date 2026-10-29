@@ -126,6 +126,11 @@ var base_aim := Vector3(1, 0, 0)
 
 ## The tip on the cue ball: `x` is the distance to the shooter's right and
 ## `y` the distance above the centre, both in metres.
+##
+## The tip comes home between the shots: the english is a choice a player
+## makes for one stroke, not a state the game keeps for them, and a game that
+## carries the english over is one where every shot is crooked for no reason
+## the player can see. `_settle` puts it back to the middle.
 var contact := Vector2.ZERO
 
 ## How far the cue is drawn back now, in metres.
@@ -148,6 +153,23 @@ var mouse_position := Vector2.ZERO
 ## Whether the mouse has moved yet. Until it has, the aim stays where the
 ## game put it.
 var mouse_moved := false
+
+## Whether the debug panel is up. **D** turns it on and off: the vector of
+## the shot while aiming, the state of the balls while the shot runs, and
+## the whole report printed for every shot.
+var debug := false
+
+## The debug panel.
+var debug_panel: Label
+
+## The ball the cue ball is going to hit, by its index in `balls`, and `-1`
+## when nothing is on the line. The debug panel reads it.
+var aim_hit_ball := -1
+
+## The aim the shot was let off along, kept for the debug panel: the mouse
+## still turns the aim while the shot runs, and the panel has to talk about
+## the shot that was taken.
+var shot_aim := Vector3.ZERO
 
 ## The time of the shot being played back, in seconds.
 var shot_time := 0.0
@@ -357,6 +379,21 @@ func _build_status() -> void:
 	layer.add_child(stamp)
 	print("the physics is model ", core.get_model_version())
 
+	# The debug panel. **D** turns it on: the vector of the shot while the
+	# player aims, the state of the balls while the shot runs, in the same
+	# numbers the physics uses.
+	debug_panel = Label.new()
+	debug_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	debug_panel.position = Vector2(-620, 44)
+	debug_panel.add_theme_font_size_override("font_size", 15)
+	debug_panel.add_theme_color_override("font_color", Color(0.86, 0.92, 0.80))
+	var mono := SystemFont.new()
+	mono.font_names = PackedStringArray(["DejaVu Sans Mono", "Monospace", "monospace"])
+	debug_panel.add_theme_font_override("font", mono)
+	debug_panel.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	debug_panel.visible = false
+	layer.add_child(debug_panel)
+
 
 ## Reads the command line: `--screenshot PATH` writes a picture of the game
 ## and leaves.
@@ -388,6 +425,7 @@ func _process(delta: float) -> void:
 	_update_aim_visibility()
 	_update_camera()
 	_update_status()
+	_update_debug()
 	if screenshot != "" and get_tree().current_scene == self:
 		screenshot_frames += 1
 		if screenshot_frames > 8:
@@ -517,10 +555,14 @@ func _right(direction: Vector3) -> Vector3:
 ##
 ## The positions are the ones the balls have, not a copy of them: the preview
 ## has to be about the table the balls are on.
+##
+## The ball it found is left in `aim_hit_ball`, so the debug panel can name
+## it without hunting for it a second time.
 func _first_contact(aim: Vector3) -> Vector3:
 	var cue_ball := balls[0]
 	var best := INF
 	var found := Vector3.ZERO
+	aim_hit_ball = -1
 	for index in live:
 		if index == 0:
 			continue
@@ -533,10 +575,15 @@ func _first_contact(aim: Vector3) -> Vector3:
 		if across > 2.0 * ball_radius:
 			continue
 		best = along
+		aim_hit_ball = index
 		var back := sqrt(maxf(0.0, 4.0 * ball_radius * ball_radius - across * across))
 		found = cue_ball.position + aim * (along - back)
 	return found
 
+
+## A vector, to the millimetre and the four decimals: `(-1.1294, 0.0000, 0.0000)`.
+func _vector(v: Vector3) -> String:
+	return "(%.4f, %.4f, %.4f)" % [v.x, v.y, v.z]
 
 ## Draws the power bar.
 func _draw_power() -> void:
@@ -589,11 +636,14 @@ func _fire() -> void:
 	# The power of the shot is how far the cue was drawn back.
 	var speed := maxf(pulled / MAX_PULL * MAX_CUE_SPEED, 0.15)
 	shot = core.simulate(speed, aim, contact, positions, numbers)
+	shot_aim = aim
 	aim_line.visible = false
 	phase = Phase.ROLLING
 	shot_time = 0.0
 	if shot.get_error() != "":
 		status.text = "the shot faulted: " + shot.get_error()
+	else:
+		_print_the_shot_report(aim, speed)
 
 
 ## Plays the path back.
@@ -614,6 +664,9 @@ func _settle() -> void:
 	phase = Phase.AIMING
 	pulled = 0.0
 	draw = 0.0
+	# The tip comes home: the next shot is a centre-ball stroke unless the
+	# player asks for the english again.
+	contact = Vector2.ZERO
 	var still: Array[int] = []
 	off_table = []
 	pocketed = []
@@ -634,19 +687,210 @@ func _settle() -> void:
 		balls[0].place(cue_spot, Vector3.ZERO)
 		balls[0].visible = true
 		live.insert(0, 0)
+	_print_the_end_report()
 
 
 ## The status line.
 func _update_status() -> void:
 	match phase:
 		Phase.AIMING:
-			status.text = "aim  -  the mouse turns the shot; S draws the cue back, E for the english, B for a finer aim"
+			status.text = _aiming_status()
 		Phase.CHARGING:
 			status.text = "draw  -  push the mouse forward to shoot"
 		Phase.STRIKING:
 			status.text = "..."
 		Phase.ROLLING:
 			status.text = "the balls are running"
+
+
+## The aiming line of the status: it says where the tip is and where the ball
+## will leave, so the english is something the player reads, not something
+## they have to spot on the ball.
+##
+## The tip is given in millimetres, the squirt in degrees, and the side by
+## the words a player uses: the tip sits to the shooter's left or right, and
+## the ball leaves the other way - the way of it comes from the preview, the
+## only source that cannot be wrong on one side of it.
+func _aiming_status() -> String:
+	var text := "aim  -  the mouse turns the shot; S draws the cue back, E for the english, B for a finer aim, D for the debug panel"
+	if contact.length_squared() < 1e-12:
+		return text
+	var aim := _aim()
+	var preview: Dictionary = core.preview_cue_strike(1.0, aim, contact)
+	var velocity: Vector3 = preview["velocity"]
+	var across := velocity.dot(_right(aim))
+	var leave := roundi(absf(atan2(across, velocity.dot(aim))) * 57.29578 * 100.0) / 100.0
+	if absf(contact.x) < 1e-6:
+		# The tip is over the centre of the ball: follow or draw, and a shot
+		# that leaves straight.
+		var height := roundi(contact.y * 1000.0)
+		return text + "   (tip %d mm %s, the ball leaves straight)" % [
+			absi(height), "above" if contact.y > 0.0 else "below"]
+	var tip_side := "right" if contact.x > 0.0 else "left"
+	var leave_side := "right" if across > 0.0 else "left"
+	var tip := roundi(contact.x * 1000.0)
+	return text + "   (tip %d mm %s, the ball leaves %s by %s deg)" % [absi(tip), tip_side, leave_side, leave]
+
+
+## The debug panel. **D** raises it: while the player aims it names the shot,
+## while the shot runs it names the cue ball. The numbers it gives are the
+## ones the physics has, not the ones the picture draws, so the panel and a
+## test read the same line.
+func _update_debug() -> void:
+	debug_panel.visible = debug
+	if not debug:
+		return
+	if phase == Phase.ROLLING:
+		_debug_the_run()
+	else:
+		_debug_the_shot()
+
+
+## The shot as it is being aimed: the line the cue is on, the line the ball
+## really leaves on, the tip, the ball the ghost waits on and the strength.
+## The two shot lines differ by the squirt, and it is put down the same way
+## the status puts it: the side of the tip, the other side the ball leaves.
+func _debug_the_shot() -> void:
+	var aim := _aim()
+	var direction := _shot_direction()
+	var lines: Array[String] = []
+	lines.append("the aim    " + _vector(aim))
+	var shot_line := "the shot   " + _vector(direction)
+	var across := direction.dot(_right(aim))
+	if absf(across) > 1e-9:
+		var deg := rad_to_deg(atan2(absf(across), direction.dot(aim)))
+		shot_line += "   %.2f deg %s" % [deg, "left" if across < 0.0 else "right"]
+	lines.append(shot_line)
+	lines.append("the tip    " + _tip_words())
+	if aim_hit_ball >= 0:
+		var cue_ball := balls[0]
+		lines.append("the ghost  ball %d in %.2f m" % [balls[aim_hit_ball].number, ghost.position.distance_to(cue_ball.position)])
+	else:
+		lines.append("the ghost  nothing on the line")
+	var speed := maxf(pulled / MAX_PULL * MAX_CUE_SPEED, 0.15)
+	lines.append("the stroke %.2f m/s (a full draw is %.2f)" % [speed, MAX_CUE_SPEED])
+	debug_panel.text = "\n".join(lines)
+
+
+## The run of the shot: where the cue ball runs at this very moment, the
+## spin it carries and the events resolved so far.
+func _debug_the_run() -> void:
+	var lines: Array[String] = []
+	lines.append("the run    %.3f / %.3f s" % [shot_time, shot.get_duration()])
+	var velocity := _trace_velocity(shot_time, 0)
+	lines.append("the cue    %.2f m/s   %s" % [velocity.length(), _vector(velocity)])
+	var omega: Vector3 = shot.sample_spin(shot_time)[0]
+	lines.append("the spin   " + _spin_words(omega, shot_aim))
+	lines.append("the balls  " + _events_words(shot_time))
+	debug_panel.text = "\n".join(lines)
+
+
+## How fast a ball runs at time `t`, read off the path: two samples a hair
+## of a second apart, divided by the time between them.
+func _trace_velocity(t: float, index: int) -> Vector3:
+	var step := minf(t + 0.002, shot.get_duration()) - t
+	if step < 1e-4:
+		return Vector3.ZERO
+	var back: Vector3 = shot.sample(t)[index]
+	var now: Vector3 = shot.sample(t + step)[index]
+	return (now - back) / step
+
+
+## The spin in the words a player uses: follow or draw along the line of the
+## shot, and the english across it. The rate is how fast the ball turns, in
+## radians a second, and it comes off the path.
+func _spin_words(omega: Vector3, aim: Vector3) -> String:
+	var rate := omega.length()
+	if rate < 1.0:
+		# A rad a second is a sixteenth of a turn: under that the ball is
+		# only sliding, and the words for a stroke that imparts no spin are
+		# the truth.
+		return "no spin: the stroke was a stun"
+	var follow := -omega.dot(_right(aim)) / rate
+	var side := omega.dot(Vector3.UP) / rate
+	var words: Array[String] = []
+	if absf(follow) > 0.12:
+		words.append("follow" if follow > 0.0 else "draw")
+	if absf(side) > 0.12:
+		words.append("right english" if side > 0.0 else "left english")
+	if words.is_empty():
+		return "%.0f rad/s about %s" % [rate, _vector(omega.normalized())]
+	return "%.0f rad/s - %s" % [rate, " and ".join(words)]
+
+
+## The events resolved so far: how many, and the last of them.
+func _events_words(t: float) -> String:
+	var events: Array = shot.get_events()
+	var so_far := 0
+	var last: Dictionary = {}
+	for event in events:
+		if float(event["time"]) <= t:
+			so_far += 1
+			last = event
+	if so_far == 0:
+		return "nothing touched yet"
+	return "%d so far, the last was %s at %.2f s" % [so_far, String(last["kind"]), float(last["time"])]
+
+
+## The tip in the player's words: the millimetres it sits off the centre, to
+## the shooter's right or left and above or below.
+func _tip_words() -> String:
+	if contact.length_squared() < 1e-12:
+		return "over the centre"
+	var across := roundi(absf(contact.x) * 1000.0)
+	var height := roundi(absf(contact.y) * 1000.0)
+	var words: Array[String] = []
+	if across > 0:
+		words.append("%d mm %s" % [across, "right" if contact.x > 0.0 else "left"])
+	if height > 0:
+		words.append("%d mm %s" % [height, "above" if contact.y > 0.0 else "below"])
+	if words.is_empty():
+		return "over the centre"
+	return " and ".join(words)
+
+
+## The whole shot, printed for the log: the tip, the stroke, the line the
+## ball really takes, the spin and the length of the run. The panel shows
+## the same numbers while the game runs; the log keeps them after it.
+func _print_the_shot_report(aim: Vector3, speed: float) -> void:
+	print("the shot went in:")
+	print("  the tip: ", _tip_words())
+	print("  the stroke: %.2f m/s along %s" % [speed, _vector(aim)])
+	var preview: Dictionary = core.preview_cue_strike(speed, aim, contact)
+	var velocity: Vector3 = preview["velocity"]
+	var across := velocity.dot(_right(aim))
+	var deg := rad_to_deg(atan2(absf(across), velocity.dot(aim)))
+	if deg < 0.005:
+		# The ball leaves on the line of the cue: there is no side to name,
+		# and naming one would be a lie.
+		print("  the ball leaves straight along the aim")
+	else:
+		print("  the ball leaves the aim by %.2f deg, %s" % [deg, "left" if across < 0.0 else "right"])
+	print("  it leaves along ", _vector(velocity.normalized()))
+	var omega: Vector3 = shot.sample_spin(0.001)[0]
+	print("  the spin: ", _spin_words(omega, aim))
+	print("  the run: %.3f s, %d events, hash %s" % [shot.get_duration(), shot.get_events().size(), shot.get_hash()])
+
+
+## The end of the shot, printed for the log: what went down, what left the
+## table and what the rules made of the shot.
+func _print_the_end_report() -> void:
+	var final_state: Dictionary = shot.get_final_state()
+	var down := _numbers_words(pocketed)
+	var off := _numbers_words(off_table)
+	print("the shot ended after %.3f s: %d ball(s) down [%s], %d off the table [%s], the rules say: foul %s, miscue %s" % [
+		float(final_state["elapsed_time"]), pocketed.size(), down,
+		off_table.size(), off,
+		"yes" if final_state["foul"] else "no",
+		"yes" if final_state["miscue"] else "no"])
+
+
+## The balls of a list, named by their numbers: `5, 12`.
+func _numbers_words(list: Array) -> String:
+	var names: Array[String] = []
+	for index in list:
+		names.append(str(balls[index].number))
+	return ", ".join(names)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -716,3 +960,8 @@ func _key(event: InputEventKey) -> void:
 		pulled = 0.0
 	elif event.keycode == KEY_C:
 		camera_mode = 1 - camera_mode
+	elif event.keycode == KEY_D and event.pressed and not event.echo:
+		# The debug panel. The report is printed for every shot whether the
+		# panel is up or not, so a log is readable even when the picture
+		# is not.
+		debug = not debug

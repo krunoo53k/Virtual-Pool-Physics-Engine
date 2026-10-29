@@ -15,7 +15,7 @@ extends Node3D
 
 ## The hash of the shot, pinned. The same value is in
 ## `pool-godot/tests/headless.rs`.
-const HASH := "c4a38fea1e512ddd"
+const HASH := "c399229b25faae5a"
 
 ## The radius of the ball, which is where the balls sit above the bed.
 const RADIUS := 0.028575
