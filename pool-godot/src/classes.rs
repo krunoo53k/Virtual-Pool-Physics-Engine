@@ -274,7 +274,10 @@ impl PoolShot {
         for event in &self.trace.events {
             let mut dictionary = VarDictionary::new();
             dictionary.set("time", event.time);
-            dictionary.set("kind", &GString::from(event_kind_name(event.kind)).to_variant());
+            dictionary.set(
+                "kind",
+                &GString::from(event_kind_name(event.kind)).to_variant(),
+            );
             dictionary.set("a", event.a as i64);
             dictionary.set("b", event.b as i64);
             dictionary.set("detail", event.detail as i64);
