@@ -214,8 +214,10 @@ pub struct TableGeometryConfig {
     /// the cut angle is read as the angle between a facing and its own rail line, and
     /// the corner's centreline is 45° from either rail, so the facing is
     /// `cut angle - 135` from the centreline — 7° for the WPA's 142°. The derivation
-    /// is a *reading* of the specified cut angle, and a table that has been measured
-    /// can be matched by giving the facing angle directly.
+    /// floors at a parallel slot: below a 135° cut the reading would point the facings
+    /// out of the pocket. The derivation is a *reading* of the specified cut angle,
+    /// and a table that has been measured can be matched by giving the facing angle
+    /// directly.
     pub corner_facing_angle_deg: f64,
     /// The side pocket's facing angle from the centreline, in degrees. Zero means
     /// "derive it from the cut angle" (see `corner_facing_angle_deg`; the side

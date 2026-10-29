@@ -203,7 +203,14 @@ impl TableGeometry {
             let tip_y = spec.corner + spec.rail_y * a_corner;
             let dir_x = facing_dir(centreline, corner_facing, tip_x, spec.corner);
             let dir_y = facing_dir(centreline, corner_facing, tip_y, spec.corner);
-            let throat = intersect_lines(tip_x, dir_x, tip_y, dir_y);
+            // The usual funnel has the two facings converge on a single throat. With a
+            // floored (or otherwise zero) facing they run parallel and there is none:
+            // then each facing runs its own fixed length instead of both sharing a
+            // point that lies on only one of their two lines.
+            let (end_x, end_y) = match intersect_lines(tip_x, dir_x, tip_y, dir_y) {
+                Some(throat) => (throat, throat),
+                None => (tip_x + dir_x * 0.05, tip_y + dir_y * 0.05),
+            };
             let mouth_centre = (tip_x + tip_y) * 0.5;
             pockets.push(PocketGeometry {
                 kind: PocketKind::Corner,
@@ -215,12 +222,12 @@ impl TableGeometry {
                 jaws: [
                     JawGeometry {
                         tip: tip_x,
-                        end: throat,
+                        end: end_x,
                         normal: facing_normal(dir_x),
                     },
                     JawGeometry {
                         tip: tip_y,
-                        end: throat,
+                        end: end_y,
                         normal: facing_normal(dir_y),
                     },
                 ],
@@ -240,7 +247,12 @@ impl TableGeometry {
             let tip_b = centre - perp * s_half;
             let dir_a = facing_dir(centreline, side_facing, tip_a, centre);
             let dir_b = facing_dir(centreline, side_facing, tip_b, centre);
-            let throat = intersect_lines(tip_a, dir_a, tip_b, dir_b);
+            // As at the corners: with no throat (a floored or zero facing) each facing
+            // runs its own fixed length.
+            let (end_a, end_b) = match intersect_lines(tip_a, dir_a, tip_b, dir_b) {
+                Some(throat) => (throat, throat),
+                None => (tip_a + dir_a * 0.05, tip_b + dir_b * 0.05),
+            };
             pockets.push(PocketGeometry {
                 kind: PocketKind::Side,
                 mouth_centre: centre,
@@ -251,12 +263,12 @@ impl TableGeometry {
                 jaws: [
                     JawGeometry {
                         tip: tip_a,
-                        end: throat,
+                        end: end_a,
                         normal: facing_normal(dir_a),
                     },
                     JawGeometry {
                         tip: tip_b,
-                        end: throat,
+                        end: end_b,
                         normal: facing_normal(dir_b),
                     },
                 ],
@@ -457,14 +469,23 @@ fn pocket_label(index: usize) -> &'static str {
 /// `rail_angle - (180 - cut)` from the pocket's centreline, where `rail_angle` is the
 /// angle between the rail and the centreline — 45° at a corner, 90° at a side pocket. (The
 /// other reading, where the two facings meet at the throat at the cut angle, gives a 76° V
-/// at a side pocket, which is not how jaws look; §9.1 rejects it as the default.) A
-/// measured table can be matched by giving the facing angle directly, which is what a
-/// non-zero `override` does.
+/// at a side pocket, which is not how jaws look; §9.1 rejects it as the default.) The
+/// derived angle floors at zero: below `180 - rail_angle` the reading would point the
+/// facings out of the pocket, and a floor keeps them parallel instead (a cut angle that
+/// low is not a pocket the WPA rules describe). A measured table can be matched by giving
+/// the facing angle directly, which is what a non-zero `override` does.
 fn facing_angle(override_deg: f64, cut_angle_deg: f64, rail_angle_deg: f64) -> f64 {
     if override_deg > 0.0 {
         override_deg.to_radians()
     } else {
-        (rail_angle_deg - (180.0 - cut_angle_deg)).to_radians()
+        // The reading as such is only meaningful while the facing still converges on
+        // the throat: below `180 - rail_angle` (135° at a corner, 90° at a side) the
+        // facing would point back out of the pocket, its normal towards the table.
+        // There is no pocket to model there (§9.1), so the derivation floors at a
+        // parallel slot instead of building backwards jaws.
+        (rail_angle_deg - (180.0 - cut_angle_deg))
+            .max(0.0)
+            .to_radians()
     }
 }
 
@@ -485,16 +506,17 @@ fn facing_normal(dir: Vec2) -> Vec2 {
     Vec2::new(dir.y, -dir.x)
 }
 
-/// Intersection of two infinite lines, `p1 + s*d1` and `p2 + t*d2`.
-fn intersect_lines(p1: Vec2, d1: Vec2, p2: Vec2, d2: Vec2) -> Vec2 {
+/// Intersection of two infinite lines, `p1 + s*d1` and `p2 + t*d2`. Parallel
+/// lines have no intersection; the caller decides what a facing pair without a
+/// throat looks like.
+fn intersect_lines(p1: Vec2, d1: Vec2, p2: Vec2, d2: Vec2) -> Option<Vec2> {
     let denom = d1.cross(d2);
     if denom.abs() < 1e-12 {
-        // Parallel: fall back to a fixed length.
-        return p1 + d1 * 0.05;
+        return None;
     }
     let diff = p2 - p1;
     let s = diff.cross(d2) / denom;
-    p1 + d1 * s
+    Some(p1 + d1 * s)
 }
 
 /// Convenience: the 3D position of a point on the bed.
@@ -556,6 +578,35 @@ mod tests {
         let c = pocket.centreline;
         let d = pocket.jaws[0].direction();
         assert!((d.dot(c) - 19.0_f64.to_radians().cos()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_cut_angle_below_the_reading_floor_leaves_a_parallel_slot() {
+        // Below 135 degrees (corner) / 90 degrees (side) the rail-line reading would
+        // point the facings back out of the pocket (section 9.1). The derivation
+        // floors there, so the facings run along the centreline instead of diverging.
+        let mut cfg = TableConfig::default();
+        cfg.table.corner_cut_angle_deg = 110.0;
+        cfg.table.side_cut_angle_deg = 80.0;
+        let geom = TableGeometry::new(&cfg);
+        let corner = &geom.pockets[0];
+        for jaw in &corner.jaws {
+            let d = jaw.direction();
+            assert!(
+                (d.dot(corner.centreline) - 1.0).abs() < 1e-12,
+                "a corner facing diverged from the centreline: {d:?} against {:?}",
+                corner.centreline
+            );
+        }
+        let side = &geom.pockets[4];
+        for jaw in &side.jaws {
+            let d = jaw.direction();
+            assert!(
+                (d.dot(side.centreline) - 1.0).abs() < 1e-12,
+                "a side facing diverged from the centreline: {d:?} against {:?}",
+                side.centreline
+            );
+        }
     }
 
     #[test]
