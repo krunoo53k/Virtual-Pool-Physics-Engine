@@ -6,8 +6,8 @@
 
 use pool_core::config::TableConfig;
 use pool_core::math::Vec3;
-use pool_core::state::{BallState, GamePhase, GameState, ShotInput};
 use pool_core::sim::SimError;
+use pool_core::state::{BallState, GamePhase, GameState, ShotInput};
 use pool_core::{cue, try_simulate_shot_traced, Trace};
 
 /// The strike: the cue ball's state after the tip hits it.
@@ -71,10 +71,7 @@ pub fn strike(table: &TableConfig, input: &ShotInput) -> Strike {
 }
 
 /// The shot: the state it ends in and the path it took.
-pub fn simulate(
-    table: &TableConfig,
-    input: &ShotInput,
-) -> Result<(GameState, Trace), SimError> {
+pub fn simulate(table: &TableConfig, input: &ShotInput) -> Result<(GameState, Trace), SimError> {
     try_simulate_shot_traced(input, table)
 }
 

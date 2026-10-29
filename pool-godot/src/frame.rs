@@ -157,7 +157,10 @@ mod tests {
     #[test]
     fn the_trim_turns_the_shot_to_the_left() {
         let turned = trim(FORWARD, 0.1);
-        assert!(turned.y > 0.0, "the shot did not turn to the left: {turned:?}");
+        assert!(
+            turned.y > 0.0,
+            "the shot did not turn to the left: {turned:?}"
+        );
         assert!(turned.y > 0.0 && turned.x > 0.0);
         // And back again.
         let back = trim(turned, -0.1);
