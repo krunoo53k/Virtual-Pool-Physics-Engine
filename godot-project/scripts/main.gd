@@ -498,13 +498,22 @@ func _draw_aim() -> void:
 	var cue_ball := balls[0]
 	var aim := _aim()
 	var direction := _shot_direction()
-	aim_line.position = cue_ball.position + direction * 0.30 + Vector3(0, 0.001, 0)
-	aim_line.basis = _basis_along(direction)
-
+	# The line runs to the first thing the ball would meet: the ghost, or
+	# the cushion where the cloth ends - so the grazing the player reads
+	# on the cloth is the grazing the physics has, and not a guess past a
+	# stub.
 	var hit := _first_contact(direction)
 	aim_has_hit = hit != Vector3.ZERO
 	if aim_has_hit:
 		ghost.position = hit
+
+	var reach := _to_the_edge(cue_ball.position, direction)
+	if aim_has_hit:
+		reach = minf(reach, ghost.position.distance_to(cue_ball.position))
+	var length := maxf(reach - 0.05, 0.02)
+	aim_line.position = cue_ball.position + direction * (0.05 + length * 0.5) + Vector3(0, 0.001, 0)
+	aim_line.basis = _basis_along(direction)
+	aim_line.scale = Vector3(length / 0.5, 1.0, 1.0)
 
 	# The mark where the tip strikes.
 	var offset := _right(aim) * contact.x + Vector3.UP * contact.y
@@ -551,6 +560,36 @@ func _right(direction: Vector3) -> Vector3:
 	return direction.cross(Vector3.UP).normalized()
 
 
+## How far the centre of a ball is from the edge of the playing area, along
+## the direction, in metres. The core table runs from 0 to its length and
+## width, and Godot z runs against the core width, so the cloth is between
+## 0 and -width. The centre of a ball stops a radius short of the cushion,
+## and a ghost or a line past this edge is one the cue ball never reaches.
+func _to_the_edge(from: Vector3, direction: Vector3) -> float:
+	# Per axis the ray is not parallel to, the bound it goes towards is the
+	# cushion in front along that axis, and the division is positive. The
+	# nearer of the two is the first cushion the ray crosses.
+	var geometry: Dictionary = core.get_table_geometry()
+	var length: float = geometry["length"]
+	var width: float = geometry["width"]
+	var lo_x := ball_radius
+	var hi_x := length - ball_radius
+	# Godot's z runs against the core's width: the cloth is between 0 and
+	# -width, so the centre of a ball stops between -width + R and -R.
+	var lo_z := ball_radius - width
+	var hi_z := -ball_radius
+	var best := INF
+	if direction.x > 0.0:
+		best = minf(best, (hi_x - from.x) / direction.x)
+	elif direction.x < 0.0:
+		best = minf(best, (lo_x - from.x) / direction.x)
+	if direction.z > 0.0:
+		best = minf(best, (hi_z - from.z) / direction.z)
+	elif direction.z < 0.0:
+		best = minf(best, (lo_z - from.z) / direction.z)
+	return maxf(best, 0.0)
+
+
 ## The first ball the cue ball meets, and where its centre would be.
 ##
 ## The positions are the ones the balls have, not a copy of them: the preview
@@ -578,6 +617,13 @@ func _first_contact(aim: Vector3) -> Vector3:
 		aim_hit_ball = index
 		var back := sqrt(maxf(0.0, 4.0 * ball_radius * ball_radius - across * across))
 		found = cue_ball.position + aim * (along - back)
+	if found != Vector3.ZERO and (found - cue_ball.position).length() > _to_the_edge(cue_ball.position, aim):
+		# The cushion is on the way: the cue ball meets the cloth's end
+		# before it meets this ball, so there is nothing on the line. A
+		# ghost past the table is a ghost the cue ball never reaches, and
+		# the panel saying one was a lie about the aim.
+		aim_hit_ball = -1
+		return Vector3.ZERO
 	return found
 
 
@@ -906,6 +952,15 @@ func _mouse_motion(event: InputEventMouseMotion) -> void:
 	mouse_position = event.position
 
 	if not mouse_turns_the_shot:
+		return
+
+	if phase == Phase.STRIKING or phase == Phase.ROLLING:
+		# The stroke is taken: the aim and the tip are the player's last
+		# look, and the mouse only settles their hand. The flick that fires
+		# the shot is a big, fast drag, and its sideways wobble used to turn
+		# the aim as well - so the deviation came out proportional to the
+		# force of the flick, exactly what the player keeps reporting. The
+		# shot that goes is the one they looked at.
 		return
 
 	if Input.is_key_pressed(KEY_E):

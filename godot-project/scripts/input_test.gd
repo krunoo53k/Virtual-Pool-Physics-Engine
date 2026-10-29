@@ -125,13 +125,42 @@ func _test_the_draw_and_the_stroke() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	print("the phase is ", game.phase)
-	# The cue travels into the ball, and then the shot is resolved.
+	# The stroke is taken: the aim is what the player looked at, and the shot
+	# that goes must be that aim. The flick that takes the stroke is a big,
+	# fast drag, and its sideways wobble used to turn the aim as well - the
+	# deviation came out proportional to the force of the flick, which is
+	# what the player keeps reporting. A mouse that settles after the flick,
+	# while the cue travels or the balls roll, must now leave the aim where
+	# the player left it.
+	var aim_the_player_saw: Vector3 = game.base_aim
+	# The cue travels into the ball, and then the shot is resolved. The mouse
+	# wobbles sideways on the way: a few frames of travel with the hand
+	# still settling.
 	var limit := 0
 	while game.shot == null and limit < 200:
+		if limit == 3:
+			_move_by(Vector2(120, 0))
+		if limit == 6:
+			_move_by(Vector2(-90, 0))
 		limit += 1
 		await get_tree().process_frame
 	if game.shot == null:
 		printerr("the shot did not fire")
+	# The balls are still rolling the frame the shot resolves: a mouse that
+	# settles during the roll must not move the aim either.
+	_move_by(Vector2(-60, 0))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	# The shot that goes is the one the player looked at: the flick that
+	# took the stroke and the mouse settling after it must have left the
+	# aim where the player left it.
+	var wobble: float = game.base_aim.distance_to(aim_the_player_saw)
+	print("the aim wobbled by ", wobble, " rad once the mouse settled")
+	if wobble > 1e-6:
+		# The aim turned after the stroke was taken: the shot that goes is
+		# not the one the panel showed, and by an amount that grows with
+		# the force of the flick.
+		printerr("the aim turned by ", wobble, " rad after the stroke was taken: the shot is not the one the player looked at")
 	# And letting go of the key now only ever cancels: the shot is on already.
 	_release(KEY_S)
 	await get_tree().process_frame

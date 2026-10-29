@@ -44,6 +44,11 @@ The power of the shot is how far the cue is drawn back, up to 30 cm, and the
 flick decides how much of that power the shot gets: a full draw with a lazy
 flick is a soft shot, and a full draw with a hard flick is a break.
 
+Once the stroke is taken, the mouse stops aiming: the flick that fires the
+shot may land anywhere, and its sideways wobble does not turn the shot on
+the way out. The aim and the tip are the player's last look, and the shot
+that goes is the one the panel showed them.
+
 The english is the one sign that is easy to get wrong. The core measures the
 contact offset along `up x direction`, which is the shooter's **left**, so a
 tip dragged to the shooter's right is a **negative** offset, and right english
