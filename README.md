@@ -233,8 +233,10 @@ from Godot to the core stops both sides from agreeing.
 
 The game has a table built from the core's own geometry, sixteen balls on it
 and the controls a pool game has always had: the mouse aims, **S** draws the
-cue back and the speed of the flick home is the power, **E** holds the english
-and **B** holds the fine aim.
+cue back and the speed of the flick home is the power, **B** holds the cue and
+the mouse raises it above the cloth - the raised cue drives the ball into the
+slate and §7.1's jump is that slate launching it - **E** holds the english and
+**F** holds the fine trim.
 
 ![the game](godot-project/docs/table.png)
 

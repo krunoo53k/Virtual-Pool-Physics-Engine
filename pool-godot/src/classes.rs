@@ -107,6 +107,19 @@ impl PoolCore {
         dictionary.set("squirt_sign", strike.squirt_sign);
         dictionary.set("miscue", strike.miscue);
         dictionary.set("impact_parameter", strike.impact_parameter);
+        dictionary.set(
+            // The angle the cue makes with the cloth, signed the way the core
+            // signs a stick (sim.rs:1209 takes the asin of the vertical of the
+            // very same direction this is handed it, so a cue pointing down at
+            // the ball, the way a raised butt points it, is negative). The game
+            // reads its own raise back off this number rather than deciding it
+            // again: one number, and the readout cannot lie about the physics.
+            "elevation_deg",
+            match frame::to_core(cue_direction).normalize() {
+                Some(direction) => libm::asin(direction.z.clamp(-1.0, 1.0)).to_degrees(),
+                None => 0.0,
+            },
+        );
         dictionary
     }
 
@@ -184,11 +197,13 @@ impl PoolCore {
                     trace,
                     state,
                     error: GString::new(),
+                    table: self.table.clone(),
                 }),
             Err(error) => Gd::from_object(PoolShot {
                 trace: Trace::default(),
                 state: shot::faulted_state(&input),
                 error: GString::from(error.message.as_str()),
+                table: self.table.clone(),
             }),
         }
     }
@@ -239,6 +254,9 @@ pub struct PoolShot {
     state: GameState,
     /// The fault, if there was one.
     error: GString,
+    /// The table the shot was played on, because sampling the path at a time
+    /// inside the shot needs it and the state at the end of the shot does not.
+    table: TableConfig,
 }
 
 #[godot_api]
@@ -311,6 +329,39 @@ impl PoolShot {
         let mut dictionary = VarDictionary::new();
         let index = usize::try_from(index).unwrap_or(usize::MAX);
         let ball = match self.state.balls.get(index) {
+            Some(ball) => ball,
+            None => return dictionary,
+        };
+        dictionary.set("number", ball.number as i64);
+        dictionary.set("position", frame::to_godot(ball.position));
+        dictionary.set("pocketed", ball.is_pocketed);
+        dictionary.set("off_table", ball.is_off_table);
+        dictionary.set(
+            "pocket_state",
+            &GString::from(pocket_name(ball.pocket_state)).to_variant(),
+        );
+        dictionary.set(
+            "motion_state",
+            &GString::from(motion_state_name(ball.motion_state)).to_variant(),
+        );
+        dictionary
+    }
+
+    /// The state of one ball at a time inside the shot, rather than at its end.
+    ///
+    /// The end of a shot is not all of it: a ball leaves the cloth for a moment
+    /// when the stroke drives it down off the slate (§7.1, §7.2), and the state
+    /// at the end of the shot has already settled that moment away. This is the
+    /// same dictionary the game reads at the end, but read on the path of the
+    /// shot at the time it was asked about: the same analytic sampling the
+    /// renderer plays the path with, so a game that asks about a moment and a
+    /// game that plays it cannot disagree about the ball being in the air.
+    #[func]
+    fn get_ball_state_at(&self, index: i64, t: f64) -> VarDictionary {
+        let mut dictionary = VarDictionary::new();
+        let index = usize::try_from(index).unwrap_or(usize::MAX);
+        let at_the_time = self.trace.sample(t, &self.table);
+        let ball = match at_the_time.get(index) {
             Some(ball) => ball,
             None => return dictionary,
         };

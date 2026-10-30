@@ -89,6 +89,91 @@ fn the_carry_does_not_move_the_hash() {
     assert_eq!(hash, HASH, "the carry moved the shot's hash: {}", hash);
 }
 
+/// The hash of the same break with the cue raised, pinned.
+///
+/// `godot-project/scripts/input_test.gd` raises the cue the same way through the
+/// game and reads the ball in the air. A cue whose height only moves the
+/// drawing, and never reaches the stroke, would leave the game reading an
+/// ordinary level stroke here while the game still shows a raised cue.
+const RAISED_HASH: &str = "1087065d38976a3e";
+
+/// The break with the cue raised 12 degrees above the level, tip below the
+/// centre: the stroke the game makes when it holds the cue and drags up.
+///
+/// The raise is baked into the direction rather than passed as an angle, the
+/// way §12.3 wants the trigonometry kept, and the direction goes through Godot's
+/// frame like every other number the game sends. The core's `z` is the height,
+/// and a cue raised at the butt points its axis DOWN at the ball, so the
+/// direction loses `sin` of the raise. §7.1 says what that does to the stroke:
+/// the elevated cue drives the cue ball into the slate beside the object ball
+/// rather than along the bed, and §7.2's rebound of the slate is what launches
+/// it. The tip below the centre is what makes a cue lean rather than glide, and
+/// §12.3's cue-end mass is what turns that lean into the spin that holds the
+/// hop; the offset is in metres, four tenths of a ball radius under the centre.
+fn the_raised_shot(table: &TableConfig) -> (pool_core::state::GameState, pool_core::Trace) {
+    // The positions go through Godot's frame, because that is the way the game
+    // gives them: a `Vector3` is an `f32` triple.
+    let positions: Vec<Vector3> = rack(table).iter().map(|p| frame::to_godot(*p)).collect();
+    let core_positions: Vec<Vec3> = positions.iter().map(|p| frame::to_core(*p)).collect();
+    let numbers: Vec<i32> = (0..core_positions.len() as i32).collect();
+    let elevation = 12.0f64.to_radians();
+    let direction = frame::to_core(
+        frame::to_godot(Vec3::new(0.0, elevation.cos(), -elevation.sin())),
+    );
+    let input = shot::shot_input(
+        table,
+        8.0,
+        direction,
+        (0.0, -0.4 * table.ball.radius),
+        &core_positions,
+        &numbers,
+        &[],
+    );
+    shot::simulate(table, &input).expect("the raised shot runs")
+}
+
+#[test]
+fn the_elevation_reaches_the_stroke() {
+    let table = TableConfig::default();
+    let (state, trace) = the_raised_shot(&table);
+    let hash = pool_core::hash_state_hex(&state);
+    assert_eq!(hash, RAISED_HASH, "the raised shot's hash moved: {}", hash);
+    // The same rack, the same speed, the same aim line: only the cue's height
+    // differs, so the two strokes have to come out different. A raise that made
+    // the level shot is a raise that never left the drawing.
+    assert_ne!(
+        hash,
+        HASH,
+        "the raised cue made the level shot: the cue's height never reached the stroke",
+    );
+
+    // The hop. The state at the end of the shot cannot say the ball flew: the
+    // slate's rebound brings it back to the cloth and the cue ball rests where
+    // it landed, so `airborne` is a state inside the shot rather than one it
+    // ends in. The hop is read on the path instead, at the middle of the
+    // airborne stretch the path itself names, which is the same analytic
+    // sampling the renderer plays the path with.
+    let hop = match trace.segments(0).iter()
+        .find(|segment| segment.kind == pool_core::trace::SegmentKind::Airborne)
+    {
+        Some(segment) => (segment.t0 + segment.t1) * 0.5,
+        // No airborne stretch at all: the checks below say so.
+        None => 0.0,
+    };
+    assert!(hop > 0.0, "the raised cue made no hop: the cue ball never left the cloth");
+    let cue_ball = trace.sample(hop, &table);
+    assert_eq!(
+        cue_ball[0].motion_state,
+        pool_core::MotionState::Airborne,
+        "the cue ball is not in the air at the middle of the hop the path names",
+    );
+    let cue_ball_height = cue_ball[0].position.z;
+    assert!(
+        cue_ball_height > table.ball.radius,
+        "the cue ball is on the cloth at {cue_ball_height:?}, which is not a hop",
+    );
+}
+
 #[test]
 fn the_shot_is_the_same_every_time() {
     let table = TableConfig::default();
