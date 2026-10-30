@@ -99,7 +99,7 @@ impl PoolCore {
         cue_direction: Vector3,
         contact_offset: Vector2,
     ) -> VarDictionary {
-        let input = self.input(cue_speed, cue_direction, contact_offset, &[], &[]);
+        let input = self.input(cue_speed, cue_direction, contact_offset, &[], &[], &[]);
         let strike = shot::strike(&self.table, &input);
         let mut dictionary = VarDictionary::new();
         dictionary.set("velocity", frame::to_godot(strike.velocity));
@@ -113,9 +113,14 @@ impl PoolCore {
     /// The shot: the whole thing, resolved in one call.
     ///
     /// The balls are given as their positions in Godot's frame, in the order
-    /// the numbers are: the cue ball is the first one. The shot comes back as
-    /// a [`PoolShot`] to play back; the simulation itself takes no time at all,
+    /// the numbers are: the cue ball is the first one. The shot comes back as a
+    /// [`PoolShot`] to play back; the simulation itself takes no time at all,
     /// because the core is event driven and never integrates.
+    ///
+    /// The balls start at identity: no ball carries an orientation into the
+    /// shot. A game that plays one shot after another wants
+    /// [`PoolCore.simulate_with_rotations`] instead, or the spins of its
+    /// resting balls reset at every shot.
     #[func]
     fn simulate(
         &self,
@@ -125,19 +130,61 @@ impl PoolCore {
         positions: PackedVector3Array,
         numbers: PackedInt32Array,
     ) -> Gd<PoolShot> {
-        let input = self.input(
-            cue_speed,
-            cue_direction,
-            contact_offset,
-            positions.as_slice(),
-            numbers.as_slice(),
-        );
+        self.resolve(
+            self.input(
+                cue_speed,
+                cue_direction,
+                contact_offset,
+                positions.as_slice(),
+                numbers.as_slice(),
+                &[],
+            ),
+        )
+    }
+
+    /// The shot, with the orientation every ball carries into it.
+    ///
+    /// `rotations` is the rotation every ball had when the shot started, as a
+    /// rotation vector in Godot's frame - the direction is the axis of the
+    /// orientation, the length is the angle in radians - index by index with
+    /// `positions`. The game passes the rotations it played at the end of the
+    /// last shot, so a ball that is still lying where that shot left it starts
+    /// this one turned the way it was left turned, and its spin does not reset;
+    /// a ball that was put back on the table carries `Vector3.ZERO` and starts
+    /// over. This is §11.2's hand-off seen from the input side, and it is the
+    /// only way the carry can be done: the renderer plays the path, so the
+    /// carry belongs to the library that made the path, not to the renderer.
+    #[func]
+    fn simulate_with_rotations(
+        &self,
+        cue_speed: f64,
+        cue_direction: Vector3,
+        contact_offset: Vector2,
+        positions: PackedVector3Array,
+        numbers: PackedInt32Array,
+        rotations: PackedVector3Array,
+    ) -> Gd<PoolShot> {
+        self.resolve(
+            self.input(
+                cue_speed,
+                cue_direction,
+                contact_offset,
+                positions.as_slice(),
+                numbers.as_slice(),
+                rotations.as_slice(),
+            ),
+        )
+    }
+
+    /// The shot, from an input the core already takes.
+    fn resolve(&self, input: pool_core::ShotInput) -> Gd<PoolShot> {
         match shot::simulate(&self.table, &input) {
-            Ok((state, trace)) => Gd::from_object(PoolShot {
-                trace,
-                state,
-                error: GString::new(),
-            }),
+            Ok((state, trace)) =>
+                Gd::from_object(PoolShot {
+                    trace,
+                    state,
+                    error: GString::new(),
+                }),
             Err(error) => Gd::from_object(PoolShot {
                 trace: Trace::default(),
                 state: shot::faulted_state(&input),
@@ -147,6 +194,12 @@ impl PoolCore {
     }
 
     /// The shot input for a stroke.
+    ///
+    /// `rotations` is the orientation every ball carries into the shot, in
+    /// Godot's frame: a rotation vector is an axis times an angle, and the
+    /// frame's mapping is a rotation, so the mapping carries it across the
+    /// same way it carries a position. A list that does not name a ball leaves
+    /// it at identity.
     fn input(
         &self,
         cue_speed: f64,
@@ -154,9 +207,12 @@ impl PoolCore {
         contact_offset: Vector2,
         positions: &[Vector3],
         numbers: &[i32],
+        rotations: &[Vector3],
     ) -> pool_core::ShotInput {
         let positions: Vec<pool_core::math::Vec3> =
             positions.iter().map(|p| frame::to_core(*p)).collect();
+        let rotations: Vec<pool_core::math::Vec3> =
+            rotations.iter().map(|r| frame::to_core(*r)).collect();
         shot::shot_input(
             &self.table,
             cue_speed,
@@ -164,6 +220,7 @@ impl PoolCore {
             (contact_offset.x as f64, contact_offset.y as f64),
             &positions,
             numbers,
+            &rotations,
         )
     }
 }
@@ -230,10 +287,15 @@ impl PoolShot {
             .collect()
     }
 
-    /// The rotation every ball has made by the time `t`, in Godot's frame.
+    /// The orientation of every ball at the time `t`, in Godot's frame.
     ///
-    /// A rotation vector: the direction is the axis of the rotation and the
+    /// A rotation vector: the direction is the axis of the orientation and the
     /// length is the angle in radians.
+    ///
+    /// This is an orientation and not an amount of turning: it already includes
+    /// the rotation the ball carried into the shot, so the game can play the
+    /// last frame of one shot and the first of the next without integrating
+    /// anything between them (§11.2's hand-off).
     #[func]
     fn sample_rotation(&self, t: f64) -> PackedVector3Array {
         self.trace

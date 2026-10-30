@@ -743,6 +743,12 @@ func fire_now(speed: float) -> void:
 
 
 ## Fires the shot.
+##
+## The shot carries the orientation of every ball into the physics, so a ball
+## that is still lying where the last shot left it starts this one turned the
+## way it was left turned: §11.2's hand-off, taken from the input side. The game
+## hands the number back as it stood; it is the core that counts the turning,
+## and the core that says where every ball ends up.
 func _fire() -> void:
 	var aim := _aim()
 	var positions := PackedVector3Array()
@@ -756,7 +762,18 @@ func _fire() -> void:
 	# the cue's velocity (§6.2). How far the cue was drawn back says only how far
 	# it had to run over to get there.
 	var speed := maxf(stroke_speed, MIN_CUE_SPEED)
-	shot = core.simulate(speed, aim, contact, positions, numbers)
+
+	# The orientation every ball had when the shot before this one left it, fed
+	# back to the core: §11.2's hand-off seen from the input side. The core counts
+	# a ball's rotation from the orientation it is given, so a ball that is still
+	# lying where the last shot left it starts this one turned the way it was left
+	# turned, and its spin carries on instead of starting over. A ball that was put
+	# back on the table carries Vector3.ZERO, and is the only one that starts over.
+	# The game hands the number back unchanged; it never adds up turns of its own.
+	var rotations := PackedVector3Array()
+	for index in live:
+		rotations.append(balls[index].carried_rotation)
+	shot = core.simulate_with_rotations(speed, aim, contact, positions, numbers, rotations)
 	shot_aim = aim
 	aim_line.visible = false
 	phase = Phase.ROLLING
@@ -797,6 +814,11 @@ func _settle() -> void:
 	var still: Array[int] = []
 	off_table = []
 	pocketed = []
+	# The orientation the shot left every ball in, at the end of its path, which
+	# is the orientation the next shot starts from. Read from the shot rather than
+	# from the mesh: the path is the last word on where the ball ended up, and the
+	# playback may still be a frame short of the end.
+	var turned := shot.sample_rotation(shot.get_duration())
 	for index in live.size():
 		var state := shot.get_ball_state(index)
 		if state.get("pocketed", false):
@@ -809,10 +831,15 @@ func _settle() -> void:
 			off_table.append(live[index])
 		else:
 			still.append(live[index])
+			if index < turned.size():
+				balls[live[index]].carried_rotation = turned[index]
 	live = still
 	if not live.has(0):
 		balls[0].place(cue_spot, Vector3.ZERO)
 		balls[0].visible = true
+		# A ball back on the table is a fresh ball: the orientation the shot left
+		# it in belonged to a ball that is in a pocket, so the cue starts straight.
+		balls[0].carried_rotation = Vector3.ZERO
 		live.insert(0, 0)
 	_print_the_end_report()
 

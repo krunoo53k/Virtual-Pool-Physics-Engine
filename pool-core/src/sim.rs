@@ -158,9 +158,21 @@ impl<'a> Simulation<'a> {
     /// is the same shot: the event list, the final state and the hash are
     /// unchanged. What it adds is the *path* - the list of segments a renderer
     /// interpolates (§11.2, [`crate::trace`]).
+    /// The path counts rotation from the orientation every ball carries into
+    /// the shot, which is what [`BallState.rotation`] says: the hand-off of
+    /// §11.2 seen from the input side. A ball that has not been touched since
+    /// the last shot keeps the phase that shot left it in, and the renderer can
+    /// play the two shots back to back without integrating anything between
+    /// them - the physics is not in the renderer, so neither is the carry. The
+    /// tally of rotation a ball has made is therefore kept across the boundary
+    /// of a shot, and only a ball that was put down on the table starts a fresh
+    /// one, at `Vec3::ZERO` ([`BallState::at_rest`]).
     pub fn record(&mut self) {
         let numbers: Vec<u8> = self.balls.iter().map(|ball| ball.number).collect();
-        self.recorder = Some(Recorder::new(&numbers));
+        // The orientation every ball carries into the shot, index by index with
+        // the balls: §11.2's hand-off, which the recorder keeps across shots.
+        let rotations: Vec<Vec3> = self.balls.iter().map(|ball| ball.rotation).collect();
+        self.recorder = Some(Recorder::new(&numbers, &rotations));
     }
 
     /// The recorded path of the shot, if the recorder was on.
@@ -569,7 +581,10 @@ impl<'a> Simulation<'a> {
             w0: ball.angular_velocity,
             wa: self.angular_acceleration(ball, kind, a),
             // The recorder stamps the rotation the ball has made so far: it is
-            // the one that keeps the tally across the segments of a ball.
+            // the one that keeps the tally across the segments of a ball, and
+            // across the boundary of a shot too - a ball that has not been
+            // touched since the last shot starts from the orientation that
+            // shot left it turned to (§11.2's hand-off).
             spin0: Vec3::ZERO,
             pocket_state: ball.pocket_state,
         }

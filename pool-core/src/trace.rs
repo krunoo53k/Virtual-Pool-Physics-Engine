@@ -23,7 +23,17 @@
 //!
 //! The recorder in [`crate::sim`] only ever *reads* the state of the simulation, so
 //! turning it on cannot change the physics: the event list, the final state and the
-//! hash are the same with and without it.
+//! hash are the same with and without it. The one thing the recorder does that is
+//! not merely reading is *shaping* the path: it splits a segment where the
+//! segment's straight-line model of the vertical spin would cross zero, because
+//! §3.2 says a spin decay stops at zero and the straight line would carry it
+//! past. That adds no event and touches no state, so the promise above holds.
+//!
+//! The path also continues where the shot before it left off: the rotation a
+//! ball has made is counted from the orientation the ball carries into the shot
+//! ([`BallState.rotation`](crate::state), the hand-off of §11.2 seen from the
+//! input side), so a renderer can play two shots back to back without
+//! integrating anything in between them.
 
 use crate::json::Value;
 use crate::math::Vec3;
@@ -468,6 +478,43 @@ impl OpenSegment {
     }
 }
 
+/// The time into a segment at which the segment's model of the vertical spin
+/// reaches zero, if it reaches it inside the segment.
+///
+/// The model of a segment is a straight line: `w(t) = w0 + wa * dt`. The
+/// vertical spin is the only part of it that decays - the spin-up of a slide
+/// and the rolling spin of a roll go to the two in-plane axes (§3.2, §3.3), a
+/// shelf and the air leave the spin alone altogether (§9.4, §7.1) - so a
+/// segment whose `w0.z` and `wa.z` have strictly opposite signs is a segment
+/// whose model crosses zero part way through it, and from there the model
+/// grows a backspin instead of dying.
+///
+/// The stepped spin of the simulation does not: `cloth`'s decay clamps it at
+/// zero (§3.2). A long roll therefore ends with the two disagreeing - and the
+/// renderer, which reads the model rather than the state, turns the ball
+/// backwards for the rest of the roll. With the defaults that is easy to hit:
+/// the decay is `5 mu_sp g / 2R` = about 10 rad/s², a ball that leaves with
+/// 20 rad/s of vertical spin dies inside a segment that lasts two seconds, and
+/// rolling segments last seconds.
+///
+/// The crossing is read off the same straight line the samplers use, and it
+/// counts only when it is strictly inside the segment: a model that touches
+/// zero at the end of the segment does not cross it.
+fn spin_death(segment: &OpenSegment, dt: f64) -> Option<f64> {
+    let decaying =
+        segment.w0.z > 0.0 && segment.wa.z < 0.0
+            || segment.w0.z < 0.0 && segment.wa.z > 0.0;
+    if !decaying {
+        return None;
+    }
+    let death = -(segment.w0.z / segment.wa.z);
+    if death < dt {
+        Some(death)
+    } else {
+        None
+    }
+}
+
 /// The recorder: it collects the path of every ball as the simulation runs.
 ///
 /// The recorder is observational. It never touches the state of the simulation,
@@ -483,9 +530,25 @@ pub(crate) struct Recorder {
 }
 
 impl Recorder {
-    /// A recorder for a shot with the given balls.
-    pub(crate) fn new(numbers: &[u8]) -> Recorder {
+    /// A recorder for a shot with the given balls, from the orientations they
+    /// carry into it.
+    ///
+    /// The tally of rotation every ball has made starts at the orientation that
+    /// ball was left turned to by the shot before this one -
+    /// [`BallState.rotation`](crate::state), the hand-off of §11.2 seen from
+    /// the input side - rather than at zero. A ball that is still lying where
+    /// the last shot left it therefore keeps its phase: the path of this shot
+    /// counts its rotation from that orientation, and a renderer that played
+    /// the last shot back to its last frame plays this one on from there with
+    /// nothing integrated in between. A ball that was put on the table carries
+    /// `Vec3::ZERO` and starts over. A list that is shorter than the balls
+    /// leaves the rest of them at zero.
+    pub(crate) fn new(numbers: &[u8], start_rotations: &[Vec3]) -> Recorder {
         let count = numbers.len();
+        let mut spin: Vec<Vec3> = Vec::with_capacity(count);
+        for index in 0..count {
+            spin.push(start_rotations.get(index).copied().unwrap_or(Vec3::ZERO));
+        }
         Recorder {
             trace: Trace {
                 balls: vec![Vec::new(); count],
@@ -494,7 +557,7 @@ impl Recorder {
                 duration: 0.0,
             },
             open: vec![None; count],
-            spin: vec![Vec3::ZERO; count],
+            spin,
         }
     }
 
@@ -509,13 +572,66 @@ impl Recorder {
         }
     }
 
-    /// Closes the open segment of a ball at the time `t1`.
+    /// Closes the open segment of a ball at the time `t1`, and closes it at a
+    /// spin death instead if the segment has one inside it.
+    ///
+    /// The rotation the ball makes over a segment is the integral of a straight
+    /// line, so a segment whose model of the vertical spin crosses zero
+    /// ([`spin_death`]) keeps that crossing as a rotation of its own: it is
+    /// closed there, and a second segment is opened from that time and closed at
+    /// `t1`, with the vertical spin and its decay snapped to exactly zero. The
+    /// straight line of the first segment then never goes past zero, and the
+    /// second one has nothing left to die.
+    ///
+    /// This is the recorder telling the model what §3.2 tells the spin: a
+    /// decay acts towards zero and stops there. It is the recorder and not the
+    /// simulation that does it, because the split is a boundary of the *path*
+    /// and not an event: the simulation's own stepping is untouched and stays
+    /// bit-identical - the same events, the same state, the same hash - and a
+    /// segment stays one motion state, so the sampling code stays the one
+    /// straight line `w0 + wa * dt`.
+    ///
+    /// The two halves agree at the time they share: the state of the
+    /// continuation is written with the same order of operations as the
+    /// samplers of [`Segment`] write it, and the rotation it starts from is the
+    /// one the first half accumulated at that time, so `sample_positions` and
+    /// `sample_rotation` do not jump there any more than they do at an event.
     pub(crate) fn close(&mut self, index: usize, t1: f64) {
         if index >= self.open.len() {
             return;
         }
         if let Some(open) = self.open[index].take() {
             let dt = t1 - open.t0;
+            if let Some(death) = spin_death(&open, dt) {
+                // The part up to the death, and from there a segment with
+                // nothing left to decay. The rotation is accumulated with the
+                // expression `rotation_at` uses, so the two halves meet where
+                // the renderer reads them.
+                self.spin[index] = self.spin[index] + open.w0 * death + open.wa * (0.5 * death * death);
+                self.trace.balls[index].push(open.close(open.t0 + death));
+                let w = open.w0 + open.wa * death;
+                let again = OpenSegment {
+                    t0: open.t0 + death,
+                    kind: open.kind,
+                    p0: open.p0 + (open.v0 * death + open.a * (0.5 * death * death)),
+                    v0: open.v0 + open.a * death,
+                    a: open.a,
+                    w0: Vec3::new(w.x, w.y, 0.0),
+                    wa: Vec3::new(open.wa.x, open.wa.y, 0.0),
+                    spin0: Vec3::ZERO,
+                    pocket_state: open.pocket_state,
+                };
+                // The vertical spin is snapped to zero, and its decay with it:
+                // the line reaches zero at the split by construction, but not
+                // to the last bit, and a hair of residue there would be a spin
+                // that is not dead yet - one that the next split would send
+                // turning the other way.
+                self.open(index, again);
+                // The continuation cannot split again: its vertical spin is
+                // exactly zero, so `spin_death` does not fire for it.
+                self.close(index, t1);
+                return;
+            }
             // The rotation the ball makes over the segment: the integral of the
             // angular velocity, which is linear over a segment.
             self.spin[index] = self.spin[index] + open.w0 * dt + open.wa * (0.5 * dt * dt);

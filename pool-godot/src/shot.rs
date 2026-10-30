@@ -33,6 +33,15 @@ pub struct Strike {
 /// ball towards the target. `contact_offset` is the tip on the cue ball's
 /// face: the distance to the shooter's **right** and the distance **above** the
 /// centre, both in metres.
+///
+/// `rotations` is the orientation every ball carries into the shot, in the
+/// core's frame as rotation vectors - the axis of the orientation times the
+/// angle in radians - index by index with `positions`. This is the hand-off of
+/// §11.2 seen from the input side: what the renderer had already turned the
+/// balls to when the shot starts. The path of the shot then counts their
+/// rotation from that orientation, and a ball that is still lying where the
+/// last shot left it keeps its phase; a short list leaves the balls it does
+/// not name at identity, which is what a ball that was put on the table does.
 pub fn shot_input(
     table: &TableConfig,
     cue_speed: f64,
@@ -40,13 +49,18 @@ pub fn shot_input(
     contact_offset: (f64, f64),
     positions: &[Vec3],
     numbers: &[i32],
+    rotations: &[Vec3],
 ) -> ShotInput {
     let (across, up) = crate::frame::contact_offset(contact_offset.0, contact_offset.1);
     let mut balls: Vec<BallState> = Vec::with_capacity(positions.len());
     for (index, position) in positions.iter().enumerate() {
         let number = numbers.get(index).copied().unwrap_or(index as i32);
         let number = u8::try_from(number).unwrap_or(0);
-        balls.push(BallState::at_rest(table, number, *position));
+        let mut ball = BallState::at_rest(table, number, *position);
+        // The orientation the ball carries in: it is not physics state, and the
+        // shot's own numbers do not depend on it - only the path's rotations do.
+        ball.rotation = rotations.get(index).copied().unwrap_or(Vec3::ZERO);
+        balls.push(ball);
     }
     let mut input = ShotInput::new(cue_speed, direction, balls);
     input.contact_offset_x = across;

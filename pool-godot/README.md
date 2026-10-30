@@ -25,6 +25,28 @@ print(shot.sample(1.5))     # where every ball is at t = 1.5 s
 in the core, so the line the game draws at the player is the line the ball
 takes, squirt included.
 
+A ball has an orientation as well as a place, and the core hands it across
+shots. `PoolCore.simulate` starts every ball straight - what a fresh rack is.
+`PoolCore.simulate_with_rotations` takes one more list, the orientation every
+ball carries into the shot, in the Godot frame:
+
+```gdscript
+var turned := shot.sample_rotation(shot.get_duration())  # where the last shot left them
+var next := core.simulate_with_rotations(8.0, Vector3(0, 0, -1), Vector2.ZERO,
+    positions, numbers, turned)
+```
+
+`PoolShot.sample_rotation(t)` reports the turn every ball has made up to `t`,
+counted from the orientation it carried in rather than from zero, and the last
+frame of the path is the orientation the shot leaves the ball in (§11.2, the
+hand-off). The game plays a shot back to that frame and hands the same numbers
+back to `simulate_with_rotations`, so the phase of a ball's turn survives across
+shots with nothing integrated in the gap. `godot-project/scripts/ball.gd` puts
+the orientation the core reports straight onto the mesh; the rotation of a
+previous shot is never added up in GDScript, because the core is the only
+physics in the game. A carried orientation moves no hash: the canonical byte
+form of a state does not name it.
+
 ## The frame
 
 The core works in a right handed frame with `x` along the table, `y` across

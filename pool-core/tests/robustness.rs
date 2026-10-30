@@ -183,3 +183,142 @@ fn the_spin_of_a_ball_dies_and_does_not_grow() {
         state.balls[0].angular_velocity
     );
 }
+
+#[test]
+fn the_spin_a_game_sees_never_turns_the_wrong_way() {
+    // A game reads the spin off the samplers of §11.2, one sample per frame, for
+    // a shot it plays back. The line those samplers draw is the model of §3.2 -
+    // a decay that acts towards zero. Modelled as one straight line, the decay
+    // reaches zero and then runs the other way, and the ball is seen turning the
+    // wrong way for the rest of the shot; the spin that was dying instead grows.
+    //
+    // The vertical spin of §3.2 therefore dies at zero on the sampled numbers
+    // too, and stays there: a sampled spin never has the opposite sign to the
+    // spin of the segment it is sampled from, and a shot that has run long
+    // enough ends with the cue ball dead on its spin.
+    let cfg = TableConfig::default();
+    let radius = cfg.ball.radius;
+    let cue = BallState::at_rest(&cfg, 0, Vec3::new(0.40, 0.635, radius));
+    let object = BallState::at_rest(&cfg, 1, Vec3::new(0.90, 0.635, radius));
+    let mut input = ShotInput::new(2.0, Vec3::X, vec![cue, object]);
+    input.contact_offset_x = 0.45 * radius; // a big side english
+    input.contact_offset_y = 0.45 * radius; // ..with follow, so the cue rolls on
+
+    let (_, trace) = try_simulate_shot_traced(&input, &cfg).expect("an english shot is a legal shot");
+
+    // The decay of §3.2 with the default cloth: 5 mu_sp g / 2R, about 10 rad/s².
+    // A cue ball that leaves the strike with tens of rad/s of vertical spin dies
+    // well inside the long roll that follows the contact.
+    let decay = 5.0 * cfg.cloth.mu_sp * cfg.simulation.gravity / (2.0 * radius);
+    assert!(decay > 0.0, "The cloth of §2.4 has to decay the spin of §3.2");
+
+    let step = 0.25; // a quarter of a second: what a game samples
+    let samples = (trace.duration / step) as i64 + 1;
+    for sample in 0..samples {
+        let t = sample as f64 * step;
+        let segment = trace.segment_at(0, t).unwrap_or_else(|| panic!("the cue ball has a path at t = {t} s"));
+        let spin = segment.angular_velocity_at(t).z;
+        let start = segment.w0.z;
+        // The line of the segment may reach zero, at its very end, and stop
+        // there. It may not pass it.
+        if start > 0.0 {
+            assert!(spin >= 0.0, "cue ball with topspin {start} rad/s was seen at {spin} rad/s at t = {t} s, on the other side of zero");
+        } else if start < 0.0 {
+            assert!(spin <= 0.0, "cue ball with backspin {start} rad/s was seen at {spin} rad/s at t = {t} s, on the other side of zero");
+        } else {
+            // A segment that starts with no vertical spin has none to decay,
+            // and so never gets any.
+            assert_eq!(spin, 0.0, "cue ball with no vertical spin was seen turning at {spin} rad/s at t = {t} s");
+        }
+    }
+
+    // Late in the shot the spin is dead, and stays dead: the ball is left lying
+    // where it stopped, not still winding up.
+    let late = trace.sample_angular(trace.duration)[0];
+    let dead = late.z;
+    assert!(dead.abs() < 1e-6, "the cue ball was still spinning {dead} rad/s about the vertical at the end of the shot");
+}
+
+#[test]
+fn the_spin_death_leaves_the_two_halves_of_the_path_agreeing() {
+    // The recorder cuts the path of a ball at the time its vertical spin dies
+    // (see `Recorder.close` in trace.rs). The cut is not an event: the
+    // simulation never steps there, so the two halves describe one motion, and
+    // the renderer - which samples every frame, and reads both halves - must
+    // not see anything there. A half that begins dead begins exactly dead.
+    let cfg = TableConfig::default();
+    let radius = cfg.ball.radius;
+    let cue = BallState::at_rest(&cfg, 0, Vec3::new(0.40, 0.635, radius));
+    let object = BallState::at_rest(&cfg, 1, Vec3::new(0.90, 0.635, radius));
+    let mut input = ShotInput::new(2.0, Vec3::X, vec![cue, object]);
+    input.contact_offset_x = 0.45 * radius;
+    input.contact_offset_y = 0.45 * radius;
+    let (_, trace) = try_simulate_shot_traced(&input, &cfg).expect("an english shot is a legal shot");
+
+    for (index, segments) in trace.balls.iter().enumerate() {
+        for pair in segments.windows(2) {
+            let first = pair[0];
+            let second = pair[1];
+            if first.kind != second.kind {
+                continue; // an event changed the motion state here; that is the event's business
+            }
+            // A cut where the first half decays and the second is dead is the
+            // recorder's own split.
+            let cut = first.wa.z != 0.0 && second.w0.z == 0.0 && second.wa.z == 0.0;
+            if !cut {
+                continue;
+            }
+            let at = first.t1;
+            let where_first = first.position_at(at);
+            let where_second = second.position_at(second.t0);
+            let jump = (where_first - where_second).norm();
+            assert!(jump < 1e-9, "ball {index}: the path is cut at t = {at} s with a jump of {jump} m");
+            let turned_first = first.rotation_at(at);
+            let turned_second = second.rotation_at(second.t0);
+            let twist = (turned_first - turned_second).norm();
+            assert!(twist < 1e-9, "ball {index}: the rotation jumps at the cut at t = {at} s by {twist} rad");
+            // The line of the first half ends at zero, exactly where the second
+            // half starts.
+            let at_death = first.w0.z + first.wa.z * (at - first.t0);
+            assert!(at_death.abs() < 1e-9, "ball {index}: the spin of the first half dies at t = {at} s at {at_death} rad/s, not where the second half starts");
+        }
+    }
+}
+
+#[test]
+fn a_ball_carries_its_orientation_into_the_next_shot() {
+    // §11.2: the game hands the shot back as it stood, and the next shot is
+    // fired at the balls where they lie. A ball that the last shot left turned
+    // to some orientation is seen at that orientation when this shot starts -
+    // the renderer plays the last shot up to its last frame and this one on
+    // from there, with nothing integrated in between.
+    let cfg = TableConfig::default();
+    let radius = cfg.ball.radius;
+
+    // The same shot, fired twice, the second time with the cue ball handed the
+    // orientation the first shot left it in.
+    let fire = |turned: Vec3| -> ShotInput {
+        let mut cue = BallState::at_rest(&cfg, 0, Vec3::new(0.40, 0.635, radius));
+        cue.rotation = turned;
+        cue.angular_velocity = Vec3::new(0.0, 1.0 / radius, 3.0); // it was left spinning
+        let object = BallState::at_rest(&cfg, 1, Vec3::new(0.90, 0.635, radius));
+        let mut input = ShotInput::new(2.0, Vec3::X, vec![cue, object]);
+        input.contact_offset_x = 0.45 * radius;
+        input.contact_offset_y = 0.45 * radius;
+        input
+    };
+
+    let (_, first) = try_simulate_shot_traced(&fire(Vec3::ZERO), &cfg).expect("the shot runs");
+    let fresh = first.sample_rotation(0.0)[0];
+    assert_eq!(fresh, Vec3::ZERO, "a ball that was put on the table starts a shot at an orientation of {fresh:?}");
+
+    let carried = first.sample_rotation(first.duration)[0];
+    let (_, second) = try_simulate_shot_traced(&fire(carried), &cfg).expect("the next shot runs");
+    let starts = second.sample_rotation(0.0)[0];
+    assert_eq!(starts, carried, "the next shot starts the cue ball at {starts:?} rather than the orientation {carried:?} the last shot left it in");
+
+    // And the shot then turns on from there, rather than over again from zero.
+    let later = second.sample_rotation(0.5)[0];
+    let onward = (later - carried).norm();
+    assert!(onward > 0.0, "the cue ball was left unturned through the second shot");
+}

@@ -47,7 +47,7 @@ Inside `pool-core/src`:
 | `cue.rs` | the cue strike, the squirt curve and the miscue limit of §6 |
 | `quartic.rs` | the deterministic root finder used by the time-of-impact solvers |
 | `sim.rs` | the event loop: the heart of the engine |
-| `trace.rs` | the path of a shot: the segments a renderer interpolates (§11.2) |
+| `trace.rs` | the path of a shot: the segments a renderer interpolates (§11.2), closed where a sampled spin dies |
 | `hash.rs` | the canonical byte form of the state and its hash, for the determinism check |
 | `json.rs` | a small, exactly-rounding JSON reader and writer |
 
@@ -55,6 +55,15 @@ The canonical byte form of a state (`pool_core::canonical_bytes`) is what the
 determinism check compares: the raw `f64` values in a fixed order, never a
 formatted or rounded representation. `pool_core::hash_state` is the FNV-1a hash of
 those bytes, and it is the value the `determinism_golden` fixture pins.
+
+The orientation a ball lies turned to is deliberately *not* among those bytes.
+The canonical form names its fields one by one - where a ball is, how it moves,
+which pocket it is in - and the turn of a painted ball is a rendering fact that
+sits outside that list. A carried orientation therefore changes what the path
+reports and nothing else: the same shot run twice, once from a fresh rack and
+once from the rack the shot before it left, gives the same events, the same
+final state and the same hash. `pool-godot/tests/headless.rs` pins that side by
+side with the hash it already pinned.
 
 ## Building and testing
 
@@ -198,7 +207,22 @@ The extension gives the game two classes:
 
 `PoolCore.preview_cue_strike` and `PoolCore.simulate` call the *same* strike in
 the core, so the line the game draws at the player is the line the ball takes,
-squirt included. The frame is converted in exactly one place,
+squirt included. `PoolCore.simulate_with_rotations` is that shot with one more
+list: the orientation every ball carries into it.
+
+A ball has an orientation as well as a place, and §11.2 hands it to the next
+shot. `PoolShot.sample_rotation(t)` reports the turn every ball has made up to
+`t`, counted from the orientation it carried in rather than from zero, and the
+last frame of the path is the orientation the shot leaves the ball in. The
+game plays a shot back to that last frame and hands the same numbers back to
+`simulate_with_rotations`, so the phase of a ball's turn survives across shots
+with nothing integrated in the gap; `ball.gd` puts the orientation the core
+reports on the mesh and never accumulates a turn of its own. `simulate` leaves
+every ball straight, which is what a fresh rack is, and is what the other
+Godot scenes and `pool-cli` and `pool-visual` use - those two fire fresh
+racks, so the carry is left unwired there on purpose.
+
+The frame is converted in exactly one place,
 `pool-godot/src/frame.rs`, and the tests in `pool-godot/tests/mapping.rs` pin
 the english with the physics: a tip dragged to the shooter's right has to
 throw the object ball to the shooter's left.
@@ -248,6 +272,18 @@ The document lists its own limitations, and they are reproduced faithfully here:
   spin reached zero would go on past it into a backspin, and a backspin would
   grow instead of dying - and the ball would never come to rest, because the
   state it reaches depends on a spin that never ends.
+  *The stepping obeys the rule:* the state a shot ends in never sees a spin
+  past zero. The *path* of §11.2 is a straight line and would run past it, so
+  the recorder closes a segment at the crossing (`trace.rs::spin_death`) and
+  opens another from there with the vertical spin and its decay snapped to
+  exactly zero. Only the vertical component decays, so only the vertical
+  component is split. The split is a boundary of the path and not an event:
+  the stepping is untouched, the shot keeps the same events, the same state
+  and the same hash, and the samplers keep the one straight line `w0 + wa * dt`.
+  Left alone, the two numbers a renderer reads from a long rolling segment
+  cross zero at a point inside it and then grow reversed for as long as the
+  ball rolls, while the shot underneath them stays right. The model is
+  untouched, so `pool_core::MODEL_VERSION` stays `1.8`.
 * **The squirt comes from the sideways offset, and the curve behind it is
   uncalibrated.** The core looks the squirt curve up at the *sideways* part of the
   contact only (§6.1): the tip slides around the ball, so only a sideways offset

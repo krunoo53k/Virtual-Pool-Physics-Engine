@@ -47,7 +47,9 @@ fn the_shot(table: &TableConfig) -> pool_core::state::GameState {
     let core_positions: Vec<Vec3> = positions.iter().map(|p| frame::to_core(*p)).collect();
     let numbers: Vec<i32> = (0..core_positions.len() as i32).collect();
     let direction = frame::to_core(frame::to_godot(Vec3::Y));
-    let input = shot::shot_input(table, 8.0, direction, (0.0, 0.0), &core_positions, &numbers);
+    // A fresh rack: no ball carries an orientation into the break, which is
+    // what the game hands `PoolCore.simulate` too.
+    let input = shot::shot_input(table, 8.0, direction, (0.0, 0.0), &core_positions, &numbers, &[]);
     let (state, _) = shot::simulate(table, &input).expect("the shot runs");
     state
 }
@@ -58,6 +60,33 @@ fn the_shot_has_the_pinned_hash() {
     let state = the_shot(&table);
     let hash = pool_core::hash_state_hex(&state);
     assert_eq!(hash, HASH, "the shot's hash moved");
+}
+
+#[test]
+fn the_carry_does_not_move_the_hash() {
+    // The orientation a ball carries into a shot is §11.2's hand-off seen from
+    // the input side: it says where the renderer had already turned the ball,
+    // and nothing in the physics reads it. It is not part of the canonical
+    // bytes of a state, so the same shot whose balls were put down straight,
+    // and the same shot whose balls were left turned, end in the same state
+    // and hash the same pinned value.
+    let table = TableConfig::default();
+    let positions: Vec<Vector3> = rack(&table).iter().map(|p| frame::to_godot(*p)).collect();
+    let core_positions: Vec<Vec3> = positions.iter().map(|p| frame::to_core(*p)).collect();
+    let numbers: Vec<i32> = (0..core_positions.len() as i32).collect();
+    let direction = frame::to_core(frame::to_godot(Vec3::Y));
+    // The whole rack is put on the table already turned: every ball by an
+    // eighth of a turn about the vertical, and more for each ball along.
+    let turned: Vec<Vec3> =
+        core_positions
+            .iter()
+            .enumerate()
+            .map(|(index, _)| Vec3::new(0.0, 0.0, 0.125 * index as f64))
+            .collect();
+    let input = shot::shot_input(&table, 8.0, direction, (0.0, 0.0), &core_positions, &numbers, &turned);
+    let (state, _) = shot::simulate(&table, &input).expect("the shot runs");
+    let hash = pool_core::hash_state_hex(&state);
+    assert_eq!(hash, HASH, "the carry moved the shot's hash: {}", hash);
 }
 
 #[test]

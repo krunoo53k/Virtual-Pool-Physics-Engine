@@ -43,6 +43,33 @@ own limits: the throw is capped, and the squirt is applied sideways whatever
 the direction of the contact offset. Those are reproduced faithfully and
 documented.
 
+## The path of a shot
+
+`try_simulate_shot_traced` hands back what a renderer interpolates: one segment
+per motion state (§11.2), each of them a straight line in position, in velocity
+and in spin. Two things about that path are worth knowing before you read a
+renderer off it.
+
+- **A rotation is an orientation, not a step.** `BallState::rotation` is the
+  orientation the ball was left turned to by the shot before this one; the
+  recorder starts its tally of turn there, and the last frame of the path is the
+  orientation this shot leaves the ball in. That is §11.2 handing one shot to the
+  next, seen from the input side, and it is what lets a renderer play the last
+  shot to its last frame and play this one on from there with nothing integrated
+  in between. A ball that was put on the table carries `Vec3::ZERO` and starts
+  its turn over.
+- **A segment is closed where the vertical spin dies.** §3.2 writes the vertical
+  spin as a straight line that decays *towards zero and stops there*, and the
+  stepping obeys that. A segment of the path is that same straight line and would
+  run past zero, so the recorder closes the segment at the crossing
+  (`trace.rs::spin_death`) and opens another from that time with the vertical
+  spin and its decay snapped to exactly zero. Only the vertical component decays,
+  so only the vertical component is split. The split is a boundary of the *path*
+  and not an event: the simulation's stepping is untouched - the same events, the
+  same state, the same hash - and a segment stays one motion state, so the
+  sampling code stays the one straight line `w0 + wa * dt` and the two halves
+  agree where they meet.
+
 ## Where to go next
 
 - The full story: the repository's `README.md`.

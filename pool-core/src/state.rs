@@ -42,6 +42,21 @@ pub struct BallState {
     pub velocity: Vec3,
     /// Angular velocity, rad/s.
     pub angular_velocity: Vec3,
+    /// The orientation the ball carries into the shot, as a rotation vector.
+    ///
+    /// This is *not* physics state: the simulation never steps it, and the
+    /// canonical byte form of a state does not hash it (§14.4). It is the
+    /// renderer hand-off of §11.2 seen from the input side: the orientation a
+    /// renderer had already applied to the ball when the shot starts, so the
+    /// path of the next shot counts its rotation from that orientation and the
+    /// renderer can play two shots back to back without integrating anything
+    /// in between them. The spin of a resting ball therefore does not reset
+    /// when a new shot begins; only a ball that is put back on the table
+    /// starts over, at `Vec3::ZERO`.
+    ///
+    /// A rotation vector: the direction is the axis of the orientation and the
+    /// length is the angle in radians, not wrapped.
+    pub rotation: Vec3,
     /// The motion state derived from the above.
     pub motion_state: MotionState,
     /// Mass, kg.
@@ -90,6 +105,9 @@ impl BallState {
             position,
             velocity: Vec3::ZERO,
             angular_velocity: Vec3::ZERO,
+            // A ball put down on the table has no orientation of its own: a
+            // spotter starts a fresh ball over (§11.2's hand-off).
+            rotation: Vec3::ZERO,
             motion_state: MotionState::Stationary,
             mass: cfg.ball.mass,
             radius: cfg.ball.radius,

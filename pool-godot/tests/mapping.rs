@@ -46,6 +46,9 @@ fn game_shot(table: &TableConfig, across: f64, up: f64) -> (GameState, Trace) {
         (across, up),
         &[frame::to_core(cue_ball), frame::to_core(object_ball)],
         &[0, 1],
+        // The pair is put on the table for these shots, so neither of them
+        // carries an orientation into one (§11.2's hand-off is a fresh start).
+        &[],
     );
     // The preview line: the same strike the shot makes.
     let strike = shot::strike(table, &input);
