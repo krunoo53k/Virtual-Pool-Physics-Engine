@@ -16,8 +16,10 @@ extends Node3D
 ##   exactly the number the physics is given (§6.2). How far the cue went
 ##   back only says how far it had to run over; a full draw brought home
 ##   slowly is a stun, and a full draw flicked home hard is a break;
-## * **E** holds the english: the mouse then moves the tip on the cue ball;
-## * **B** holds the fine aim: the mouse then turns the shot more slowly.
+## * **E** holds the english: the mouse then moves the tip anywhere on the face
+##   of the cue ball, and as little as the mouse moves it;
+## * **B** holds the fine aim: the mouse then turns the shot more slowly,
+##   and moves the tip finer while **E** is held.
 ##
 ## While **E** is held the mouse moves the tip on the ball instead of turning
 ## the shot, so the two never fight.
@@ -563,9 +565,12 @@ func _draw_aim() -> void:
 	aim_line.basis = _basis_along(direction)
 	aim_line.scale = Vector3(length / 0.5, 1.0, 1.0)
 
-	# The mark where the tip strikes.
+	# The mark where the tip strikes, and not where it points: it sits on the face
+	# of the ball where the tip met it, so a small english is a small mark near the
+	# centre, and not one on the rim either way.
 	var offset := _right(aim) * contact.x + Vector3.UP * contact.y
-	spin_marker.position = cue_ball.position + offset.normalized() * ball_radius
+	var depth := sqrt(ball_radius * ball_radius - minf(offset.length_squared(), ball_radius * ball_radius))
+	spin_marker.position = cue_ball.position - aim * depth + offset
 
 
 ## Shows the aim only while the player is aiming.
@@ -719,9 +724,9 @@ func _update_cue() -> void:
 ## of the ball by the impact parameter.
 func _tip(centre: Vector3, aim: Vector3) -> Vector3:
 	var offset := _right(aim) * contact.x + Vector3.UP * contact.y
-	if offset.length() < 0.000001:
-		return centre - aim * ball_radius
-	return centre + offset.normalized() * ball_radius
+	var depth := sqrt(ball_radius * ball_radius - minf(offset.length_squared(), ball_radius * ball_radius))
+	# A centred tip is exactly centre - aim * R: depth takes the whole radius.
+	return centre - aim * depth + offset
 
 
 ## Fires the shot at once, without the mouse.
@@ -1077,11 +1082,18 @@ func _mouse_motion(event: InputEventMouseMotion) -> void:
 
 	if Input.is_key_pressed(KEY_E):
 		# The tip moves on the face of the ball, and the aim is left alone.
-		contact.x += event.relative.x * SPIN_SCALE
-		contact.y -= event.relative.y * SPIN_SCALE
+		# B moves the tip finer: 0.07 mm to a pixel.
+		var step := SPIN_SCALE
+		if Input.is_key_pressed(KEY_B):
+			step = SPIN_SCALE * FINE_SCALE
+		contact.x += event.relative.x * step
+		contact.y -= event.relative.y * step
+		# The tip is kept inside the miscue limit, which is a disc and not the
+		# square of two clamps: out of a corner it would be √2 over the limit,
+		# and §6.3 would miscue the shot every time.
 		var limit: float = core.get_miscue_limit()
-		contact.x = clampf(contact.x, -limit, limit)
-		contact.y = clampf(contact.y, -limit, limit)
+		if contact.length() > limit:
+			contact = contact.normalized() * limit
 		return
 
 	if phase == Phase.CHARGING:

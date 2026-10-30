@@ -43,7 +43,7 @@ where the model says the pocket begins.
 | the mouse | aims |
 | **S** | draws the cue back; push the mouse home, and the speed of the push is the power |
 | **E** | holds the english: the mouse then moves the tip on the cue ball |
-| **B** | holds the fine aim: the mouse then trims the angle |
+| **B** | holds the fine aim: the mouse then trims the angle, and a finer tip while **E** is held |
 | **D** | raises the debug panel: the numbers of the shot, on the screen |
 
 While **B** or **E** is held the mouse stops aiming and only trims or moves
