@@ -13,13 +13,22 @@ and the game plays that path back.
 
 ```
 the player aims                →  PoolCore.preview_cue_strike(...)
-the player shoots              →  PoolCore.simulate(...)        →  a PoolShot
+the player shoots              →  PoolCore.simulate_with_rotations(...)  →  a PoolShot
 every frame                    →  PoolShot.sample(t)            →  the positions
+                                 PoolShot.sample_rotation(t)    →  the turns
 the shot ends                  →  PoolShot.get_final_state()    →  the rules
 ```
 
 `preview_cue_strike` and `simulate` call the *same* strike in the core, so the
 line the game draws is the line the ball takes, squirt included.
+
+The game shoots with `simulate_with_rotations`, which takes one more list: the
+orientation every ball carries into the shot. `PoolShot.sample_rotation(t)`
+reports the turn up to `t` counted from that orientation, so the game hands the
+last frame of the path back to the next shot and a ball keeps the phase the last
+shot left it in. GDScript never adds up a turn — `ball.gd` puts the orientation
+on the mesh — and `PoolCore.simulate` is the same shot with every ball left
+straight, which is what a fresh rack is.
 
 The table is built from `PoolCore.get_table_geometry()` — the rails, the
 pockets and the cushion all come from the model, so the cushion stops exactly
@@ -89,6 +98,12 @@ It builds `pool-godot` with cargo and copies the library into `bin/`, where
 `bin/pool_godot.gdextension` points at it. The build needs no Godot binary:
 the bindings come from the prebuilt API of the `godot` crate.
 
+The library itself is not in the repository (`bin/*.so` is ignored), so a change
+to the extension source reaches the game only once this script has been run
+again. The `.gdextension` file names the libraries and the entry symbol and
+nothing else: the methods are registered by the library when it loads, so a new
+`#[func]` needs a rebuilt library and no edit to that file.
+
 ## Running
 
 With Godot 4.6 or later:
@@ -123,7 +138,11 @@ core (x, y, z)  ->  Godot (x, z, -y)
 
 One of the two in-plane axes has to change sign for the frame to stay right
 handed, and that keeps the sense of the spin — so a ball that rolls to the
-left rolls to the left on the screen.
+left rolls to the left on the screen. The turn of a ball goes through the same
+map, and a proper rotation of a proper frame is a proper rotation: what
+`PoolShot.sample_rotation(t)` reports is the same turn on the screen. A turn is
+an orientation, not a step to be added up; the path of the shot is the only
+thing that says how a ball turned.
 
 ## What is not here yet
 
