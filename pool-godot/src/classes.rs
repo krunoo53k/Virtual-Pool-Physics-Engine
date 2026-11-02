@@ -123,6 +123,24 @@ impl PoolCore {
         dictionary
     }
 
+    /// The cue direction for a level aim and a cue raised at the butt, as a
+    /// unit vector in the Godot frame with the elevation baked in (§12.3),
+    /// computed with the core's own `libm` trig (§11.4) rather than GDScript's.
+    /// The GDScript side never calls `sin`/`cos` to build a replayable
+    /// direction: it stores degrees and asks for the direction it wants, so a
+    /// pin written as `8 m/s, 90 degrees, raised 12` replays identically on
+    /// every platform and the headless pins can use the same values.
+    ///
+    /// `level_aim_deg` is measured from the core's `+x` (Godot's +x, along the
+    /// length of the table) towards its `+y` (Godot's -y, the shooter's left);
+    /// `elevation_deg` is the raise at the butt - positive raises the cue and
+    /// points it DOWN at the ball, which is the opposite sign to the `elevation_deg`
+    /// the preview reads back (`asin` of the axis' height).
+    #[func]
+    fn make_cue_direction(level_aim_deg: f64, elevation_deg: f64) -> Vector3 {
+        frame::cue_direction(level_aim_deg, elevation_deg)
+    }
+
     /// The shot: the whole thing, resolved in one call.
     ///
     /// The balls are given as their positions in Godot's frame, in the order

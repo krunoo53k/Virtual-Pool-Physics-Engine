@@ -94,6 +94,36 @@ pub fn angle(direction: Vec3) -> f64 {
     libm::atan2(direction.y, direction.x)
 }
 
+/// The cue direction for a level aim and a cue raised at the butt, as a unit
+/// vector in the Godot frame, with the elevation baked in the way §12.3 wants
+/// ("the elevation for jump shots is baked into this vector").
+///
+/// The game, its tests and the AIs inside it all ask the engine for their
+/// directions rather than calling whatever math library GDScript happens to
+/// link, so an aim stored as degrees replays the same on every platform (§11.4:
+/// the trig comes from the same `libm` the core uses).
+///
+/// `level_aim_deg` is the level aim measured the way [`angle`] measures, in
+/// degrees rather than radians: from the core's own `+x` (Godot's) along the
+/// length of the table towards its own `+y` (Godot's `-y`, the shooter's left).
+/// `elevation_deg` is the raise at the butt: a POSITIVE raise points the cue
+/// DOWN at the ball, which is what a level stroke and §7.1's jump both do;
+/// the `elevation_deg` of the preview (sim.rs:1209 reads `asin` of the
+/// direction's height) signs a raised cue NEGATIVE, so the two are each
+/// other's negation - the sign is the engine's, never the game's.
+pub fn cue_direction(level_aim_deg: f64, elevation_deg: f64) -> Vector3 {
+    let degrees = std::f64::consts::PI / 180.0;
+    let aim = level_aim_deg * degrees;
+    let elevation = elevation_deg * degrees;
+    let (s_aim, c_aim) = (libm::sin(aim), libm::cos(aim));
+    let (s_elev, c_elev) = (libm::sin(elevation), libm::cos(elevation));
+    to_godot(pool_core::math::Vec3::new(
+        c_aim * c_elev,
+        s_aim * c_elev,
+        -s_elev,
+    ))
+}
+
 /// The distance from the tip to the centre of the ball, in metres: the impact
 /// parameter `b` of §6.1.
 pub fn impact_parameter(contact_offset: (f64, f64)) -> f64 {
@@ -188,5 +218,57 @@ mod tests {
         let offset = contact_offset(0.010, 0.010);
         let expected = libm::sqrt(0.010 * 0.010 + 0.010 * 0.010);
         assert!((impact_parameter(offset) - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_baked_level_direction_is_a_unit_vector_along_the_aim() {
+        // Along the shooter's left (the core's +y): Godot's -z.
+        let level = cue_direction(90.0, 0.0);
+        assert!((level.length_squared() - 1.0) < 1e-6);
+        assert!(
+            level.z < 0.0,
+            "the shot points away from the shooter: {level:?}"
+        );
+        // Along the core's +x: Godot's +x.
+        let along = cue_direction(0.0, 0.0);
+        assert!((along.x - 1.0) < 1e-9);
+        assert!(along.z.abs() < 1e-9);
+        assert!(along.y.abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_baked_raise_points_the_cue_down_at_the_ball() {
+        // The same 12 degrees the headless pin raises the cue by, in the
+        // engine's own terms: the core's direction is (0, cos, -sin) (the
+        // one tests/headless.rs's the_raised_shot puts into ShotInput), so
+        // Godot's is (0, -sin, -cos) - the y is negative because Godot's y
+        // is up and the cue points down at the ball.
+        let raised = cue_direction(90.0, 12.0);
+        let sine = libm::sin(12.0 * (std::f64::consts::PI / 180.0));
+        let cosine = libm::cos(12.0 * (std::f64::consts::PI / 180.0));
+        assert!(
+            ((raised.y as f64) + sine).abs() < 1e-7,
+            "raised: {raised:?}"
+        );
+        assert!(
+            ((raised.z as f64) + cosine).abs() < 1e-7,
+            "raised: {raised:?}"
+        );
+        assert!(
+            raised.y < 0.0,
+            "the raised cue does not point down: {raised:?}"
+        );
+        // And it is still unit, so the elevation is baked in, not bolted on.
+        assert!((raised.length_squared() - 1.0) < 1e-6);
+        // The level aim of a raised shot is its horizontal part: the aim of
+        // the raised shot is still along the shooter's left.
+        assert!(cue_direction(90.0, 12.0).x.abs() < 1e-7);
+    }
+
+    #[test]
+    fn a_level_stroke_is_the_elevation_of_nothing_raised() {
+        let level = cue_direction(90.0, 0.0);
+        assert_eq!(level.y, 0.0);
+        assert!(cue_direction(0.0, 0.0).y == 0.0);
     }
 }
