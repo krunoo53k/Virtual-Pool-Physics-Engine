@@ -16,13 +16,30 @@ extends Node3D
 ##   exactly the number the physics is given (§6.2). How far the cue went
 ##   back only says how far it had to run over; a full draw brought home
 ##   slowly is a stun, and a full draw flicked home hard is a break;
+## * **B** holds the cue: the mouse then raises it above the cloth, with the
+##   other hand's part of the same drag still turning the shot. A drag down the
+##   screen lifts the butt of the cue, which points the shaft down at the ball -
+##   the same gesture a first person player pitches the view with - and a drag
+##   up lays it back flat. The raised cue is what makes a stroke a jump shot: a
+##   steep, firm stroke with the tip below the centre drives the cue ball into
+##   the slate beside the object ball rather than along the bed, and §7.1's jump
+##   is that slate launching a ball the cue drove down. The height is read while
+##   the cue is being aimed at, and once the cue is being drawn back its up and
+##   down belongs to the draw - the height stays where the player left it, so
+##   one gesture cannot set the power and the angle at once. Raising the cue
+##   past where the ghost ball is still drawn is refused on the picture rather
+##   than promised: the hop it puts in the line to the object ball meets the
+##   ball in the air, and the ghost is a promise about the cloth;
 ## * **E** holds the english: the mouse then moves the tip anywhere on the face
 ##   of the cue ball, and as little as the mouse moves it;
-## * **B** holds the fine aim: the mouse then turns the shot more slowly,
+## * **F** holds the fine trim: the mouse then turns the shot more slowly,
 ##   and moves the tip finer while **E** is held.
 ##
 ## While **E** is held the mouse moves the tip on the ball instead of turning
-## the shot, so the two never fight.
+## the shot or raising the cue, so the three never fight: the tip is what a
+## player is looking at when they hold it. The rest of the time the mouse
+## turns the shot with its sideways part and raises the cue with its up and
+## down part, and one drag can do both.
 
 enum Phase { AIMING, CHARGING, STRIKING, ROLLING }
 
@@ -39,6 +56,40 @@ const MAX_PULL := 0.30
 ## it meets the ball. A break stroke runs at 5 to 7 m/s, so this is the ceiling
 ## a hard flick reaches and not what a stroke normally comes in at.
 const MAX_CUE_SPEED := 9.0
+
+## The steepest cue the game takes, in degrees above the cloth.
+##
+## The angle a player's bridge can follow a shaft at on a real table: steeper
+## than this the hand cannot get under the cue, so this is where the game's own
+## drawing stops being a stroke the hand made. §7.1 and §7.2 put no ceiling on
+## the physics, and none is wanted: what stops the raise is the player's hand,
+## not a rule of the model.
+const MAX_CUE_ANGLE := 60.0
+
+## The pixels of a drag it takes to bring the cue from flat on the cloth to
+## that angle: 10 pixels to a degree, so the whole raise is 600 pixels, most
+## of a window. It is the same kind of gesture the draw is - DRAW_SPEED and
+## MAX_PULL take a full backswing over 150 pixels - and a raise the player can
+## finish with a sweep of the wrist is a raise the player can aim by.
+const ANGLE_PER_PIXEL := 0.1
+
+## The angle past which the ghost ball stops being drawn.
+##
+## The ghost is drawn on the cloth, at the point the level line meets the
+## object ball, and a raised cue puts a hop in the line to it. The hop is
+## measured rather than guessed: at MAX_CUE_SPEED, with the tip four tenths of
+## a ball radius below the centre (the stroke that makes a raise a jump shot),
+## the highest point the cue ball's centre reaches is 21.5 mm above the cloth
+## at 5 degrees and 39.7 mm at 10. Under one ball radius of 28.575 mm the
+## centre is still inside the two radii that let the cue ball meet the object
+## ball where the ghost waits, and over one radius it passes above the middle
+## of the object ball, so the ghost is a promise the shot does not keep. Five
+## degrees is the last angle the measurement vouches for and ten is the first
+## it does not, so the ghost is drawn to five and refused past it. It is
+## refused rather than moved to where the ball really meets: that meeting is
+## in the air, and an airborne ghost would be a different claim about the aim
+## than a ghost on the cloth.
+const PREVIEW_MAX_ANGLE := 5.0
 
 ## The slowest stroke that is still a stroke, in metres per second. Under this
 ## the tip is only resting the cue ball and the ball rolls off a nudge.
@@ -60,7 +111,7 @@ const STRIKE_MAX_TIME := 0.25
 ## camera turns with the mouse, not towards it.
 const LOOK_SPEED := 0.0035
 
-## How much finer the aim is while **B** is held.
+## How much finer the aim and the tip are while **F** is held.
 const FINE_SCALE := 0.25
 
 ## How far the cue is drawn back per pixel of mouse, in metres.
@@ -144,6 +195,15 @@ var table_middle := Vector3(1.27, 0.0, -0.635)
 ## The direction of the shot. The mouse turns it, the way it turns the view
 ## in a first person game: relative, and it stops when the mouse stops.
 var base_aim := Vector3(1, 0, 0)
+
+## The cue's height above the cloth, in degrees: 0 is a cue lying flat, and
+## the raise is what makes a stroke a jump shot (§7.1).
+##
+## The height is kept apart from the aim the mouse turned, because the two are
+## asked for by different parts of the same mouse: the turn is level and the
+## raise is the up and down of the drag, and folding them together at once
+## would leave a diagonal drag that both turns and raises in the wrong measure.
+var cue_angle := 0.0
 
 ## The tip on the cue ball: `x` is the distance to the shooter's right and
 ## `y` the distance above the centre, both in metres.
@@ -515,12 +575,40 @@ func _aim_at_the_table() -> void:
 	base_aim = direction.normalized()
 
 
-## The direction of the shot.
+## The direction of the shot: the line the mouse turned, raised by the cue's
+## own angle.
 ##
-## The shot is level. A cue that is tilted down would drive the ball into the
-## slate, and the slate is what launches it (§7.1) - so a level shot is not a
-## detail here, it is the difference between a break and a jump shot.
+## The two are kept apart until here. The mouse turns the shot level, the way
+## it turns the view in a first person game, and the cue's height is folded in
+## as the third coordinate: a cue raised at the butt points DOWN at the ball,
+## and the core's `z` is the height, so the axis loses `sin` of the raise and
+## keeps `cos` of it in the horizontal part (§12.3 asks for the elevation to be
+## baked into the direction rather than passed as an angle, and asks the core
+## never to call sin or cos). The raise is what makes the stroke drive the ball
+## into the slate beside the object ball rather than along the bed, and §7.1's
+## jump is the slate launching a ball the cue drove down: the height of the cue
+## is not a detail here, it is the difference between a stroke and a jump shot.
 func _aim() -> Vector3:
+	var level := _level_aim()
+	var lean := deg_to_rad(cue_angle)
+	# A level cue has no height at all, and it is -sin(0.0)'s negated zero
+	# the naive formula would give: the game has always fired a level shot
+	# with a direction whose height is +0.0, and the core's hash is over the
+	# raw bits, so a level stroke must be guarded back to the +0.0 it has
+	# always handed, byte for byte the stroke it has always been.
+	var height := -sin(lean) if lean != 0.0 else 0.0
+	return Vector3(level.x * cos(lean), height, level.z * cos(lean))
+
+
+## The shot's line on the cloth: the aim the mouse turned, kept level.
+##
+## The preview is drawn on the cloth, so it is drawn along this rather than
+## along the tilted axis of a raised cue: a raised cue has the ball leaving on
+## a hop and not on a line, and the cloth has no axis to hold the tilt in. The
+## picture of the line and the ghost the aim offers are the level projection,
+## and where that projection is a lie the ghost is refused at PREVIEW_MAX_ANGLE
+## rather than the line being drawn through the air.
+func _level_aim() -> Vector3:
 	return base_aim.normalized()
 
 
@@ -532,13 +620,24 @@ func _aim() -> Vector3:
 ## (§6.1). The preview shows the line the ball really takes, so the squirt is
 ## something the player can see and correct for, and not a surprise.
 func _shot_direction() -> Vector3:
+	# The line is drawn on the cloth, so it is the line the ball takes seen
+	# from above: a raised cue has the ball leaving with a height as well, and
+	# the cloth has no place for the height in it.
 	var aim := _aim()
 	if contact.length_squared() < 1e-12:
-		return aim
+		# The tip is over the centre of the ball, so the ball leaves along the
+		# cue, and the cue's line on the cloth is the aim's own level line.
+		return _level_aim()
 	var preview: Dictionary = core.preview_cue_strike(1.0, aim, contact)
 	var velocity: Vector3 = preview["velocity"]
+	velocity.y = 0.0
+	# A cue that is raised and steep enough leaves straight down at the cloth,
+	# and a shot that leaves down has no line on the cloth: the aim's own level
+	# line is the only honest thing left to draw.
 	if velocity.length_squared() < 1e-12:
-		return aim
+		# A stroke that leaves no velocity at all is a stroke that leaves
+		# along the aim: the aim is the last thing the player asked for.
+		return _level_aim()
 	return velocity.normalized()
 
 
@@ -553,7 +652,13 @@ func _draw_aim() -> void:
 	# on the cloth is the grazing the physics has, and not a guess past a
 	# stub.
 	var hit := _first_contact(direction)
-	aim_has_hit = hit != Vector3.ZERO
+	# The ghost is a promise about the cloth: it sits where the cue ball meets
+	# the object ball, on the cloth. A cue raised past PREVIEW_MAX_ANGLE puts a
+	# hop in the way to it taller than that meeting, so the ball the line is
+	# drawn to is met in the air and not where the ghost waits. The ghost is
+	# refused there - the debug panel says so, rather than drawing a line and a
+	# ball the shot does not keep.
+	aim_has_hit = hit != Vector3.ZERO and cue_angle <= PREVIEW_MAX_ANGLE
 	if aim_has_hit:
 		ghost.position = hit
 
@@ -755,6 +860,15 @@ func fire_now(speed: float) -> void:
 ## hands the number back as it stood; it is the core that counts the turning,
 ## and the core that says where every ball ends up.
 func _fire() -> void:
+	# The aim the cue is on: the line the mouse turned, raised by the cue's own
+	# height above the cloth. The height is baked into the direction here rather
+	# than passed alongside it, which is what §12.3 asks for and is how the core
+	# is given a stroke through: a direction with a negative height is a stick
+	# pointing down at the ball, and the stroke it drives is one that meets the
+	# slate beside the object ball rather than the bed - §7.1's jump is that slate
+	# launching a ball the cue drove down. A cue lying on the cloth leaves the
+	# direction level, which is the direction the game has always fired with, so
+	# no level stroke changes value here.
 	var aim := _aim()
 	var positions := PackedVector3Array()
 	var numbers := PackedInt32Array()
@@ -816,6 +930,11 @@ func _settle() -> void:
 	# The tip comes home: the next shot is a centre-ball stroke unless the
 	# player asks for the english again.
 	contact = Vector2.ZERO
+	# The cue lies back on the cloth. The height is a choice the player makes for
+	# one stroke, not a state the game keeps for them: a game that carried a
+	# raised cue over would make the next shot a jump shot the player never asked
+	# for, and they would only find out by aiming at it.
+	cue_angle = 0.0
 	var still: Array[int] = []
 	off_table = []
 	pocketed = []
@@ -857,11 +976,49 @@ func _update_status() -> void:
 		Phase.CHARGING:
 			# The stroke's speed is read out while it runs, so the player can see
 			# the power they are asking for rather than feel for it.
-			status.text = "draw  -  the cue is back %.2f m, the stroke is running at %.2f m/s: push the mouse forward to shoot" % [pulled, stroke_speed]
+			# The height of the cue is read out with the power, because once the cue is
+			# on its backswing the mouse's up and down belongs to the draw and the
+			# player cannot raise it again: the height they left it at is the height
+			# the stroke comes out at, and a draw line that only showed the power would
+			# let a player ask for a stun and get a jump shot without ever seeing the
+			# cue is up. The words are the status's own _cue_words, which reads the
+			# core's number, so the line and the picture cannot disagree about the cue.
+			status.text = "draw  -  the cue is back %.2f m, the stroke is running at %.2f m/s: push the mouse forward to shoot   %s" % [pulled, stroke_speed, _cue_words()]
 		Phase.STRIKING:
 			status.text = "..."
 		Phase.ROLLING:
 			status.text = "the balls are running"
+
+
+## The cue's height, read off the core's own preview of the stroke rather than
+## off the number the game asked for.
+##
+## The core is asked for the same unit-speed, centred-tip stroke the picture is
+## aimed at, and `elevation_deg` is the asin of the height of the direction it was
+## given (the same reading `../pool-core/src/sim.rs` takes of the cue stick at
+## 1209), so the words quote the angle the core got the shot from: a raise that
+## only moved the drawing, and never reached the stroke, is read here as a level
+## cue, and the readout stops being able to lie about the physics.
+##
+## The core signs a stick pointing down at the ball as negative, and a butt
+## lifted above the cloth points the shaft down, so the game's own raise is the
+## minus of that reading.
+func _cue_words() -> String:
+	# A centred tip is asked for on purpose: the height of the cue is the angle the
+	# axis makes with the cloth, and the english does not change it. The unit speed
+	# only asks for a direction, which is why the number is a height and not a power.
+	var preview: Dictionary = core.preview_cue_strike(1.0, _aim(), Vector2.ZERO)
+	# The reading is the core's, and it is negative for a cue that points down at
+	# the ball: a cue raised at the butt points down, so the game's raise is the
+	# minus of the reading, and it is printed to one decimal because the raise is
+	# asked for a tenth of a degree at a time.
+	var raised := -float(preview["elevation_deg"])
+	if absf(raised) < 0.05:
+		# The core read a cue on the cloth: the stroke is a stroke, and not a jump
+		# shot. Under half a tenth of a degree there is no raise to name, and naming
+		# one would be a lie about a shot the game would take level.
+		return "the cue is level"
+	return "the cue is up %.1f deg" % raised
 
 
 ## The aiming line of the status: it says where the tip is and where the ball
@@ -873,14 +1030,28 @@ func _update_status() -> void:
 ## the ball leaves the other way - the way of it comes from the preview, the
 ## only source that cannot be wrong on one side of it.
 func _aiming_status() -> String:
-	var text := "aim  -  the mouse turns the shot; S draws the cue back and the stroke home sets the power, E for the english, B for a finer aim, D for the debug panel"
+	var text := "aim  -  the mouse turns the shot; S draws the cue back and the stroke home sets the power, B raises the cue, E for the english, F for a finer aim, D for the debug panel"
+	# The cue's height comes before the tip: the raise is what decides whether the
+	# stroke is a stroke or a jump shot, and a centred tip jumps as much as an
+	# off-centre one, so the height cannot wait for the tip's branch below.
+	text += "   " + _cue_words()
 	if contact.length_squared() < 1e-12:
+		# The tip is over the centre of the ball, so the cue is the line the ball
+		# leaves on, and the height is all the status has to say about the shot.
 		return text
 	var aim := _aim()
+	# The squirt is measured off the line the ball takes seen from above, the line
+	# the picture draws and the panel names, rather than off the axis of a raised
+	# cue: a raised cue leaves the cloth with a height as well, and an angle off
+	# its axis is not an angle on the cloth a player can aim by. For a cue lying
+	# flat the two lines are the same line, so every stroke the game used to aim
+	# keeps the number it used to print.
+	var level := _level_aim()
 	var preview: Dictionary = core.preview_cue_strike(1.0, aim, contact)
 	var velocity: Vector3 = preview["velocity"]
-	var across := velocity.dot(_right(aim))
-	var leave := roundi(absf(atan2(across, velocity.dot(aim))) * 57.29578 * 100.0) / 100.0
+	velocity.y = 0.0
+	var across := velocity.dot(_right(level))
+	var leave := roundi(absf(atan2(across, velocity.dot(level))) * 57.29578 * 100.0) / 100.0
 	if absf(contact.x) < 1e-6:
 		# The tip is over the centre of the ball: follow or draw, and a shot
 		# that leaves straight.
@@ -916,17 +1087,43 @@ func _debug_the_shot() -> void:
 	var direction := _shot_direction()
 	var lines: Array[String] = []
 	lines.append("the aim    " + _vector(aim))
+	# The cue's height is a number of the shot, and the panel is where the shot's
+	# numbers are kept: the picture draws the cue raised, and the panel says what
+	# the core got from it, so the two cannot call this stroke two different
+	# strokes. The words are the status's own _cue_words, which reads the core's
+	# elevation back off the preview the aim was asked for.
+	lines.append("the cue    " + _cue_words())
+	# The squirt is measured off the cloth's line, the same reading the status
+	# prints, so the panel and the status cannot call the shot straight and the
+	# other crooked: a raised cue's axis is not the line the ball takes seen from
+	# above, and the line named on this panel is the cloth's.
+	var level := _level_aim()
 	var shot_line := "the shot   " + _vector(direction)
-	var across := direction.dot(_right(aim))
+	var across := direction.dot(_right(level))
 	if absf(across) > 1e-9:
-		var deg := rad_to_deg(atan2(absf(across), direction.dot(aim)))
+		var deg := rad_to_deg(atan2(absf(across), direction.dot(level)))
 		shot_line += "   %.2f deg %s" % [deg, "left" if across < 0.0 else "right"]
 	lines.append(shot_line)
 	lines.append("the tip    " + _tip_words())
-	if aim_hit_ball >= 0:
+	# The ghost: the flag the picture drew with says whether the cloth was
+	# promised, so the panel and the picture cannot disagree about whether there
+	# is a ghost, and a refused ghost is given no reach. The ball is named in both
+	# of the ball cases because the aim's line is drawn to this ball either way.
+	if aim_hit_ball >= 0 and aim_has_hit:
 		var cue_ball := balls[0]
 		lines.append("the ghost  ball %d in %.2f m" % [balls[aim_hit_ball].number, ghost.position.distance_to(cue_ball.position)])
+	elif aim_hit_ball >= 0:
+		# The cue is raised past the angle the cloth can hold the meeting at, so
+		# the picture refused the ghost (see _draw_aim and PREVIEW_MAX_ANGLE) and
+		# the panel says refused rather than the old nothing on the line: the ball
+		# is on the line, and only the promise about where it is met is missing.
+		# The angle is printed from the const rather than written here, so the
+		# panel, the const and the picture refuse at one number.
+		lines.append("the ghost  ball %d, refused past %.1f deg: the hop meets it in the air" % [balls[aim_hit_ball].number, PREVIEW_MAX_ANGLE])
 	else:
+		# Nothing was on the line: the words the panel has always used. The cue's
+		# raise has no bearing on them, because the raise's bearing on a shot is a
+		# hop in the way to a ball, and this aim found no ball.
 		lines.append("the ghost  nothing on the line")
 	if stroke_speed > 0.0:
 		lines.append("the stroke %.2f m/s, the cue back %.2f m (the fastest stroke the game takes is %.2f)" % [stroke_speed, pulled, MAX_CUE_SPEED])
@@ -1019,10 +1216,23 @@ func _print_the_shot_report(aim: Vector3, speed: float) -> void:
 	print("the shot went in:")
 	print("  the tip: ", _tip_words())
 	print("  the stroke: %.2f m/s along %s" % [speed, _vector(aim)])
+	# The cue's height is in the log with the stroke, because a raised stroke and
+	# a level one are the same words for the player until the height is said: the
+	# height is what makes the log's shot a jump shot. The words are the status's
+	# own, and they read the core's elevation rather than the number the game set,
+	# so the log cannot report a raised cue over a level stroke.
+	print("  the cue: ", _cue_words())
 	var preview: Dictionary = core.preview_cue_strike(speed, aim, contact)
 	var velocity: Vector3 = preview["velocity"]
-	var across := velocity.dot(_right(aim))
-	var deg := rad_to_deg(atan2(absf(across), velocity.dot(aim)))
+	# The leave is measured off the line on the cloth, the line the picture drew
+	# and the panel named, so the log and the panel agree about how crooked the
+	# shot is: a raised cue leaves with a height as well, and an angle measured
+	# off its axis is not an angle on the cloth. For a cue lying flat the axis and
+	# the cloth's line are the same line, so the number every level stroke used to
+	# print is unchanged.
+	var level := _level_aim()
+	var across := velocity.dot(_right(level))
+	var deg := rad_to_deg(atan2(absf(across), velocity.dot(level)))
 	if deg < 0.005:
 		# The ball leaves on the line of the cue: there is no side to name,
 		# and naming one would be a lie.
@@ -1082,9 +1292,11 @@ func _mouse_motion(event: InputEventMouseMotion) -> void:
 
 	if Input.is_key_pressed(KEY_E):
 		# The tip moves on the face of the ball, and the aim is left alone.
-		# B moves the tip finer: 0.07 mm to a pixel.
+		# F moves the tip finer: 0.07 mm to a pixel. This branch comes before
+		# the one for B, so a player holding both E and B is looking at the tip
+		# they are moving, and the raise of the cue is left where they left it.
 		var step := SPIN_SCALE
-		if Input.is_key_pressed(KEY_B):
+		if Input.is_key_pressed(KEY_F):
 			step = SPIN_SCALE * FINE_SCALE
 		contact.x += event.relative.x * step
 		contact.y -= event.relative.y * step
@@ -1151,10 +1363,38 @@ func _mouse_motion(event: InputEventMouseMotion) -> void:
 		# the mouse is still carrying it. The aim is left as it was.
 		return
 
-	# The mouse turns the shot, the way it turns the view in a first person
-	# game: relative, and it stops when the mouse stops. **B** turns it finer.
-	var fine := 1.0
+	# **B** holds the cue, and the mouse's up and down raises it: dragging down
+	# the screen lifts the butt of the cue, which points the shaft DOWN at the
+	# ball. The core takes the shot as an axis with a negative height for a cue
+	# raised at the butt (§12.3 bakes the elevation into the direction rather
+	# than passing an angle), and this is the same gesture a first person
+	# player pitches the view with. The raised cue is what makes a stroke a
+	# jump shot: it drives the cue ball into the slate beside the object ball
+	# instead of along the bed, and §7.1's jump is that slate launching it.
+	#
+	# The branch comes after the one for E, so the tip wins when both keys are
+	# held: a player moving the tip is looking at the ball they are striking,
+	# and the cue is left where they left it.
+	#
+	# The height is asked for only while the cue is being aimed at. Once the
+	# cue is being drawn back - the CHARGING branch above, which returns first
+	# - the mouse's up and down belongs to the draw, so the height keeps the
+	# value the player left it at: the gesture for the power and the gesture
+	# for the angle are two hands, and one drag cannot set both at once.
 	if Input.is_key_pressed(KEY_B):
+		# The raise is ANGLE_PER_PIXEL of a degree to a pixel of drag, so MAX_CUE
+		# ANGLE is 600 pixels: most of a window, and the same kind of sweep of a
+		# wrist that DRAW_SPEED and MAX_PULL take for a full backswing. It is
+		# clamped at MAX_CUE_ANGLE because a bridge cannot follow a shaft
+		# steeper than that: past it the drawing is of a stroke no hand made.
+		cue_angle = clampf(cue_angle + event.relative.y * ANGLE_PER_PIXEL, 0.0, MAX_CUE_ANGLE)
+
+	# The mouse turns the shot, the way it turns the view in a first person
+	# game: relative, and it stops when the mouse stops. **F** turns it finer,
+	# so the sideways part of the same drag that raised the cue turns it, and
+	# holds the turn back when the player wants a line they can trust.
+	var fine := 1.0
+	if Input.is_key_pressed(KEY_F):
 		fine = FINE_SCALE
 	base_aim = base_aim.rotated(Vector3.UP, -event.relative.x * LOOK_SPEED * fine)
 

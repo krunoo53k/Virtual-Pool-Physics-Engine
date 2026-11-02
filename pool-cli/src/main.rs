@@ -6,6 +6,7 @@
 //!
 //! ```text
 //! pool-cli simulate --cue-speed 2 --aim-deg 0 --object 0.9,0.635
+//! pool-cli simulate --cue-speed 9 --elev-deg 35 --spin-r -0.4   # the game's jump
 //! pool-cli sweep --kind speed --from 0.5 --to 6 --steps 12 --out speed.csv
 //! pool-cli sweep --kind english --from 0 --to 0.5 --steps 6 --out english.csv
 //! pool-cli sweep --kind cut --from 0 --to 60 --steps 13 --out throw.csv
@@ -96,6 +97,7 @@ COMMON OPTIONS:
     --object X,Y     an object ball's position (repeatable)
     --cue-speed S    the cue speed in m/s (default 2.0)
     --aim-deg A      the aim direction in degrees (default 0)
+    --elev-deg E     the cue raised E degrees above the level (default 0)
     --offset-r B     the side offset in ball radii (english, default 0)
     --spin-r B       the vertical offset in ball radii (default 0)
     --out FILE       write the CSV to FILE instead of stdout
@@ -126,11 +128,16 @@ fn parse_point(text: &str) -> Result<(f64, f64), String> {
     Ok((x, y))
 }
 
+// The eight numbers a stroke can be asked for are the eight numbers a stroke
+// is: the same handful the panel shows, and none of them a detail of the CLI
+// nobody asked for.
+#[allow(clippy::too_many_arguments)]
 fn build_shot(
     cfg: &TableConfig,
     cue_position: (f64, f64),
     objects: &[(f64, f64)],
     aim_deg: f64,
+    elev_deg: f64,
     speed: f64,
     offset_r: f64,
     spin_r: f64,
@@ -150,7 +157,19 @@ fn build_shot(
         ));
     }
     let radians = aim_deg.to_radians();
-    let direction = Vec3::new(radians.cos(), radians.sin(), 0.0);
+    // The elevation is baked into the direction rather than passed as an angle:
+    // §12.3 says the core never calls `sin`/`cos`, so the trigonometry stays on
+    // this side of the deterministic boundary. The core's `z` is up, and a cue
+    // raised at the butt points its axis DOWN at the ball, so the height of the
+    // axis is `-sin` of the elevation - the way `pool-visual`'s jump scene builds
+    // it, and the way §7.1 wants it: the elevated cue drives the ball into the
+    // slate, and the slate is what launches it.
+    let elevation = elev_deg.to_radians();
+    let direction = Vec3::new(
+        elevation.cos() * radians.cos(),
+        elevation.cos() * radians.sin(),
+        -elevation.sin(),
+    );
     let mut input = ShotInput::new(speed, direction, balls);
     input.contact_offset_x = offset_r * cfg.ball.radius;
     input.contact_offset_y = spin_r * cfg.ball.radius;
@@ -171,6 +190,7 @@ fn command_simulate(args: &Args) -> Result<String, String> {
         objects.push((cue_position.0 + 0.5, cue_position.1));
     }
     let aim_deg = args.get_f64("aim-deg", 0.0)?;
+    let elev_deg = args.get_f64("elev-deg", 0.0)?;
     let speed = args.get_f64("cue-speed", 2.0)?;
     let offset_r = args.get_f64("offset-r", 0.0)?;
     let spin_r = args.get_f64("spin-r", 0.0)?;
@@ -180,6 +200,7 @@ fn command_simulate(args: &Args) -> Result<String, String> {
         cue_position,
         &objects,
         aim_deg,
+        elev_deg,
         speed,
         offset_r,
         spin_r,
@@ -238,7 +259,9 @@ fn shoot_at_cut(cfg: &TableConfig, speed: f64, cut_deg: f64, distance: f64) -> O
         cue_position.0 + distance - contact * cut.cos(),
         cue_position.1 + contact * cut.sin(),
     );
-    let input = build_shot(&cfg, cue_position, &[object], 0.0, speed, 0.0, 0.0);
+    // The cut sweeps are level shots: it is the elevation that makes a shot a
+    // jump, and a jump does not land the separation the sweeps are fitting.
+    let input = build_shot(cfg, cue_position, &[object], 0.0, 0.0, speed, 0.0, 0.0);
 
     // The separation and the throw are properties of the collision, so the shot is
     // stopped at the moment of the collision: the first pass finds when that is, the
@@ -319,6 +342,10 @@ fn command_sweep(args: &Args) -> Result<String, String> {
                     &cfg,
                     (cfg.table.length / 4.0, cfg.table.width / 2.0),
                     &[],
+                    0.0,
+                    // The squirt curve is fitted on level strokes: the elevation
+                    // drives the ball into the slate, and the squirt is the tip
+                    // sliding on the cloth side of the ball.
                     0.0,
                     speed,
                     b,
