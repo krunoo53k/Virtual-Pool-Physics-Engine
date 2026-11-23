@@ -108,7 +108,7 @@ Two versions move, and they mean different things:
 | | What it is |
 |---|---|
 | `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.9`) |
-| the crate version (`0.1.0`) | the version of the **API** |
+| the crate version (`0.2.0`) | the version of the **API** |
 
 A change to the model bumps both; a change to the API only bumps the crate
 version. The model version is what the game asks for -

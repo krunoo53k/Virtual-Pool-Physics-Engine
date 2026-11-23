@@ -29,8 +29,13 @@ pub struct BallBallOutcome {
     pub normal: Vec3,
     /// The horizontal tangent of the tangent plane.
     pub tangent: Vec3,
-    /// The vertical speed the striking ball gains from the vertical component of the
-    /// friction impulse (section 4.5). It is positive when the ball is lifted.
+    /// The vertical speed the striking ball gains from the impulse, m/s. It is
+    /// positive when the ball is lifted.
+    ///
+    /// For a contact between balls at the same height this is the friction-only lift
+    /// of §4.5: the normal is horizontal, so `impulse_a.z` carries only the tangential
+    /// impulse. At different heights the normal has a vertical component as well, and
+    /// this is the vertical speed from the whole impulse, normal and friction together.
     pub lift: f64,
 }
 
@@ -183,7 +188,7 @@ pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutco
         sticking: slip > 0.0 && jt_stick <= jt_cap,
         normal,
         tangent,
-        // The vertical speed the striking ball gains from the friction impulse.
+        // The vertical speed from the whole impulse, as documented on the field.
         lift: impulse_a.z / m,
     }
 }

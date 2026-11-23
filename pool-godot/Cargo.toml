@@ -20,7 +20,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # The version is here as well as the path: a published crate has to ask for a
 # version of the core, and the two are released together - the core first.
-pool-core = { path = "../pool-core", version = "0.1.0" }
+pool-core = { path = "../pool-core", version = "0.2.0" }
 # The Godot 4 bindings. `api-4-6` selects the GDExtension API of Godot 4.6, and
 # the extension runs on any later 4.x. The bindings come from the prebuilt
 # `extension_api.json`, so no Godot binary is needed to build.
