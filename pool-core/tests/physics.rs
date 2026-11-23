@@ -766,4 +766,31 @@ fn a_ball_landing_on_another_from_above_does_touch_it() {
             .any(|event| event.kind == EventKind::BallBall),
         "a ball falling onto another must register a contact"
     );
+    assert!(
+        simulation.balls()[0].position.z <= r + 1e-9,
+        "the ball that landed must not hang in the air"
+    );
+}
+
+#[test]
+fn a_ball_rolling_under_a_settled_stack_does_not_loop_for_ever() {
+    let cfg = TableConfig::default();
+    let r = cfg.ball.radius;
+    let mut dropper = ball(&cfg, 0, 0.635, 0.635);
+    dropper.position.z = r + 3.0 * r;
+    dropper.velocity = Vec3::new(0.0, 0.0, -1.0);
+    dropper.motion_state = MotionState::Airborne;
+    let object = ball(&cfg, 1, 0.635, 0.635);
+    let mut striker = ball(&cfg, 2, 0.4, 0.635);
+    striker.velocity = Vec3::new(3.0, 0.0, 0.0);
+
+    let input = ShotInput::new(0.0, Vec3::X, vec![dropper, object, striker]);
+    let mut simulation = pool_core::Simulation::new(&input, &cfg);
+    simulation
+        .run_without_strike()
+        .expect("a third ball must not turn the stack into an endless contact");
+    assert!(
+        simulation.balls()[0].position.z <= r + 1e-9,
+        "the ball above must come down off the one below"
+    );
 }

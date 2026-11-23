@@ -891,9 +891,12 @@ impl<'a> Simulation<'a> {
         }
         // A ball that lands on one resting on the bed cannot push it downwards: the
         // cloth takes that part of the impulse. The free-pair impulse can then leave
-        // the ball above still closing on the one below, and the same contact would be
-        // found again at the same instant, for ever. Settle that constrained stack:
-        // the ball above comes to rest on the one below.
+        // the two still closing along the contact normal. Remove the remaining
+        // *relative* closing speed from the ball above - the one the cloth does not
+        // hold - so the contact is resolved once instead of being found again at the
+        // same instant. A ball balanced exactly on top of another is an unstable
+        // equilibrium, so give it a little horizontal motion to roll off with rather
+        // than leaving it hanging in the air when the ball below moves away.
         let (upper, lower) = if self.balls[a].position.z >= self.balls[b].position.z {
             (a, b)
         } else {
@@ -905,10 +908,13 @@ impl<'a> Simulation<'a> {
             && self.balls[upper].position.z > radius + BED_TOLERANCE
             && self.balls[lower].position.z <= radius + BED_TOLERANCE
         {
+            let correction = if upper == a { -closing } else { closing };
             let ball = &mut self.balls[upper];
-            ball.velocity = Vec3::ZERO;
-            ball.angular_velocity = Vec3::ZERO;
-            ball.motion_state = MotionState::Stationary;
+            ball.velocity += outcome.normal * correction;
+            if libm::hypot(ball.velocity.x, ball.velocity.y) < self.cfg.slate.settle_speed {
+                ball.velocity += outcome.tangent * self.cfg.slate.settle_speed;
+            }
+            self.refresh_bed_state(upper);
             self.refresh_bed_state(lower);
             return;
         }
