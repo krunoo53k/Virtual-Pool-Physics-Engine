@@ -889,6 +889,29 @@ impl<'a> Simulation<'a> {
             // cloth takes it.
             self.settle_on_bed(b);
         }
+        // A ball that lands on one resting on the bed cannot push it downwards: the
+        // cloth takes that part of the impulse. The free-pair impulse can then leave
+        // the ball above still closing on the one below, and the same contact would be
+        // found again at the same instant, for ever. Settle that constrained stack:
+        // the ball above comes to rest on the one below.
+        let (upper, lower) = if self.balls[a].position.z >= self.balls[b].position.z {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        let closing = (self.balls[a].velocity - self.balls[b].velocity).dot(outcome.normal);
+        let radius = self.cfg.ball.radius;
+        if closing > 0.0
+            && self.balls[upper].position.z > radius + BED_TOLERANCE
+            && self.balls[lower].position.z <= radius + BED_TOLERANCE
+        {
+            let ball = &mut self.balls[upper];
+            ball.velocity = Vec3::ZERO;
+            ball.angular_velocity = Vec3::ZERO;
+            ball.motion_state = MotionState::Stationary;
+            self.refresh_bed_state(lower);
+            return;
+        }
         self.refresh_bed_state(a);
         self.refresh_bed_state(b);
     }

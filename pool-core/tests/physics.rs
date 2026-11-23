@@ -708,3 +708,62 @@ fn the_squirt_grows_with_the_impact_parameter() {
         previous = angle;
     }
 }
+
+// ------------------------------------------------------- height-aware ball-ball contact
+
+#[test]
+fn a_ball_flying_over_another_passes_over_it() {
+    let mut cfg = TableConfig::default();
+    // Look only at the flyer's pass. Left running for the whole shot, it would
+    // rebound off a cushion and eventually reach the other ball for real.
+    cfg.simulation.max_sim_time = 0.1;
+    let r = cfg.ball.radius;
+    let mut flyer = ball(&cfg, 0, 0.635, 0.635);
+    // Directly over the other ball and 4R above it, moving away horizontally. The
+    // old planar contact test saw the centres coincide and collided at t = 0.
+    flyer.position.z = r + 4.0 * r;
+    flyer.velocity = Vec3::new(5.0, 0.0, 0.0);
+    flyer.motion_state = MotionState::Airborne;
+    let object = ball(&cfg, 1, 0.635, 0.635);
+
+    let input = ShotInput::new(0.0, Vec3::X, vec![flyer, object]);
+    let mut simulation = pool_core::Simulation::new(&input, &cfg);
+    simulation
+        .run_without_strike()
+        .expect("the shot runs without a fault");
+    assert!(
+        !simulation
+            .events()
+            .iter()
+            .any(|event| event.kind == EventKind::BallBall),
+        "a ball flying above another must not register a contact"
+    );
+    assert!(
+        simulation.balls()[1].position.x - 0.635 < 1e-12,
+        "the ball underneath was never struck"
+    );
+}
+
+#[test]
+fn a_ball_landing_on_another_from_above_does_touch_it() {
+    let cfg = TableConfig::default();
+    let r = cfg.ball.radius;
+    let mut dropper = ball(&cfg, 0, 0.635, 0.635);
+    dropper.position.z = r + 3.0 * r;
+    dropper.velocity = Vec3::new(0.0, 0.0, -1.0);
+    dropper.motion_state = MotionState::Airborne;
+    let object = ball(&cfg, 1, 0.635, 0.635);
+
+    let input = ShotInput::new(0.0, Vec3::X, vec![dropper, object]);
+    let mut simulation = pool_core::Simulation::new(&input, &cfg);
+    simulation
+        .run_without_strike()
+        .expect("the shot runs without a fault");
+    assert!(
+        simulation
+            .events()
+            .iter()
+            .any(|event| event.kind == EventKind::BallBall),
+        "a ball falling onto another must register a contact"
+    );
+}

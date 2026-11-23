@@ -67,13 +67,15 @@ pub fn friction_at_speed(mu_ball: f64, slip: f64) -> f64 {
 /// Resolves a ball-ball collision between `a` (the striking ball) and `b`.
 ///
 /// The model is the one of §4.4.5:
+/// - the line of centres is the full 3D one, so a ball in flight above another can
+///   pass over it (two balls only touch when their centres are `2R` apart in 3D);
 /// - the normal impulse is `J_n = ((1 + e) / 2) * m * v_n`, which conserves momentum;
 /// - the tangential impulse stops the slip at `m * u / 7` but is capped by the
 ///   Coulomb limit `mu_ball(u) * J_n`, with the friction coefficient falling with the
 ///   sliding speed (TP A.14);
-/// - the slip is a vector in the *tangent plane* - horizontal along the rail and
-///   vertical - and the friction acts along it, which is what carries the vertical
-///   effects of §4.5;
+/// - the slip is a vector in the *tangent plane* of that 3D normal - horizontal along
+///   the rail and vertical when both balls lie on the bed - and the friction acts
+///   along it, which is what carries the vertical effects of §4.5;
 /// - both balls' spin is updated, which is what produces throw and spin transfer.
 pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutcome {
     let m = cfg.ball.mass;
@@ -82,36 +84,49 @@ pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutco
     let e = cfg.ball_ball.e_ball;
 
     let delta = b.position - a.position;
-    // The line of centres is taken in the horizontal plane: the document's ball-ball
-    // model is a planar one, and the vertical effect of the collision comes from the
-    // vertical component of the slip, not from the contact normal.
-    let horizontal = Vec3::new(delta.x, delta.y, 0.0);
-    let normal = match horizontal.normalize() {
-        Some(n) => n,
-        None => match delta.normalize() {
-            Some(n) => n,
-            None => {
-                // Degenerate: the centres coincide. Leave the balls alone (§4.5,
-                // ground rule 6: never divide by zero, never produce a NaN).
-                return BallBallOutcome {
-                    velocity_a: a.velocity,
-                    velocity_b: b.velocity,
-                    angular_velocity_a: a.angular_velocity,
-                    angular_velocity_b: b.angular_velocity,
-                    jn: 0.0,
-                    jt: 0.0,
-                    slip: 0.0,
-                    sticking: true,
-                    normal: Vec3::X,
-                    tangent: Vec3::Y,
-                    lift: 0.0,
-                };
-            }
-        },
+    // Degenerate: the centres coincide. Leave the balls alone (§4.5, ground rule 6:
+    // never divide by zero, never produce a NaN).
+    let untouched = || BallBallOutcome {
+        velocity_a: a.velocity,
+        velocity_b: b.velocity,
+        angular_velocity_a: a.angular_velocity,
+        angular_velocity_b: b.angular_velocity,
+        jn: 0.0,
+        jt: 0.0,
+        slip: 0.0,
+        sticking: true,
+        normal: Vec3::X,
+        tangent: Vec3::Y,
+        lift: 0.0,
     };
-    // The tangent plane at the contact is spanned by the horizontal tangent and the
-    // vertical.
-    let tangent = Vec3::new(-normal.y, normal.x, 0.0);
+    // The line of centres is the full 3D one. A ball in flight above another passes
+    // over it: the two only touch when the *3D* separation is 2R.
+    //
+    // When the centres are at the same height the bed-level arithmetic is kept
+    // exactly as it was. Besides being the physical model for the overwhelming
+    // majority of shots, this keeps every on-the-cloth shot bit-for-bit the same.
+    let (normal, tangent, bitangent) = if delta.z == 0.0 {
+        let normal = match Vec3::new(delta.x, delta.y, 0.0).normalize() {
+            Some(n) => n,
+            None => return untouched(),
+        };
+        // The tangent plane is spanned by the horizontal tangent and the vertical.
+        (normal, Vec3::new(-normal.y, normal.x, 0.0), Vec3::Z)
+    } else {
+        let normal = match delta.normalize() {
+            Some(n) => n,
+            None => return untouched(),
+        };
+        // Two orthonormal directions spanning the plane perpendicular to the
+        // normal. The first is horizontal (it is the old tangent when the normal
+        // is horizontal); the second is the "vertical" of that plane.
+        let tangent = match Vec3::Z.cross(normal).normalize() {
+            Some(t) => t,
+            None => Vec3::X, // a vertical normal: any horizontal tangent will do
+        };
+        let bitangent = normal.cross(tangent);
+        (normal, tangent, bitangent)
+    };
 
     let r_a = normal * radius;
     let r_b = normal * -radius;
@@ -123,8 +138,10 @@ pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutco
     let contact_b = b.velocity + b.angular_velocity.cross(r_b);
     let slip_vector = contact_a - contact_b;
     let u_t = slip_vector.dot(tangent);
-    let u_z = slip_vector.z;
-    let slip = (u_t * u_t + u_z * u_z).sqrt();
+    // The second in-plane component: the vertical one when both balls lie on the
+    // bed, and its tilted counterpart when one of them is in the air.
+    let u_v = slip_vector.dot(bitangent);
+    let slip = (u_t * u_t + u_v * u_v).sqrt();
 
     let jn = ((1.0 + e) / 2.0) * m * v_n;
     // The friction coefficient falls with the sliding speed (TP A.14).
@@ -142,7 +159,7 @@ pub fn resolve(a: &BallState, b: &BallState, cfg: &TableConfig) -> BallBallOutco
     // front of the ball moves downwards, so the friction lifts the cue ball and presses
     // the object ball into the cloth (§4.5).
     let slip_dir = if slip > 0.0 {
-        tangent * (u_t / slip) + Vec3::Z * (u_z / slip)
+        tangent * (u_t / slip) + bitangent * (u_v / slip)
     } else {
         Vec3::ZERO
     };
@@ -188,20 +205,12 @@ pub fn time_of_impact(
     horizon: f64,
 ) -> Option<f64> {
     let radius = a.radius;
-    // The contact test is planar, like the collision model of §4.4.5: the vertical
-    // separation of two balls is small compared with their diameter, and the
-    // vertical effect of a collision is the table effect of §4.5.
-    let dp0 = Vec3::new(
-        b.position.x - a.position.x,
-        b.position.y - a.position.y,
-        0.0,
-    );
-    let dv = Vec3::new(
-        b.velocity.x - a.velocity.x,
-        b.velocity.y - a.velocity.y,
-        0.0,
-    );
-    let da = Vec3::new(accel_b.x - accel_a.x, accel_b.y - accel_a.y, 0.0);
+    // The contact condition of §11.3 is the 3D sphere-sphere one: two balls touch
+    // when their centres are 2R apart in space, height included. Dropping the z
+    // term would make a ball flying above another collide with it.
+    let dp0 = b.position - a.position;
+    let dv = b.velocity - a.velocity;
+    let da = accel_b - accel_a;
 
     let dist2 = dp0.norm_squared();
     let contact2 = (2.0 * radius) * (2.0 * radius);
@@ -310,5 +319,57 @@ mod tests {
         assert!(out.sticking);
         let throw = (out.velocity_b.y.atan2(out.velocity_b.x) - angle).to_degrees();
         assert!((throw - -1.4799).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_ball_flying_above_another_does_not_touch_it() {
+        let cfg = TableConfig::default();
+        let r = cfg.ball.radius;
+        // Directly over the other ball, 4R above it, moving horizontally. A planar
+        // contact test sees the centres coincide and reports an instant collision.
+        let a = ball(
+            &cfg,
+            0,
+            Vec3::new(0.0, 0.0, r + 4.0 * r),
+            Vec3::new(2.0, 0.0, 0.0),
+        );
+        let b = ball(&cfg, 1, Vec3::new(0.0, 0.0, r), Vec3::ZERO);
+        assert!(time_of_impact(&a, &b, Vec3::ZERO, Vec3::ZERO, 1.0).is_none());
+    }
+
+    #[test]
+    fn a_ball_falling_from_above_touches_it_in_three_dimensions() {
+        let cfg = TableConfig::default();
+        let r = cfg.ball.radius;
+        // The centres are 3R apart and closing at 1 m/s: contact after R seconds.
+        let a = ball(
+            &cfg,
+            0,
+            Vec3::new(0.0, 0.0, r + 3.0 * r),
+            Vec3::new(0.0, 0.0, -1.0),
+        );
+        let b = ball(&cfg, 1, Vec3::new(0.0, 0.0, r), Vec3::ZERO);
+        let t = time_of_impact(&a, &b, Vec3::ZERO, Vec3::ZERO, 1.0).expect("the balls meet");
+        assert!((t - r).abs() < 1e-9, "expected {r}, got {t}");
+    }
+
+    #[test]
+    fn a_vertical_contact_resolves_along_the_three_dimensional_normal() {
+        let cfg = TableConfig::default();
+        let r = cfg.ball.radius;
+        let a = ball(
+            &cfg,
+            0,
+            Vec3::new(0.0, 0.0, r + 3.0 * r),
+            Vec3::new(0.0, 0.0, -1.0),
+        );
+        let b = ball(&cfg, 1, Vec3::new(0.0, 0.0, r), Vec3::ZERO);
+        let out = resolve(&a, &b, &cfg);
+        assert!((out.normal.z + 1.0).abs() < 1e-12);
+        // The equal-mass impulse leaves the striker with (1-e)/2 of its speed and
+        // drives the other ball down at (1+e)/2 of it.
+        let e = cfg.ball_ball.e_ball;
+        assert!((out.velocity_a.z - (e - 1.0) / 2.0).abs() < 1e-12);
+        assert!((out.velocity_b.z + (1.0 + e) / 2.0).abs() < 1e-12);
     }
 }
