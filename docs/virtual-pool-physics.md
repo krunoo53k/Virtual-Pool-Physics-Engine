@@ -1,8 +1,8 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.8
-> **Date:** 2026-10-23
+> **Version:** 1.9
+> **Date:** 2026-11-23
 > **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, ball-cue and ball-pocket interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
 >
 > **Revision note (1.1):** corrected the sliding-state spin sign (§3.3), the ball-ball normal and
@@ -189,6 +189,22 @@
 >   `src/`, at any depth, so a module moved into a subdirectory cannot slip out of the
 >   check that made the ban list — which includes `powi`, `atan2`, `asin`, `acos`, `tan`,
 >   `ln` and `cbrt` — apply to everything the core runs.
+>
+> **Revision note (1.9) — ball-ball contact is height-aware.** The implementation had
+> been projecting the contact test and the line of centres onto the horizontal plane:
+> two balls collided whenever their *horizontal* separation was `2R`, however far
+> apart they were vertically. A ball in flight could therefore not pass over one on
+> the bed, which contradicts the jump-shot scope of §1 and the 3D sphere-sphere TOI of
+> §11.3. The normal is now the full 3D line of centres and the contact condition uses
+> the 3D separation, with the tangent plane perpendicular to that normal; the vertical
+> effects of §4.5 still come from the friction in that plane. A ball that is more than
+> `2R` above another now passes over it, and one that falls onto it still collides.
+> Contacts between balls at the same height keep the bed-level arithmetic exactly, so
+> shots that never leave the cloth are unchanged; the golden hash moved because the
+> break in that fixture does have balls in the air. A ball landing squarely on one
+> that the cloth holds up is a constrained contact: the free-pair impulse leaves the
+> ball above still closing, so that stack is settled instead of being re-found at the
+> same instant for ever (§11.4's Zeno guard, applied at the ball-ball contact).
 
 ---
 
