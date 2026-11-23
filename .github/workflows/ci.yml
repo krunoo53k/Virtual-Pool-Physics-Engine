@@ -14,34 +14,84 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  test:
-    name: Build, test and lint
+  format:
+    name: Format
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
-
-      - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@v2
-
+          components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-rust
       - name: Build every target
         run: cargo build --workspace --all-targets
 
-      - name: Run the test suite
-        run: cargo test --workspace
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: ./.github/actions/setup-rust
+      - uses: taiki-e/install-action@nextest
+      - name: Run unit and integration tests
+        run: cargo nextest run --workspace --profile ci
+      - name: Run doc tests
+        run: cargo test --workspace --doc
+      - name: Publish test results
+        # A fork's token is read-only, so it cannot create the results check.
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: target/nextest/ci/junit.xml
+          check_name: Test results
+          check_run_annotations: none
+          comment_mode: off
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
-      - name: Lint with clippy
-        run: cargo clippy --workspace --all-targets
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    outputs:
+      warnings: ${{ steps.lint.outputs.warning_count }}
+    steps:
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy
+      - name: Lint and report diagnostics
+        id: lint
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets --message-format=json \
+            | python3 .github/scripts/clippy-annotations.py
 
+  demos:
+    name: Demos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-rust
       - name: Check that the demos match the core
         run: |
           cargo run -p pool-visual -- demos
@@ -51,3 +101,26 @@ jobs:
             echo "Run 'cargo run -p pool-visual -- demos' and commit the result."
             exit 1
           fi
+
+  summary:
+    name: Summary
+    if: always()
+    needs: [format, build, tests, clippy, demos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download JUnit report
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: junit
+          path: test-results
+      - name: Write the overview
+        env:
+          FMT_RESULT: ${{ needs.format.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          CLIPPY_RESULT: ${{ needs.clippy.result }}
+          DEMOS_RESULT: ${{ needs.demos.result }}
+          CLIPPY_WARNINGS: ${{ needs.clippy.outputs.warnings }}
+        run: python3 .github/scripts/summary.py test-results/junit.xml

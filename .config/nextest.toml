@@ -1,0 +1,3 @@
+# The JUnit report feeds the test-results check and the CI overview.
+[profile.ci.junit]
+path = "junit.xml"
