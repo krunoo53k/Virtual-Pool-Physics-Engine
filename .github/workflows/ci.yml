@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, test and lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Build every target
+        run: cargo build --workspace --all-targets
+
+      - name: Run the test suite
+        run: cargo test --workspace
+
+      - name: Lint with clippy
+        run: cargo clippy --workspace --all-targets
+
+      - name: Check that the demos match the core
+        run: |
+          cargo run -p pool-visual -- demos
+          git diff -- demos/
+          if [ -n "$(git status --porcelain -- demos/)" ]; then
+            echo "The demos are out of date."
+            echo "Run 'cargo run -p pool-visual -- demos' and commit the result."
+            exit 1
+          fi
