@@ -10,7 +10,7 @@ use pool_core::config::TableConfig;
 use pool_core::math::Vec3;
 use pool_core::sim::EventKind;
 use pool_core::state::{BallState, MotionState, PocketState, ShotInput};
-use pool_core::{GamePhase, try_simulate_shot_traced, try_simulate_state};
+use pool_core::{try_simulate_shot_traced, try_simulate_state, GamePhase};
 
 /// The distance from the middle of the table to the rail, along `x`.
 fn half_length(cfg: &TableConfig) -> f64 {
@@ -164,7 +164,11 @@ fn a_ball_already_past_a_rail_is_marked_off_the_table() {
     let ball = BallState::at_rest(
         &cfg,
         0,
-        Vec3::new(cfg.table.length + 0.1, cfg.table.width / 2.0, cfg.ball.radius),
+        Vec3::new(
+            cfg.table.length + 0.1,
+            cfg.table.width / 2.0,
+            cfg.ball.radius,
+        ),
     );
     let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
     let state = try_simulate_state(&input, &cfg).expect("the state runs");

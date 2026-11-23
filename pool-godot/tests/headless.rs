@@ -49,7 +49,15 @@ fn the_shot(table: &TableConfig) -> pool_core::state::GameState {
     let direction = frame::to_core(frame::to_godot(Vec3::Y));
     // A fresh rack: no ball carries an orientation into the break, which is
     // what the game hands `PoolCore.simulate` too.
-    let input = shot::shot_input(table, 8.0, direction, (0.0, 0.0), &core_positions, &numbers, &[]);
+    let input = shot::shot_input(
+        table,
+        8.0,
+        direction,
+        (0.0, 0.0),
+        &core_positions,
+        &numbers,
+        &[],
+    );
     let (state, _) = shot::simulate(table, &input).expect("the shot runs");
     state
 }
@@ -77,13 +85,20 @@ fn the_carry_does_not_move_the_hash() {
     let direction = frame::to_core(frame::to_godot(Vec3::Y));
     // The whole rack is put on the table already turned: every ball by an
     // eighth of a turn about the vertical, and more for each ball along.
-    let turned: Vec<Vec3> =
-        core_positions
-            .iter()
-            .enumerate()
-            .map(|(index, _)| Vec3::new(0.0, 0.0, 0.125 * index as f64))
-            .collect();
-    let input = shot::shot_input(&table, 8.0, direction, (0.0, 0.0), &core_positions, &numbers, &turned);
+    let turned: Vec<Vec3> = core_positions
+        .iter()
+        .enumerate()
+        .map(|(index, _)| Vec3::new(0.0, 0.0, 0.125 * index as f64))
+        .collect();
+    let input = shot::shot_input(
+        &table,
+        8.0,
+        direction,
+        (0.0, 0.0),
+        &core_positions,
+        &numbers,
+        &turned,
+    );
     let (state, _) = shot::simulate(&table, &input).expect("the shot runs");
     let hash = pool_core::hash_state_hex(&state);
     assert_eq!(hash, HASH, "the carry moved the shot's hash: {}", hash);
@@ -117,9 +132,11 @@ fn the_raised_shot(table: &TableConfig) -> (pool_core::state::GameState, pool_co
     let core_positions: Vec<Vec3> = positions.iter().map(|p| frame::to_core(*p)).collect();
     let numbers: Vec<i32> = (0..core_positions.len() as i32).collect();
     let elevation = 12.0f64.to_radians();
-    let direction = frame::to_core(
-        frame::to_godot(Vec3::new(0.0, elevation.cos(), -elevation.sin())),
-    );
+    let direction = frame::to_core(frame::to_godot(Vec3::new(
+        0.0,
+        elevation.cos(),
+        -elevation.sin(),
+    )));
     let input = shot::shot_input(
         table,
         8.0,
@@ -142,8 +159,7 @@ fn the_elevation_reaches_the_stroke() {
     // differs, so the two strokes have to come out different. A raise that made
     // the level shot is a raise that never left the drawing.
     assert_ne!(
-        hash,
-        HASH,
+        hash, HASH,
         "the raised cue made the level shot: the cue's height never reached the stroke",
     );
 
@@ -153,14 +169,19 @@ fn the_elevation_reaches_the_stroke() {
     // ends in. The hop is read on the path instead, at the middle of the
     // airborne stretch the path itself names, which is the same analytic
     // sampling the renderer plays the path with.
-    let hop = match trace.segments(0).iter()
+    let hop = match trace
+        .segments(0)
+        .iter()
         .find(|segment| segment.kind == pool_core::trace::SegmentKind::Airborne)
     {
         Some(segment) => (segment.t0 + segment.t1) * 0.5,
         // No airborne stretch at all: the checks below say so.
         None => 0.0,
     };
-    assert!(hop > 0.0, "the raised cue made no hop: the cue ball never left the cloth");
+    assert!(
+        hop > 0.0,
+        "the raised cue made no hop: the cue ball never left the cloth"
+    );
     let cue_ball = trace.sample(hop, &table);
     assert_eq!(
         cue_ball[0].motion_state,

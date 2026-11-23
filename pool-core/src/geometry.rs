@@ -643,15 +643,9 @@ mod tests {
         let radius = cfg.ball.radius;
         let middle = Vec2::new(cfg.table.length / 2.0, cfg.table.width / 2.0);
         assert!(!geom.is_off_surface(middle, radius));
-        assert!(geom.is_off_surface(
-            Vec2::new(cfg.table.length + radius, middle.y),
-            radius
-        ));
+        assert!(geom.is_off_surface(Vec2::new(cfg.table.length + radius, middle.y), radius));
         // A point off the middle of the bottom rail, away from the side pocket.
-        assert!(geom.is_off_surface(
-            Vec2::new(cfg.table.length / 4.0, -radius),
-            radius
-        ));
+        assert!(geom.is_off_surface(Vec2::new(cfg.table.length / 4.0, -radius), radius));
     }
 
     #[test]

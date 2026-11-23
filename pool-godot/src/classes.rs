@@ -161,16 +161,14 @@ impl PoolCore {
         positions: PackedVector3Array,
         numbers: PackedInt32Array,
     ) -> Gd<PoolShot> {
-        self.resolve(
-            self.input(
-                cue_speed,
-                cue_direction,
-                contact_offset,
-                positions.as_slice(),
-                numbers.as_slice(),
-                &[],
-            ),
-        )
+        self.resolve(self.input(
+            cue_speed,
+            cue_direction,
+            contact_offset,
+            positions.as_slice(),
+            numbers.as_slice(),
+            &[],
+        ))
     }
 
     /// The shot, with the orientation every ball carries into it.
@@ -195,28 +193,25 @@ impl PoolCore {
         numbers: PackedInt32Array,
         rotations: PackedVector3Array,
     ) -> Gd<PoolShot> {
-        self.resolve(
-            self.input(
-                cue_speed,
-                cue_direction,
-                contact_offset,
-                positions.as_slice(),
-                numbers.as_slice(),
-                rotations.as_slice(),
-            ),
-        )
+        self.resolve(self.input(
+            cue_speed,
+            cue_direction,
+            contact_offset,
+            positions.as_slice(),
+            numbers.as_slice(),
+            rotations.as_slice(),
+        ))
     }
 
     /// The shot, from an input the core already takes.
     fn resolve(&self, input: pool_core::ShotInput) -> Gd<PoolShot> {
         match shot::simulate(&self.table, &input) {
-            Ok((state, trace)) =>
-                Gd::from_object(PoolShot {
-                    trace,
-                    state,
-                    error: GString::new(),
-                    table: self.table.clone(),
-                }),
+            Ok((state, trace)) => Gd::from_object(PoolShot {
+                trace,
+                state,
+                error: GString::new(),
+                table: self.table.clone(),
+            }),
             Err(error) => Gd::from_object(PoolShot {
                 trace: Trace::default(),
                 state: shot::faulted_state(&input),

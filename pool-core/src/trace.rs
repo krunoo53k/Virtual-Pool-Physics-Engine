@@ -502,8 +502,7 @@ impl OpenSegment {
 /// zero at the end of the segment does not cross it.
 fn spin_death(segment: &OpenSegment, dt: f64) -> Option<f64> {
     let decaying =
-        segment.w0.z > 0.0 && segment.wa.z < 0.0
-            || segment.w0.z < 0.0 && segment.wa.z > 0.0;
+        segment.w0.z > 0.0 && segment.wa.z < 0.0 || segment.w0.z < 0.0 && segment.wa.z > 0.0;
     if !decaying {
         return None;
     }
@@ -607,7 +606,8 @@ impl Recorder {
                 // nothing left to decay. The rotation is accumulated with the
                 // expression `rotation_at` uses, so the two halves meet where
                 // the renderer reads them.
-                self.spin[index] = self.spin[index] + open.w0 * death + open.wa * (0.5 * death * death);
+                self.spin[index] =
+                    self.spin[index] + open.w0 * death + open.wa * (0.5 * death * death);
                 self.trace.balls[index].push(open.close(open.t0 + death));
                 let w = open.w0 + open.wa * death;
                 let again = OpenSegment {
