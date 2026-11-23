@@ -33,6 +33,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust
       - name: Build every target
         run: cargo build --workspace --all-targets
@@ -44,6 +45,7 @@ jobs:
       contents: read
       checks: write
     steps:
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - name: Run unit and integration tests
@@ -76,6 +78,7 @@ jobs:
     outputs:
       warnings: ${{ steps.lint.outputs.warning_count }}
     steps:
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust
         with:
           components: clippy
@@ -91,6 +94,7 @@ jobs:
     name: Demos
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust
       - name: Check that the demos match the core
         run: |
