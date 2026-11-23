@@ -9,7 +9,8 @@
 use pool_core::config::TableConfig;
 use pool_core::math::Vec3;
 use pool_core::sim::EventKind;
-use pool_core::state::{BallState, MotionState};
+use pool_core::state::{BallState, MotionState, PocketState, ShotInput};
+use pool_core::{GamePhase, try_simulate_shot_traced, try_simulate_state};
 
 /// The distance from the middle of the table to the rail, along `x`.
 fn half_length(cfg: &TableConfig) -> f64 {
@@ -118,6 +119,58 @@ fn a_ball_that_hops_over_a_rail_is_off_the_table() {
         state.balls[0].is_off_table || off > 0,
         "the ball cleared the rail and nobody noticed"
     );
+}
+
+#[test]
+fn a_ball_that_squeezes_past_a_rail_is_marked_off_the_table() {
+    // A ball that clears the rail between the two collision regimes can pass the
+    // nose line without raising either a cushion or an off-table crossing event.
+    // It used to roll on the cloth outside the table until the time limit, with
+    // the shot left in `Settling` for good. Position has to catch it (§10.1).
+    let cfg = TableConfig::default();
+    let ball = ball(&cfg, Vec3::new(0.3, 0.635, cfg.ball.radius), Vec3::ZERO);
+    let mut input = ShotInput::new(
+        4.0,
+        Vec3::new(1.0, 0.0, 50.0_f64.to_radians().tan()),
+        vec![ball],
+    );
+    input.contact_offset_y = 0.8 * cfg.ball.radius;
+    let (state, trace) = try_simulate_shot_traced(&input, &cfg).expect("the shot runs");
+
+    assert!(state.balls[0].is_off_table, "the ball left the table");
+    assert_eq!(state.balls[0].pocket_state, PocketState::OffTable);
+    assert_eq!(state.balls[0].velocity, Vec3::ZERO);
+    assert_eq!(state.balls[0].angular_velocity, Vec3::ZERO);
+    assert_eq!(state.phase, GamePhase::Settled);
+    assert!(
+        trace.duration < 5.0,
+        "the shot should end when the ball leaves, not at {} s",
+        trace.duration
+    );
+    assert!(
+        trace.events.iter().any(|e| e.kind == EventKind::OffTable),
+        "the departure has to be in the event log"
+    );
+    // The ball is taken out of play, not removed from the state vector: its slot
+    // stays where the renderer and the hash expect it.
+    assert_eq!(state.balls.len(), 1);
+}
+
+#[test]
+fn a_ball_already_past_a_rail_is_marked_off_the_table() {
+    // The backstop runs before the settled check: a ball that has stopped outside
+    // the table has still left it and must be marked even though it is at rest.
+    let cfg = TableConfig::default();
+    let ball = BallState::at_rest(
+        &cfg,
+        0,
+        Vec3::new(cfg.table.length + 0.1, cfg.table.width / 2.0, cfg.ball.radius),
+    );
+    let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
+    let state = try_simulate_state(&input, &cfg).expect("the state runs");
+    assert!(state.balls[0].is_off_table);
+    assert_eq!(state.balls[0].pocket_state, PocketState::OffTable);
+    assert_eq!(state.phase, GamePhase::Settled);
 }
 
 #[test]

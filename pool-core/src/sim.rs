@@ -236,6 +236,12 @@ impl<'a> Simulation<'a> {
             if guard > self.cfg.simulation.max_events {
                 return Err(SimError::new("the event limit was reached"));
             }
+            // The position backstop runs before the settled check: a ball that
+            // stopped outside the table has still left it, and has to be marked
+            // even though nothing is moving any more (§10.1).
+            if self.mark_escaped_balls() {
+                continue;
+            }
             if self.all_settled() {
                 break;
             }
@@ -270,6 +276,54 @@ impl<'a> Simulation<'a> {
     /// True when no ball can move any more.
     fn all_settled(&self) -> bool {
         self.balls.iter().all(|b| b.is_settled())
+    }
+
+    /// Marks every ball that is already past the playing surface as off the
+    /// table (§10.1), at the current time.
+    ///
+    /// [`Self::collect_off_table_events`] notices a ball crossing a nose line,
+    /// but it only fires at that crossing and only at heights it recognises. A
+    /// ball that slips through in between - at the seam of the nose rubber and
+    /// the rail structure, say - would otherwise roll on the cloth outside the
+    /// table until the time limit, leaving a shot that never settles. Here the
+    /// ball's position decides: past the rails and outside a pocket mouth is
+    /// off the table, whatever route it took to get there.
+    ///
+    /// This is a soft removal: the ball stays in the state vector at its index,
+    /// with `is_off_table` set and zero velocity, so it is skipped by the
+    /// advance, the candidate collection and collision detection. Nothing in
+    /// the public state, trace or API changes shape.
+    fn mark_escaped_balls(&mut self) -> bool {
+        let escaped: Vec<u8> = (0..self.balls.len())
+            .filter(|&index| {
+                let ball = &self.balls[index];
+                !ball.is_pocketed
+                    && !ball.is_off_table
+                    && ball.pocket_state == PocketState::OnTable
+                    && self
+                        .geom
+                        .is_off_surface(Vec2::new(ball.position.x, ball.position.y), ball.radius)
+            })
+            .map(|index| index as u8)
+            .collect();
+        if escaped.is_empty() {
+            return false;
+        }
+        for a in escaped {
+            let event = SimEvent {
+                time: self.time,
+                kind: EventKind::OffTable,
+                a,
+                b: 0,
+                detail: 0,
+            };
+            // Close the ball's path at the instant it is taken out of play;
+            // `apply_off_table` leaves no segment to reopen.
+            self.close_segments(&event);
+            self.apply_off_table(a as usize);
+            self.events.push(event);
+        }
+        true
     }
 
     /// Applies the cue strike to the cue ball (§6.2).

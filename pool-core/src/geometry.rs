@@ -325,6 +325,33 @@ impl TableGeometry {
         (cfg.table.length, cfg.table.width)
     }
 
+    /// True when the ball's centre is past a cushion nose line and outside every
+    /// pocket mouth: the ball has left the playing surface (§10.1).
+    ///
+    /// The crossing test in the simulation notices a ball at the instant it
+    /// passes a rail, but a ball can end up past the rail without ever raising
+    /// that event - at the seam between the nose rubber and the rail structure,
+    /// for instance. Position is the backstop: once the centre is past a line,
+    /// the ball is off the table unless it is inside a pocket mouth, which the
+    /// pocket state machine owns (§9.2). The mouth's lateral allowance grows by
+    /// a radius so that a ball whose edge still overlaps a jaw is given to the
+    /// pocket rather than declared off the table.
+    pub(crate) fn is_off_surface(&self, p: Vec2, radius: f64) -> bool {
+        let past_a_line = self
+            .rails
+            .iter()
+            .any(|rail| p.dot(rail.normal) > rail.line_coord);
+        if !past_a_line {
+            return false;
+        }
+        !self.pockets.iter().any(|pocket| {
+            let depth = pocket.mouth_distance(p);
+            depth > -radius
+                && depth <= pocket.shelf_depth + radius
+                && pocket.lateral(p).abs() <= pocket.mouth_width / 2.0 + radius
+        })
+    }
+
     /// The geometry as JSON, for a renderer (§12.2).
     ///
     /// The renderer draws the table from *this*, not from its own idea of what a
@@ -607,6 +634,39 @@ mod tests {
                 side.centreline
             );
         }
+    }
+
+    #[test]
+    fn a_ball_past_a_rail_is_off_the_surface() {
+        let cfg = TableConfig::default();
+        let geom = TableGeometry::new(&cfg);
+        let radius = cfg.ball.radius;
+        let middle = Vec2::new(cfg.table.length / 2.0, cfg.table.width / 2.0);
+        assert!(!geom.is_off_surface(middle, radius));
+        assert!(geom.is_off_surface(
+            Vec2::new(cfg.table.length + radius, middle.y),
+            radius
+        ));
+        // A point off the middle of the bottom rail, away from the side pocket.
+        assert!(geom.is_off_surface(
+            Vec2::new(cfg.table.length / 4.0, -radius),
+            radius
+        ));
+    }
+
+    #[test]
+    fn a_ball_in_a_pocket_mouth_is_not_off_the_surface() {
+        // The mouths reach past the nose lines: a ball in one belongs to the
+        // pocket state machine, not to the off-table rule (§10.1).
+        let cfg = TableConfig::default();
+        let geom = TableGeometry::new(&cfg);
+        let side = &geom.pockets[4];
+        let in_mouth = side.mouth_centre + side.centreline * (side.shelf_depth / 2.0);
+        assert!(!geom.is_off_surface(in_mouth, cfg.ball.radius));
+        // Far enough beyond the shelf to be in the cabinet rather than a mouth.
+        let past_mouth =
+            side.mouth_centre + side.centreline * (side.shelf_depth + 2.0 * cfg.ball.radius);
+        assert!(geom.is_off_surface(past_mouth, cfg.ball.radius));
     }
 
     #[test]

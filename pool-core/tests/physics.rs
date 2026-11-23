@@ -443,9 +443,10 @@ fn a_ball_that_is_too_slow_to_reach_the_drop_hangs_up() {
 fn a_ball_that_hits_a_jaw_can_rattle_out_or_rattle_in() {
     let cfg = TableConfig::default();
     // A ball that enters the pocket off the centre line hits a facing. Depending on
-    // the angle and the speed it either comes back out or still drops; what matters
-    // is that the outcome is one of the three documented states and that it is the
-    // same on every run.
+    // the angle and the speed it either comes back out, still drops, or clears the
+    // rail on the way out; what matters is that the outcome is one of the documented
+    // states and that it is the same on every run. A hard rattle can carry the ball
+    // past the rail line, which is now caught by the position backstop of §10.1.
     let mut outcomes = Vec::new();
     for offset in [-0.6, -0.3, 0.3, 0.6] {
         for speed in [0.8, 1.2, 1.8, 2.6] {
@@ -458,6 +459,7 @@ fn a_ball_that_hits_a_jaw_can_rattle_out_or_rattle_in() {
                         | PocketState::Entering
                         | PocketState::HungUp
                         | PocketState::Pocketed
+                        | PocketState::OffTable
                 ),
                 "unexpected pocket state {outcome:?}"
             );
