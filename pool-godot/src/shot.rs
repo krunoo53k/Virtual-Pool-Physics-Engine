@@ -11,6 +11,11 @@ use pool_core::sim::SimError;
 use pool_core::state::{BallState, GamePhase, GameState, PocketState, ShotInput};
 use pool_core::{cue, try_simulate_shot_traced, Trace};
 
+/// A pocketed ball's hand-off position sits at the drop line. Positions cross
+/// the bridge as f32, so the depth recovered there is only good to a few
+/// nanometres; that much slack counts as the line itself.
+const DROP_LINE_TOLERANCE: f64 = 1e-6;
+
 /// The strike: the cue ball's state after the tip hits it.
 pub struct Strike {
     /// The velocity of the cue ball, m/s.
@@ -43,6 +48,12 @@ pub struct Strike {
 /// rotation from that orientation, and a ball that is still lying where the
 /// last shot left it keeps its phase; a short list leaves the balls it does
 /// not name at identity, which is what a ball that was put on the table does.
+///
+/// The hand-off carries only positions, numbers and rotations, so a ball that
+/// ended the last shot on a pocket shelf arrives here as a bare position. Its
+/// pocket state is recovered from the geometry: past the mouth line it starts
+/// `Entering`, past the drop line `Pocketed`, so the drop logic applies from
+/// frame zero (§9.2).
 pub fn shot_input(
     table: &TableConfig,
     cue_speed: f64,
@@ -59,14 +70,27 @@ pub fn shot_input(
         let number = numbers.get(index).copied().unwrap_or(index as i32);
         let number = u8::try_from(number).unwrap_or(0);
         let mut ball = BallState::at_rest(table, number, *position);
-        // A ball already inside a pocket mouth starts on the shelf: without
-        // this it stays OnTable, never gets a PocketEnter, and cannot drop.
+        // The pocket state machine only announces pocket-enter on a crossing
+        // from the table side (§9.2), so a ball handed over with its centre
+        // already past the mouth line would stay OnTable, never get a drop
+        // check and be taken out by the off-table backstop instead (§10.1).
+        // Recover the state from the position. The mouth line itself counts as
+        // in: a ball placed exactly on it cannot fire a crossing either.
         let plan = Vec2::new(ball.position.x, ball.position.y);
-        if geometry.pockets.iter().any(|pocket| {
-            pocket.mouth_distance(plan) > 0.0
-                && pocket.lateral(plan).abs() <= pocket.mouth_width / 2.0
-        }) {
-            ball.pocket_state = PocketState::Entering;
+        for pocket in &geometry.pockets {
+            if pocket.lateral(plan).abs() > pocket.mouth_width / 2.0 {
+                continue;
+            }
+            let depth = pocket.mouth_distance(plan);
+            if depth >= pocket.shelf_depth - DROP_LINE_TOLERANCE {
+                ball.pocket_state = PocketState::Pocketed;
+                ball.is_pocketed = true;
+            } else if depth >= 0.0 {
+                ball.pocket_state = PocketState::Entering;
+            } else {
+                continue;
+            }
+            break;
         }
         // The orientation the ball carries in: it is not physics state, and the
         // shot's own numbers do not depend on it - only the path's rotations do.
