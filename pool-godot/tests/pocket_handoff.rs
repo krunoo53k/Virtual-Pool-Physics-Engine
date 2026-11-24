@@ -97,3 +97,62 @@ fn a_ball_just_outside_the_mouth_is_still_an_ordinary_table_ball() {
         "the crossing must announce pocket-enter"
     );
 }
+
+// The positions below are built in the core's frame directly, not round-tripped
+// through Godot: `Vector3` is f32, so a point exactly on a boundary would land
+// on one side or the other and the test would not pin the boundary.
+#[test]
+fn a_ball_exactly_on_the_mouth_line_starts_on_the_shelf_and_drops() {
+    let table = TableConfig::default();
+    let pocket = &TableGeometry::new(&table).pockets[0];
+    let object = pocket.mouth_centre;
+    let cue = object - pocket.centreline * 0.2;
+    let positions = [
+        Vec3::new(cue.x, cue.y, table.ball.radius),
+        Vec3::new(object.x, object.y, table.ball.radius),
+    ];
+    let input = shot::shot_input(
+        &table,
+        3.0,
+        Vec3::new(pocket.centreline.x, pocket.centreline.y, 0.0),
+        (0.0, 0.0),
+        &positions,
+        &[0, 1],
+        &[],
+    );
+    assert_eq!(
+        input.ball_states[1].pocket_state,
+        PocketState::Entering,
+        "a ball on the mouth line cannot fire a pocket-enter crossing"
+    );
+    let state = shot::simulate(&table, &input).expect("the shot runs").0;
+    assert!(state.balls[1].is_pocketed, "the ball should drop");
+}
+
+#[test]
+fn a_ball_already_past_the_drop_line_stays_pocketed() {
+    let table = TableConfig::default();
+    let pocket = &TableGeometry::new(&table).pockets[0];
+    // Both the line itself and a point beyond it belong to the cabinet: a
+    // pocketed ball's hand-off position sits at the drop line.
+    for extra in [0.0, 0.001] {
+        let plan = pocket.mouth_centre + pocket.centreline * (pocket.shelf_depth + extra);
+        let positions = [Vec3::new(plan.x, plan.y, table.ball.radius)];
+        let input = shot::shot_input(
+            &table,
+            3.0,
+            Vec3::new(pocket.centreline.x, pocket.centreline.y, 0.0),
+            (0.0, 0.0),
+            &positions,
+            &[0],
+            &[],
+        );
+        let ball = &input.ball_states[0];
+        assert_eq!(
+            ball.pocket_state,
+            PocketState::Pocketed,
+            "depth past the drop line by {extra}"
+        );
+        assert!(ball.is_pocketed, "a ball in the cabinet is out of play");
+    }
+}
