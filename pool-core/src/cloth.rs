@@ -174,38 +174,6 @@ pub fn segment_acceleration(ball: &BallState, p: &ClothParams) -> Vec3 {
     }
 }
 
-/// The acceleration of a ball sliding on a pocket shelf (§9.4).
-pub fn shelf_acceleration(ball: &BallState, g: f64, mu_slate: f64) -> Vec3 {
-    let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
-    if speed <= VELOCITY_EPS {
-        return Vec3::ZERO;
-    }
-    let v_hat = Vec3::new(ball.velocity.x / speed, ball.velocity.y / speed, 0.0);
-    v_hat * (-mu_slate * g)
-}
-
-/// Advances a ball that is sliding on a pocket shelf (§9.4).
-pub fn advance_shelf(ball: &mut BallState, dt: f64, g: f64, mu_slate: f64) {
-    let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
-    if speed <= VELOCITY_EPS {
-        ball.velocity = Vec3::ZERO;
-        return;
-    }
-    let v_hat = Vec3::new(ball.velocity.x / speed, ball.velocity.y / speed, 0.0);
-    let decel = mu_slate * g;
-    // The ball stops if it runs out of speed within the step.
-    let stop_time = speed / decel;
-    let used = if stop_time < dt { stop_time } else { dt };
-    ball.position += ball.velocity * used + v_hat * (-0.5 * decel * used * used);
-    ball.velocity += v_hat * (-decel * used);
-    if stop_time < dt {
-        ball.velocity = Vec3::ZERO;
-    }
-    let spin = rolling_angular_velocity(ball.velocity, ball.radius);
-    ball.angular_velocity.x = spin.x;
-    ball.angular_velocity.y = spin.y;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

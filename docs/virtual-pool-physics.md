@@ -1,8 +1,8 @@
 # Virtual Pool — Physics Research Document
 ## Deterministic 8-Ball Pool Physics Model for Rust Backend
 
-> **Version:** 1.9
-> **Date:** 2026-11-23
+> **Version:** 1.10
+> **Date:** 2026-11-25
 > **Scope:** 8-Ball pool physics for a 3D deterministic simulation. Covers ball-cloth, ball-ball, ball-cushion, ball-air, ball-slate, ball-cue and ball-pocket interactions. Includes jump shots, ball-off-table behavior, and deterministic simulation architecture.
 >
 > **Revision note (1.1):** corrected the sliding-state spin sign (§3.3), the ball-ball normal and
@@ -205,6 +205,17 @@
 > that the cloth holds up is a constrained contact: the free-pair impulse leaves the
 > ball above still closing, so that stack is settled instead of being re-found at the
 > same instant for ever (§11.4's Zeno guard, applied at the ball-ball contact).
+>
+> **Revision note (1.10) — no friction step at the pocket mouth.** A ball that reached a
+> pocket rolling had its friction coefficient changed at the mouth line from the cloth's
+> rolling `μ_r = 0.01` to the shelf's `μ_slate = 0.15`, a fifteen-fold jump in deceleration
+> with no physical cause: a rolling ball keeps rolling resistance when it passes from
+> cloth to slate. The shelf now continues the normal §3 motion instead — slide, roll and
+> rest with their usual coefficients — and `μ_slate` is used only while a ball that arrived
+> *sliding* is still sliding on the shelf (§9.4). The drop threshold for an ordinary rolling ball is now
+> `sqrt(2 μ_r g · shelf_depth)` ≈ 0.09 m/s at a corner instead of ≈ 0.36 m/s, so soft
+> shots are no longer rejected in the last few millimetres. The golden break has no
+> pocket events, so its hash does not move.
 
 ---
 
@@ -1545,10 +1556,16 @@ the §5 impulse with the jaw's parameters. Nothing special is needed beyond the 
 
 ### 9.4 The shelf and the drop
 
-Once the ball is past the lip it is sliding on slate, not cloth, so the friction model changes:
+Once the ball is past the lip it is on slate rather than cloth, but its motion does not change
+kind at the mouth line. A ball that arrives rolling keeps rolling resistance `μ_r`; a ball that
+is still sliding uses the shelf's own sliding coefficient `μ_slate` instead of the cloth's `μ_s`,
+because the surface under it has changed. The §3 state machine continues unchanged: slide gives
+way to roll, and roll gives way to rest, exactly as it does on the bed. There is no friction step
+at the mouth (revision note 1.10): switching a rolling ball straight to `μ_slate` would multiply
+its deceleration by fifteen at the very point the player is aiming for, and would reject soft
+rolls that a real table accepts.
 
-- `μ_slate` (slate is slipperier than cloth; use ≈ 0.1–0.2) and gravity along the shelf.
-- The shelf is effectively horizontal, so a slow ball simply runs out of speed on it.
+- The shelf is effectively horizontal, so a ball that runs out of speed on it simply stops.
 - The cut edge at the back of the shelf is angled 12°–15° from vertical, which stops a ball from
   riding back up over the lip and is what makes the pocket accept balls that arrive at a poor
   angle.
@@ -1557,16 +1574,22 @@ Once the ball is past the lip it is sliding on slate, not cloth, so the friction
 cut edge). Using the centre rather than the edge of the ball is what makes a ball that is
 partly over the drop still count as pocketed, which is the real behaviour.
 
-**Speed threshold:** a ball that crosses the mouth with too little speed to reach the drop will
-stop on the shelf. The threshold follows from the shelf length and `μ_slate`:
+**Speed threshold:** the ball hangs up if it comes to rest on the shelf before its centre
+reaches the drop line. For a ball rolling across the mouth the threshold follows from the shelf
+length and the rolling coefficient:
 
 ```
-v_min_to_drop = sqrt(2 · μ_slate · g · shelf_depth)
+v_min_to_drop = sqrt(2 · μ_r · g · shelf_depth)
 ```
 
-For a 1.75" (44 mm) corner shelf and `μ_slate = 0.15`: `v_min ≈ 0.36 m/s`. Balls slower than
-that hang up. Note that this is a *hanging* condition, not a rattle — the ball stays in the
-pocket area, which under 8-ball rules is a ball in hand, not a lost ball.
+For a 1.75" (44 mm) corner shelf and `μ_r = 0.01`: `v_min ≈ 0.093 m/s`; for a 0.25" (6.35 mm)
+side shelf: `v_min ≈ 0.035 m/s`. A ball that is still sliding when it crosses the mouth uses
+`μ_slate` *while it slides*, then reaches rolling on the shelf and finishes at `μ_r`; solving
+the slide-then-roll motion gives `u_min² = 98 μ_r g L / (25 + 24 μ_r/μ_slate)`, about 0.13 m/s
+at a corner with the default `μ_slate = 0.15` — not the 0.36 m/s that treating the whole shelf
+as sliding would give. A ball that reaches the mouth rolling, which is the ordinary case, is
+not punished for having crossed it. A hang-up is a *hanging* condition, not a rattle: the ball
+stays in the pocket area, which under 8-ball rules is a ball in hand, not a lost ball.
 
 ### 9.5 Effective pocket size
 
@@ -1585,7 +1608,7 @@ exactly what the `pocket_drop` fixture (§14) checks.
 |---|---|---|
 | `e_jaw` | 0.60 | jaw restitution (lower than a rail) |
 | `μ_jaw` | 0.30 | jaw friction |
-| `μ_slate` | 0.15 | friction on the pocket shelf |
+| `μ_slate` | 0.15 | sliding friction on the pocket shelf; a rolling ball uses `μ_r` instead |
 | `shelf_depth_corner` | 1.75" | WPA range 1"–2¼" |
 | `shelf_depth_side` | 0.25" | WPA range 0"–3/8" |
 | `pocket_angle` | 13.5° | slate cut angle from vertical |
@@ -2151,7 +2174,7 @@ above that; it is the Zeno case it is there for, not the slow roll.
 | Spin decay μ_sp | 0.0117 (a 10 rad/s² decay rate) |
 | Pocket jaw COR e_jaw | 0.60 |
 | Pocket jaw friction μ_jaw | 0.30 |
-| Pocket shelf friction μ_slate | 0.15 |
+| Pocket shelf sliding friction μ_slate | 0.15 (a rolling ball keeps μ_r = 0.01) |
 | Pocket cut angle (corner / side) | 142° / 104° (WPA ±1°) |
 | Slate settle speed | 0.02 m/s (the Zeno guard, §8.2) |
 | Simulation timestep | none required (event-driven); 1/240–1/1000 s if stepped |

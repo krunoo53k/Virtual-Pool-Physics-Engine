@@ -22,12 +22,15 @@ The physics these fixtures pin down is specified in
 ## Regenerating
 
 ```sh
+cargo build -p pool-cli          # the generator reads the defaults from this binary
 python3 tests/fixtures/generate_fixtures.py
 ```
 
-The generator computes the expected values from the same equations as the document, so the
-expectations cannot drift away from the specification. Two files contain values that are
-**filled in by hand** and must survive regeneration:
+The generator computes the expected values from the same equations as the document, reading
+the input constants from the core's own default config via `pool-cli config`, so the
+expectations cannot drift away from the model. It refuses to run if the CLI is older than
+`pool-core/src/config.rs`; set `POOL_CLI` to use a binary other than the default debug one.
+Two files contain values that are **filled in by hand** and must survive regeneration:
 
 - `squirt_curve.json` — the `squirt_deg` anchors are `null` and marked `TO BE CALIBRATED`;
   fill them from Cross (2008) or from high-speed video of your table.

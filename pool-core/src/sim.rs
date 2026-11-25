@@ -111,6 +111,10 @@ pub struct Simulation<'a> {
     cfg: &'a TableConfig,
     geom: TableGeometry,
     cloth: ClothParams,
+    /// The same motion model with the shelf's sliding coefficient. A ball on a shelf
+    /// keeps rolling resistance if it arrived rolling; only a sliding ball uses this
+    /// (§9.4).
+    shelf_cloth: ClothParams,
     balls: Vec<BallState>,
     time: f64,
     events: Vec<SimEvent>,
@@ -129,6 +133,10 @@ impl<'a> Simulation<'a> {
             g: cfg.simulation.gravity,
             radius: cfg.ball.radius,
         };
+        let shelf_cloth = ClothParams {
+            mu_s: cfg.table.mu_slate,
+            ..cloth
+        };
         let mut balls: Vec<BallState> = input.ball_states.clone();
         // The physical properties come from the configuration, not from the input.
         for ball in balls.iter_mut() {
@@ -145,6 +153,7 @@ impl<'a> Simulation<'a> {
             cfg,
             geom,
             cloth,
+            shelf_cloth,
             balls,
             time: 0.0,
             events: Vec::new(),
@@ -359,7 +368,10 @@ impl<'a> Simulation<'a> {
     fn refresh_bed_state(&mut self, index: usize) {
         let radius = self.cfg.ball.radius;
         let ball = &mut self.balls[index];
-        if ball.pocket_state != PocketState::OnTable {
+        // A ball on a shelf is still on a supporting surface, so its motion state
+        // is derived the same way (§9.4). Only a ball in the cabinet or off the
+        // table has no bed state to refresh.
+        if ball.pocket_state != PocketState::OnTable && ball.pocket_state != PocketState::Entering {
             return;
         }
         if ball.velocity.z > 0.0 || ball.position.z > radius + 1e-9 {
@@ -386,25 +398,30 @@ impl<'a> Simulation<'a> {
         }
     }
 
+    /// The motion parameters for one ball: the shelf's sliding coefficient only
+    /// applies while the ball is sliding on a shelf (§9.4).
+    fn cloth_for(&self, index: usize) -> &ClothParams {
+        if self.balls[index].pocket_state == PocketState::Entering {
+            &self.shelf_cloth
+        } else {
+            &self.cloth
+        }
+    }
+
     /// Advances every ball analytically by `dt`.
     fn advance_all(&mut self, dt: f64) {
-        for ball in self.balls.iter_mut() {
-            if ball.is_pocketed || ball.is_off_table {
+        for index in 0..self.balls.len() {
+            if self.balls[index].is_pocketed || self.balls[index].is_off_table {
                 continue;
             }
-            if ball.pocket_state == PocketState::Entering {
-                cloth::advance_shelf(
-                    ball,
-                    dt,
-                    self.cfg.simulation.gravity,
-                    self.cfg.table.mu_slate,
-                );
-                continue;
-            }
+            // `ClothParams` is copy, so the borrow of `self` ends before the ball
+            // is borrowed mutably below.
+            let params = *self.cloth_for(index);
+            let ball = &mut self.balls[index];
             match ball.motion_state {
-                MotionState::Sliding => cloth::advance_sliding(ball, dt, &self.cloth),
-                MotionState::Rolling => cloth::advance_rolling(ball, dt, &self.cloth),
-                MotionState::Spinning => cloth::advance_spinning(ball, dt, &self.cloth),
+                MotionState::Sliding => cloth::advance_sliding(ball, dt, &params),
+                MotionState::Rolling => cloth::advance_rolling(ball, dt, &params),
+                MotionState::Spinning => cloth::advance_spinning(ball, dt, &params),
                 MotionState::Stationary => {}
                 MotionState::Airborne => {
                     cloth::advance_airborne(ball, dt, self.cfg.simulation.gravity)
@@ -416,33 +433,21 @@ impl<'a> Simulation<'a> {
     /// The time until the ball's next motion-state change, if any.
     fn next_state_change(&self, index: usize) -> Option<(f64, EventKind)> {
         let ball = &self.balls[index];
-        if ball.pocket_state == PocketState::Entering {
-            // On the shelf the ball only loses speed: it stops, and a ball that stops
-            // before the drop line has hung up (§9.4).
-            let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
-            if speed <= cloth::VELOCITY_EPS {
-                return None;
-            }
-            let stop = speed / (self.cfg.table.mu_slate * self.cfg.simulation.gravity);
-            return Some((stop, EventKind::StateChange));
-        }
+        let params = self.cloth_for(index);
         match ball.motion_state {
             MotionState::Sliding => {
                 let u = cloth::slip_velocity(ball.velocity, ball.angular_velocity, ball.radius);
                 Some((
-                    cloth::time_to_rolling(u.norm(), &self.cloth),
+                    cloth::time_to_rolling(u.norm(), params),
                     EventKind::StateChange,
                 ))
             }
             MotionState::Rolling => {
                 let speed = libm::hypot(ball.velocity.x, ball.velocity.y);
-                Some((
-                    cloth::time_to_rest(speed, &self.cloth),
-                    EventKind::StateChange,
-                ))
+                Some((cloth::time_to_rest(speed, params), EventKind::StateChange))
             }
             MotionState::Spinning => Some((
-                cloth::time_to_rest_spinning(ball.angular_velocity.z, &self.cloth),
+                cloth::time_to_rest_spinning(ball.angular_velocity.z, params),
                 EventKind::StateChange,
             )),
             MotionState::Airborne => Some((
@@ -546,11 +551,7 @@ impl<'a> Simulation<'a> {
     /// The constant acceleration of a ball over the current segment.
     fn segment_acceleration(&self, index: usize) -> Vec3 {
         let ball = &self.balls[index];
-        if ball.pocket_state == PocketState::Entering {
-            cloth::shelf_acceleration(ball, self.cfg.simulation.gravity, self.cfg.table.mu_slate)
-        } else {
-            cloth::segment_acceleration(ball, &self.cloth)
-        }
+        cloth::segment_acceleration(ball, self.cloth_for(index))
     }
 
     /// The balls an event touches.
@@ -566,9 +567,6 @@ impl<'a> Simulation<'a> {
 
     /// The kind of motion a ball is in, as the recorder sees it.
     fn segment_kind(&self, ball: &BallState) -> SegmentKind {
-        if ball.pocket_state == PocketState::Entering {
-            return SegmentKind::Shelf;
-        }
         match ball.motion_state {
             MotionState::Sliding => SegmentKind::Sliding,
             MotionState::Rolling => SegmentKind::Rolling,
@@ -586,20 +584,27 @@ impl<'a> Simulation<'a> {
     ///   spin decays (§3.3);
     /// * a rolling ball takes the rolling spin of its (changing) velocity and its
     ///   vertical spin decays (§3.2);
-    /// * a ball on a shelf takes the rolling spin of its velocity and its vertical
-    ///   spin is left alone (§9.4);
     /// * a spinning ball only decays (§3.4);
     /// * a ball in the air keeps its spin (§7.1).
-    fn angular_acceleration(&self, ball: &BallState, kind: SegmentKind, a: Vec3) -> Vec3 {
+    ///
+    /// A ball on a shelf is no different: it keeps whatever motion state it had
+    /// at the mouth line, so its segment is simply a sliding or a rolling one
+    /// (§9.4).
+    fn angular_acceleration(
+        &self,
+        ball: &BallState,
+        kind: SegmentKind,
+        a: Vec3,
+        params: &ClothParams,
+    ) -> Vec3 {
         let radius = self.cfg.ball.radius;
-        let g = self.cfg.simulation.gravity;
         // The vertical spin decays towards zero, and stops there (§3.2). A
         // constant decay would carry it past zero, and a backspin would then
         // grow instead of dying.
         let spin = if ball.angular_velocity.z > 0.0 {
-            -cloth::spin_decay_rate(&self.cloth)
+            -cloth::spin_decay_rate(params)
         } else if ball.angular_velocity.z < 0.0 {
-            cloth::spin_decay_rate(&self.cloth)
+            cloth::spin_decay_rate(params)
         } else {
             0.0
         };
@@ -611,11 +616,10 @@ impl<'a> Simulation<'a> {
                     None => return Vec3::ZERO,
                 };
                 let spin_up =
-                    Vec3::Z.cross(u_hat) * (5.0 * self.cfg.cloth.mu_s * g / (2.0 * radius));
+                    Vec3::Z.cross(u_hat) * (5.0 * params.mu_s * params.g / (2.0 * radius));
                 spin_up + Vec3::new(0.0, 0.0, spin)
             }
             SegmentKind::Rolling => Vec3::Z.cross(a) / radius + Vec3::new(0.0, 0.0, spin),
-            SegmentKind::Shelf => Vec3::Z.cross(a) / radius,
             SegmentKind::Spinning => Vec3::new(0.0, 0.0, spin),
             SegmentKind::Stationary | SegmentKind::Airborne => Vec3::ZERO,
         }
@@ -633,7 +637,7 @@ impl<'a> Simulation<'a> {
             v0: ball.velocity,
             a,
             w0: ball.angular_velocity,
-            wa: self.angular_acceleration(ball, kind, a),
+            wa: self.angular_acceleration(ball, kind, a, self.cloth_for(index)),
             // The recorder stamps the rotation the ball has made so far: it is
             // the one that keeps the tally across the segments of a ball, and
             // across the boundary of a shot too - a ball that has not been
@@ -1090,38 +1094,40 @@ impl<'a> Simulation<'a> {
     fn apply_state_change(&mut self, index: usize) {
         let radius = self.cfg.ball.radius;
         let ball = &mut self.balls[index];
-        if ball.pocket_state == PocketState::Entering {
-            // The ball ran out of speed on the shelf: it hung up (§9.4). It stays on
-            // the shelf as a stopped ball until the rules resolve it (§9.7).
-            ball.velocity = Vec3::ZERO;
-            ball.angular_velocity = Vec3::ZERO;
-            ball.motion_state = MotionState::Stationary;
-            ball.pocket_state = PocketState::HungUp;
-            return;
-        }
+        let on_shelf = ball.pocket_state == PocketState::Entering;
         match ball.motion_state {
             MotionState::Sliding => {
-                // The slip has vanished: the ball rolls from now on.
+                // The slip has vanished: the ball rolls from now on, on the shelf
+                // just as on the bed (§9.4).
                 let w = cloth::rolling_angular_velocity(ball.velocity, radius);
                 ball.angular_velocity.x = w.x;
                 ball.angular_velocity.y = w.y;
                 ball.motion_state = MotionState::Rolling;
             }
             MotionState::Rolling => {
-                ball.velocity.x = 0.0;
-                ball.velocity.y = 0.0;
-                ball.velocity.z = 0.0;
+                ball.velocity = Vec3::ZERO;
                 ball.angular_velocity.x = 0.0;
                 ball.angular_velocity.y = 0.0;
-                ball.motion_state = if ball.angular_velocity.z.abs() > cloth::VELOCITY_EPS {
-                    MotionState::Spinning
+                if on_shelf {
+                    // It ran out of speed before the drop line: hung up (§9.4).
+                    // The ball stays on the shelf until the rules resolve it (§9.7).
+                    ball.angular_velocity.z = 0.0;
+                    ball.motion_state = MotionState::Stationary;
+                    ball.pocket_state = PocketState::HungUp;
                 } else {
-                    MotionState::Stationary
-                };
+                    ball.motion_state = if ball.angular_velocity.z.abs() > cloth::VELOCITY_EPS {
+                        MotionState::Spinning
+                    } else {
+                        MotionState::Stationary
+                    };
+                }
             }
             MotionState::Spinning => {
                 ball.angular_velocity.z = 0.0;
                 ball.motion_state = MotionState::Stationary;
+                if on_shelf {
+                    ball.pocket_state = PocketState::HungUp;
+                }
             }
             MotionState::Airborne | MotionState::Stationary => {}
         }

@@ -26,6 +26,7 @@
       }
     ],
     "params": {
+      "mu_r": 0.01,
       "mu_slate": 0.15,
       "shelf_depth_corner": 0.044449999999999996,
       "e_jaw": 0.6,
@@ -42,10 +43,10 @@
     },
     {
       "quantity": "minimum_speed_to_reach_drop",
-      "expected": 0.36168542962082395,
+      "expected": 0.09338677636582172,
       "tolerance": 1e-09,
       "unit": "m/s",
-      "notes": "sqrt(2*mu_slate*g*shelf_depth); slower balls hang up on the shelf"
+      "notes": "sqrt(2*mu_r*g*shelf_depth) for a ball rolling across the mouth; a ball still sliding there uses mu_slate instead. Slower balls hang up on the shelf."
     }
   ],
   "invariants": [

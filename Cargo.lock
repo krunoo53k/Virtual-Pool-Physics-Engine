@@ -123,21 +123,21 @@ checksum = "a846cbc04412cf509efcd8f3694b114fc700a035fb5a37f21517f9fb019f1ebc"
 
 [[package]]
 name = "pool-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "pool-core",
 ]
 
 [[package]]
 name = "pool-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "pool-godot"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "godot",
  "libm",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "pool-visual"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "pool-core",
 ]

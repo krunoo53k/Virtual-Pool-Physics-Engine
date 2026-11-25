@@ -6,6 +6,7 @@ use pool_core::cushion::{self, RailRegime};
 use pool_core::geometry::TableGeometry;
 use pool_core::math::{Vec2, Vec3};
 use pool_core::state::{BallState, GamePhase, MotionState, PocketState, ShotInput};
+use pool_core::trace::SegmentKind;
 use pool_core::EventKind;
 use pool_core::{cue, simulate_shot, try_simulate_state, TableConfig};
 
@@ -397,12 +398,32 @@ fn shoot_into_the_corner_pocket(
 }
 
 /// The same, but starting a given distance in front of the pocket and returning the
-/// resolved events as well.
+/// resolved events as well. The ball rolls into the mouth.
 fn simulate_into_the_corner_pocket(
     cfg: &TableConfig,
     speed: f64,
     offset: f64,
     distance: f64,
+) -> (pool_core::GameState, Vec<EventKind>) {
+    simulate_corner_pocket(cfg, speed, offset, distance, true)
+}
+
+/// The same shot with no in-plane spin: the ball is still sliding at the mouth.
+fn simulate_sliding_into_the_corner_pocket(
+    cfg: &TableConfig,
+    speed: f64,
+    offset: f64,
+    distance: f64,
+) -> (pool_core::GameState, Vec<EventKind>) {
+    simulate_corner_pocket(cfg, speed, offset, distance, false)
+}
+
+fn simulate_corner_pocket(
+    cfg: &TableConfig,
+    speed: f64,
+    offset: f64,
+    distance: f64,
+    rolling: bool,
 ) -> (pool_core::GameState, Vec<EventKind>) {
     let geometry = TableGeometry::new(cfg);
     let pocket = &geometry.pockets[0];
@@ -412,6 +433,13 @@ fn simulate_into_the_corner_pocket(
     let start = pocket.mouth_centre - direction * distance + sideways;
     let mut ball = ball(cfg, 0, start.x, start.y);
     ball.velocity = Vec3::new(direction.x * speed, direction.y * speed, 0.0);
+    if rolling {
+        ball.angular_velocity = Vec3::new(
+            -ball.velocity.y / cfg.ball.radius,
+            ball.velocity.x / cfg.ball.radius,
+            0.0,
+        );
+    }
     let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
     let state = try_simulate_state(&input, cfg).expect("the shot runs");
     let mut simulation = pool_core::Simulation::new(&input, cfg);
@@ -433,10 +461,92 @@ fn a_ball_that_is_too_slow_to_reach_the_drop_hangs_up() {
     let cfg = TableConfig::default();
     let slow = cfg.minimum_speed_to_drop(cfg.table.shelf_depth_corner) * 0.8;
     // On the centre line the ball does not meet a facing, so it runs out of speed on
-    // the shelf and hangs up there.
-    let state = simulate_into_the_corner_pocket(&cfg, slow, 0.0, 0.05).0;
+    // the shelf and hangs up there. It starts close enough that the bed's rolling
+    // resistance does not eat the margin before the mouth.
+    let state = simulate_into_the_corner_pocket(&cfg, slow, 0.0, 0.01).0;
     assert!(!state.balls[0].is_pocketed, "a slow ball must not drop");
     assert_eq!(state.balls[0].pocket_state, PocketState::HungUp);
+}
+
+#[test]
+fn a_rolling_ball_just_above_the_threshold_drops() {
+    let cfg = TableConfig::default();
+    let speed = cfg.minimum_speed_to_drop(cfg.table.shelf_depth_corner) * 1.2;
+    let state = simulate_into_the_corner_pocket(&cfg, speed, 0.0, 0.01).0;
+    assert!(
+        state.balls[0].is_pocketed,
+        "a rolling ball above the threshold must drop"
+    );
+    assert_eq!(state.balls[0].pocket_state, PocketState::Pocketed);
+}
+
+/// The first segment of ball 0 after it crosses a corner pocket's mouth.
+fn first_shelf_segment(trace: &pool_core::Trace) -> &pool_core::Segment {
+    trace
+        .segments(0)
+        .iter()
+        .find(|segment| segment.pocket_state == PocketState::Entering)
+        .expect("a segment on the shelf")
+}
+
+#[test]
+fn a_rolling_ball_keeps_rolling_resistance_on_the_shelf() {
+    let cfg = TableConfig::default();
+    let geom = TableGeometry::new(&cfg);
+    let pocket = &geom.pockets[0];
+    let direction = pocket.centreline;
+    let start = pocket.mouth_centre - direction * 0.25;
+    let mut ball = ball(&cfg, 0, start.x, start.y);
+    ball.velocity = Vec3::new(direction.x * 1.5, direction.y * 1.5, 0.0);
+    ball.angular_velocity = Vec3::new(
+        -ball.velocity.y / cfg.ball.radius,
+        ball.velocity.x / cfg.ball.radius,
+        0.0,
+    );
+    let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
+    let mut simulation = pool_core::Simulation::new(&input, &cfg);
+    simulation.record();
+    let _ = simulation.run_without_strike();
+    let trace = simulation.trace().expect("a recorded trace");
+
+    let shelf = first_shelf_segment(trace);
+    assert_eq!(shelf.kind, SegmentKind::Rolling);
+    let decel = (shelf.a.x * shelf.a.x + shelf.a.y * shelf.a.y).sqrt();
+    assert!((decel - cfg.cloth.mu_r * cfg.simulation.gravity).abs() < 1e-12);
+}
+
+#[test]
+fn a_ball_still_sliding_at_the_mouth_uses_the_shelves_sliding_friction() {
+    let cfg = TableConfig::default();
+    let geom = TableGeometry::new(&cfg);
+    let pocket = &geom.pockets[0];
+    let direction = pocket.centreline;
+    let start = pocket.mouth_centre - direction * 0.25;
+    let mut ball = ball(&cfg, 0, start.x, start.y);
+    // No in-plane spin: at 1.5 m/s over 0.25 m the ball is still sliding at the
+    // mouth, so the shelf's own sliding coefficient applies there.
+    ball.velocity = Vec3::new(direction.x * 1.5, direction.y * 1.5, 0.0);
+    let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
+    let mut simulation = pool_core::Simulation::new(&input, &cfg);
+    simulation.record();
+    let _ = simulation.run_without_strike();
+    let trace = simulation.trace().expect("a recorded trace");
+
+    let shelf = first_shelf_segment(trace);
+    assert_eq!(shelf.kind, SegmentKind::Sliding);
+    let decel = (shelf.a.x * shelf.a.x + shelf.a.y * shelf.a.y).sqrt();
+    assert!((decel - cfg.table.mu_slate * cfg.simulation.gravity).abs() < 1e-12);
+
+    // It reaches rolling on the shelf and then keeps rolling resistance.
+    let rolling = trace
+        .segments(0)
+        .iter()
+        .find(|segment| {
+            segment.pocket_state == PocketState::Entering && segment.kind == SegmentKind::Rolling
+        })
+        .expect("a rolling segment on the shelf");
+    let decel = (rolling.a.x * rolling.a.x + rolling.a.y * rolling.a.y).sqrt();
+    assert!((decel - cfg.cloth.mu_r * cfg.simulation.gravity).abs() < 1e-12);
 }
 
 #[test]
@@ -521,11 +631,22 @@ fn a_ball_can_be_rattled_into_the_pocket() {
     // drops. The funnel is narrow (7 degrees a side, section 9.1), so the ball has to
     // run close to a facing to meet it before the drop line 4.4 cm behind the mouth.
     let cfg = TableConfig::default();
-    let state = shoot_into_the_corner_pocket(&cfg, 1.8, 0.5);
+    let state = shoot_into_the_corner_pocket(&cfg, 1.2, 0.5);
     assert!(state.balls[0].is_pocketed, "the ball did not drop");
 
-    let (_, kinds) = simulate_into_the_corner_pocket(&cfg, 1.8, 0.5, 0.25);
+    let (_, kinds) = simulate_into_the_corner_pocket(&cfg, 1.2, 0.5, 0.25);
     assert!(kinds.contains(&EventKind::PocketEnter), "{kinds:?}");
+    assert!(kinds.contains(&EventKind::Jaw), "{kinds:?}");
+    assert!(kinds.contains(&EventKind::PocketDrop), "{kinds:?}");
+}
+
+#[test]
+fn a_sliding_ball_can_be_rattled_into_the_pocket() {
+    // A ball that is still sliding at the mouth has different friction and a
+    // different path, so the jaw outcome needs its own coverage (§9.4).
+    let cfg = TableConfig::default();
+    let (state, kinds) = simulate_sliding_into_the_corner_pocket(&cfg, 1.8, 0.5, 0.25);
+    assert!(state.balls[0].is_pocketed, "the ball did not drop");
     assert!(kinds.contains(&EventKind::Jaw), "{kinds:?}");
     assert!(kinds.contains(&EventKind::PocketDrop), "{kinds:?}");
 }
