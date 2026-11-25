@@ -471,7 +471,7 @@ fn a_ball_that_hits_a_jaw_can_rattle_out_or_rattle_in() {
     }
     // The set of outcomes has to include more than one kind: the jaw angles matter.
     assert!(
-        outcomes.iter().any(|o| *o == PocketState::Pocketed),
+        outcomes.contains(&PocketState::Pocketed),
         "no ball dropped at all"
     );
 }

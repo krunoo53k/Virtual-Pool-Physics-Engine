@@ -14,6 +14,10 @@ use crate::state::BallState;
 ///
 /// `direction` selects the crossing: `+1` for a rising signed distance, `-1` for a
 /// falling one.
+///
+/// The flat parameters mirror the quadratic being solved; bundling them would only
+/// obscure the correspondence with the derivation.
+#[allow(clippy::too_many_arguments)]
 pub fn time_to_cross_line(
     p0: Vec2,
     v: Vec2,

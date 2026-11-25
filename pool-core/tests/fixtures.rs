@@ -625,12 +625,11 @@ fn squirt_curve() {
     );
 
     // The ball squirts away from the side that was struck.
-    let mut balls = Vec::new();
-    balls.push(BallState::at_rest(
+    let balls = vec![BallState::at_rest(
         &cfg,
         0,
         Vec3::new(0.5, 0.635, cfg.ball.radius),
-    ));
+    )];
     let mut input = ShotInput::new(2.0, Vec3::X, balls.clone());
     input.contact_offset_x = 0.3 * cfg.ball.radius;
     let strike = cue::strike(&input, &cfg);
