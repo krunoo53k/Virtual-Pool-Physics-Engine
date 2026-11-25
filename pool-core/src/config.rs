@@ -338,7 +338,7 @@ impl Default for SimulationConfig {
 ///
 /// Serialisable so that a table can be stored, diffed and replayed (Milestone 0
 /// acceptance: the config round-trips through JSON).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TableConfig {
     pub ball: BallConfig,
     pub cloth: ClothConfig,
@@ -348,21 +348,6 @@ pub struct TableConfig {
     pub table: TableGeometryConfig,
     pub cue: CueConfig,
     pub simulation: SimulationConfig,
-}
-
-impl Default for TableConfig {
-    fn default() -> Self {
-        TableConfig {
-            ball: BallConfig::default(),
-            cloth: ClothConfig::default(),
-            ball_ball: BallBallConfig::default(),
-            cushion: CushionConfig::default(),
-            slate: SlateConfig::default(),
-            table: TableGeometryConfig::default(),
-            cue: CueConfig::default(),
-            simulation: SimulationConfig::default(),
-        }
-    }
 }
 
 impl TableConfig {

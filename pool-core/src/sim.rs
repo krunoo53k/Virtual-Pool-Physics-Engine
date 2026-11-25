@@ -481,8 +481,7 @@ impl<'a> Simulation<'a> {
         // far the ball-ball collisions have to be looked for: a collision that would
         // happen later is found in the next round, after the earlier event has been
         // resolved.
-        for index in 0..count {
-            let ball = &self.balls[index];
+        for (index, ball) in self.balls.iter().enumerate() {
             if ball.is_pocketed || ball.is_off_table {
                 continue;
             }
@@ -518,6 +517,8 @@ impl<'a> Simulation<'a> {
                     continue;
                 }
                 let horizon = horizons[i].min(horizons[j]) - self.time;
+                // The negated comparison is deliberate: it also catches a NaN.
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
                 if !(horizon > 0.0) {
                     continue;
                 }
@@ -1258,7 +1259,7 @@ fn finish(
         GamePhase::Settling
     };
     // The cue stick, as the renderer wants it (§12.2).
-    state.cue_stick = cue_stick_state(input, table, &simulation.balls());
+    state.cue_stick = cue_stick_state(input, table, simulation.balls());
     // The miscue flag comes from the cue model (§6.3).
     let strike = cue::strike(input, table);
     state.miscue = strike.miscue;
@@ -1312,17 +1313,10 @@ mod tests {
     #[test]
     fn a_straight_shot_into_the_ball_settles() {
         let cfg = table();
-        let mut balls = Vec::new();
-        balls.push(BallState::at_rest(
-            &cfg,
-            0,
-            Vec3::new(0.5, 0.635, cfg.ball.radius),
-        ));
-        balls.push(BallState::at_rest(
-            &cfg,
-            1,
-            Vec3::new(0.9, 0.635, cfg.ball.radius),
-        ));
+        let balls = vec![
+            BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.635, cfg.ball.radius)),
+            BallState::at_rest(&cfg, 1, Vec3::new(0.9, 0.635, cfg.ball.radius)),
+        ];
         let input = ShotInput::new(1.5, Vec3::X, balls);
         let state = try_simulate_shot(&input, &cfg).expect("the shot runs");
         assert_eq!(state.phase, GamePhase::Settled);
@@ -1333,17 +1327,10 @@ mod tests {
     #[test]
     fn the_same_shot_gives_the_same_state() {
         let cfg = table();
-        let mut balls = Vec::new();
-        balls.push(BallState::at_rest(
-            &cfg,
-            0,
-            Vec3::new(0.5, 0.635, cfg.ball.radius),
-        ));
-        balls.push(BallState::at_rest(
-            &cfg,
-            1,
-            Vec3::new(0.9, 0.635, cfg.ball.radius),
-        ));
+        let balls = vec![
+            BallState::at_rest(&cfg, 0, Vec3::new(0.5, 0.635, cfg.ball.radius)),
+            BallState::at_rest(&cfg, 1, Vec3::new(0.9, 0.635, cfg.ball.radius)),
+        ];
         let input = ShotInput::new(1.5, Vec3::X, balls);
         let a = try_simulate_shot(&input, &cfg).expect("the shot runs");
         let b = try_simulate_shot(&input, &cfg).expect("the shot runs");

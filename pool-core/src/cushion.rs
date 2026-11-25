@@ -49,6 +49,10 @@ pub enum RailRegime {
 /// The sticking branch is written out component-wise in the document; the general
 /// form below is the same thing and is used for the rail structure as well (with
 /// `theta = 0`, i.e. a vertical wall).
+///
+/// The parameters are kept flat on purpose: they are the terms of the derivation
+/// (contact frame, surface response and table), not a user-facing API to bundle.
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_cushion(
     ball: &BallState,
     rail_normal: Vec3,
