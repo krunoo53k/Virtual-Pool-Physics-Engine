@@ -562,13 +562,20 @@ fn pocket_drop() {
     let geom = TableGeometry::new(&cfg);
     let pocket = &geom.pockets[0];
     let direction = pocket.centreline;
-    let start = pocket.mouth_centre - direction * 0.3;
     let slow = cfg.minimum_speed_to_drop(cfg.table.shelf_depth_corner) * 0.8;
+    // Just in front of the mouth so the ball crosses it rolling at almost `slow`.
+    let start = pocket.mouth_centre - direction * 0.01;
     let mut ball = BallState::at_rest(&cfg, 0, Vec3::new(start.x, start.y, cfg.ball.radius));
     ball.velocity = Vec3::new(direction.x * slow, direction.y * slow, 0.0);
+    ball.angular_velocity = Vec3::new(
+        -ball.velocity.y / cfg.ball.radius,
+        ball.velocity.x / cfg.ball.radius,
+        0.0,
+    );
     let input = ShotInput::new(0.0, Vec3::X, vec![ball]);
     let state = try_simulate_state(&input, &cfg).expect("the shot runs");
     assert!(!state.balls[0].is_pocketed, "a slow ball must not drop");
+    assert_eq!(state.balls[0].pocket_state, pool_core::PocketState::HungUp);
 }
 
 // ---------------------------------------------------------------- the squirt curve

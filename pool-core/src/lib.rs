@@ -57,4 +57,4 @@ pub use trace::{Segment, SegmentKind, Trace};
 /// which physics it is running: the extension is a library that is loaded when
 /// the game starts, and a game that is left running keeps the physics it was
 /// started with, however new the library on disk is.
-pub const MODEL_VERSION: &str = "1.9";
+pub const MODEL_VERSION: &str = "1.10";

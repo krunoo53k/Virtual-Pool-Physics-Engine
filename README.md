@@ -1,7 +1,7 @@
 # Virtual Pool — a deterministic 8-ball pool physics engine
 
 A Rust implementation of the physics model specified in
-[`docs/virtual-pool-physics.md`](docs/virtual-pool-physics.md) (version 1.9).
+[`docs/virtual-pool-physics.md`](docs/virtual-pool-physics.md) (version 1.10).
 
 The engine is **event-driven and closed-form**: between two events every ball's
 state is given by an analytic expression, so nothing is ever integrated step by
@@ -107,8 +107,8 @@ Two versions move, and they mean different things:
 
 | | What it is |
 |---|---|
-| `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.9`) |
-| the crate version (`0.2.0`) | the version of the **API** |
+| `pool_core::MODEL_VERSION` | the version of the **physics model** - the same number as the research document's version (`1.10`) |
+| the crate version (`0.3.0`) | the version of the **API** |
 
 A change to the model bumps both; a change to the API only bumps the crate
 version. The model version is what the game asks for -
@@ -131,6 +131,7 @@ The parameters that the document marks as "to be fitted" are meant to be fitted
 against data, not by feel. `pool-cli` fires parameterised shots and writes CSV:
 
 ```sh
+pool-cli config                         # the default config as JSON (fixture generator input)
 pool-cli simulate --cue-speed 2 --aim-deg 0 --object 0.9,0.635
 pool-cli sweep --kind speed   --from 0.5 --to 6   --steps 12   # the separation and the throw
 pool-cli sweep --kind cut     --from 0   --to 60  --steps 13   # the throw against the cut angle

@@ -53,8 +53,6 @@ pub enum SegmentKind {
     Stationary,
     /// Off the cloth, in flight (§7.1).
     Airborne,
-    /// Sliding on a pocket shelf (§9.4).
-    Shelf,
 }
 
 impl SegmentKind {
@@ -66,7 +64,6 @@ impl SegmentKind {
             SegmentKind::Spinning => "spin",
             SegmentKind::Stationary => "rest",
             SegmentKind::Airborne => "air",
-            SegmentKind::Shelf => "shelf",
         }
     }
 
@@ -78,8 +75,6 @@ impl SegmentKind {
             SegmentKind::Spinning => MotionState::Spinning,
             SegmentKind::Stationary => MotionState::Stationary,
             SegmentKind::Airborne => MotionState::Airborne,
-            // A ball on the shelf is sliding; the shelf is what tells it apart.
-            SegmentKind::Shelf => MotionState::Sliding,
         }
     }
 }
@@ -483,8 +478,8 @@ impl OpenSegment {
 ///
 /// The model of a segment is a straight line: `w(t) = w0 + wa * dt`. The
 /// vertical spin is the only part of it that decays - the spin-up of a slide
-/// and the rolling spin of a roll go to the two in-plane axes (§3.2, §3.3), a
-/// shelf and the air leave the spin alone altogether (§9.4, §7.1) - so a
+/// and the rolling spin of a roll go to the two in-plane axes (§3.2, §3.3),
+/// the air leaves the spin alone altogether (§7.1) - so a
 /// segment whose `w0.z` and `wa.z` have strictly opposite signs is a segment
 /// whose model crosses zero part way through it, and from there the model
 /// grows a backspin instead of dying.

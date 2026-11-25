@@ -88,6 +88,7 @@ fn usage() {
         "pool-cli - headless tuning harness for the pool physics core
 
 USAGE:
+    pool-cli config
     pool-cli simulate [options]
     pool-cli sweep --kind <speed|english|cut> [options]
     pool-cli help
@@ -174,6 +175,12 @@ fn build_shot(
     input.contact_offset_x = offset_r * cfg.ball.radius;
     input.contact_offset_y = spin_r * cfg.ball.radius;
     input
+}
+
+/// The default configuration as JSON - the authoritative numbers for the fixture
+/// generator, which must not carry a second copy of the defaults.
+fn command_config() -> Result<String, String> {
+    Ok(TableConfig::default().to_json())
 }
 
 fn command_simulate(args: &Args) -> Result<String, String> {
@@ -440,6 +447,7 @@ fn main() -> ExitCode {
         }
     };
     let result = match args.command.as_str() {
+        "config" => command_config(),
         "simulate" => command_simulate(&args),
         "sweep" => command_sweep(&args),
         "help" | "--help" | "-h" => {

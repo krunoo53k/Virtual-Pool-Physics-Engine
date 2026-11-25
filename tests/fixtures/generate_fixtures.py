@@ -2,29 +2,51 @@
 """Generates tests/fixtures/*.json - acceptance criteria for the physics core.
 
 Every expected value is computed here from the equations in docs/virtual-pool-physics.md
-(or taken from a published measurement, which is marked with a "source"), so the fixtures
-cannot drift away from the document.
+(or taken from a published measurement, which is marked with a "source"), with the input
+constants read from the core's own default config via `pool-cli config`, so neither the
+fixtures nor the constants can drift away from the model.
 """
-import json, math, os
+import json, math, os, subprocess
 
-R = 0.028575          # ball radius, m
-D = 2*R                # ball diameter, m
-M = 0.170             # ball mass, kg
-G = 9.81
-E_BALL = 0.95         # ball-ball COR
-MU_BALL = 0.06        # ball-ball friction at the 1 m/s reference slip (TP A.14's own fit value)
-MU_S = 0.20            # ball-cloth sliding friction
-MU_CUSHION = 0.14      # cushion sliding friction
-MU_R = 0.01            # ball-cloth rolling friction
-NOSE_H = 0.0363          # nose (contact) height above the bed, m (63.5% of ball diameter)
-NOSE_TIP_R = 0.00635     # nose tip radius, m (1/4") - shape only, not the impulse direction
+OUT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(OUT))
+
+# The constants below come from the core's own default configuration, not from a
+# second copy in this file: `pool-cli config` prints it as JSON. Build the CLI
+# before regenerating (`cargo build -p pool-cli`).
+CLI = os.environ.get("POOL_CLI", os.path.join(ROOT, "target", "debug", "pool-cli"))
+CONFIG_SOURCE = os.path.join(ROOT, "pool-core", "src", "config.rs")
+# A stale CLI would silently generate fixtures that pin the old defaults. Fail
+# loudly instead of letting the tests disagree with the source they describe.
+if os.path.isfile(CLI) and os.path.isfile(CONFIG_SOURCE) and \
+        os.path.getmtime(CLI) < os.path.getmtime(CONFIG_SOURCE):
+    raise SystemExit("%s is older than %s; run 'cargo build -p pool-cli' first" %
+                     (CLI, CONFIG_SOURCE))
+try:
+    CFG = json.loads(subprocess.check_output([CLI, "config"], text=True))
+except (OSError, subprocess.CalledProcessError) as error:
+    raise SystemExit("could not read the default config from %s: %s" % (CLI, error))
+
+BALL = CFG["ball"]
+CLOTH = CFG["cloth"]
+TABLE = CFG["table"]
+R = BALL["radius"]                  # ball radius, m
+D = 2*R                             # ball diameter, m
+M = BALL["mass"]                    # ball mass, kg
+G = CFG["simulation"]["gravity"]
+E_BALL = CFG["ball_ball"]["e_ball"]         # ball-ball COR
+MU_BALL = CFG["ball_ball"]["mu_ball"]       # friction at the 1 m/s reference slip
+MU_S = CLOTH["mu_s"]                        # ball-cloth sliding friction
+MU_CUSHION = CFG["cushion"]["mu_cushion"]   # cushion sliding friction
+MU_R = CLOTH["mu_r"]                        # ball-cloth rolling friction
+MU_SLATE = TABLE["mu_slate"]                # sliding friction on a pocket shelf
+NOSE_H = CFG["cushion"]["nose_height"]      # contact height above the bed, m
+NOSE_TIP_R = CFG["cushion"]["nose_tip_radius"]
 EPS = NOSE_H - R         # derived contact height above the ball's centre, m
 EPS_R = EPS/R            # ... in units of R
 SIN_T = EPS/R            # sin(theta): tilt of the contact normal from the horizontal
 COS_T = math.sqrt(1 - SIN_T**2)
-I = (2/5)*M*R*R
-
-OUT = os.path.dirname(os.path.abspath(__file__))
+I = BALL["inertia_factor"]*M*R*R
 
 
 def write(name, data):
@@ -505,9 +527,9 @@ def fixture_draw():
 
 # ---------------------------------------------------------------- 6. pocket
 def fixture_pocket():
-    mu_slate = 0.15
-    shelf_corner = 1.75*0.0254
-    v_min = math.sqrt(2*mu_slate*G*shelf_corner)
+    shelf_corner = TABLE["shelf_depth_corner"]
+    # A ball that reaches the mouth rolling keeps rolling resistance (§9.4).
+    v_min = math.sqrt(2*MU_R*G*shelf_corner)
     return {
         "id": "pocket_drop",
         "title": "Pocket capture conditions",
@@ -517,8 +539,9 @@ def fixture_pocket():
         "setup": {
             "balls": [{"id": "b0", "position": [1.0, 1.0], "velocity": [1.5, 0.0],
                        "angular_velocity": [0.0, 1.5/R, 0.0]}],
-            "params": {"mu_slate": mu_slate, "shelf_depth_corner": shelf_corner,
-                       "e_jaw": 0.60, "mu_jaw": 0.30},
+            "params": {"mu_r": MU_R, "mu_slate": MU_SLATE,
+                       "shelf_depth_corner": shelf_corner,
+                       "e_jaw": TABLE["e_jaw"], "mu_jaw": TABLE["mu_jaw"]},
             "note": "the ball is placed on the centre line of a corner pocket and rolls "
                     "straight in at 1.5 m/s",
         },
@@ -527,7 +550,9 @@ def fixture_pocket():
              "notes": "a ball entering on the centre line must drop"},
             {"quantity": "minimum_speed_to_reach_drop", "expected": v_min,
              "tolerance": 1e-9, "unit": "m/s",
-             "notes": "sqrt(2*mu_slate*g*shelf_depth); slower balls hang up on the shelf"},
+             "notes": "sqrt(2*mu_r*g*shelf_depth) for a ball rolling across the mouth; "
+                       "a ball still sliding there uses mu_slate instead. Slower balls "
+                       "hang up on the shelf."},
         ],
         "invariants": [
             {"quantity": "no_capture_at_the_mouth",

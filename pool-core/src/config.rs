@@ -236,7 +236,9 @@ pub struct TableGeometryConfig {
     pub e_jaw: f64,
     /// Jaw friction (`mu_jaw`).
     pub mu_jaw: f64,
-    /// Friction of the pocket shelf (`mu_slate`).
+    /// Sliding friction of the pocket shelf (`mu_slate`). Only a ball that is still
+    /// sliding when it crosses the mouth uses this; a rolling ball keeps `cloth.mu_r`
+    /// (§9.4).
     pub mu_slate: f64,
 }
 
@@ -385,10 +387,11 @@ impl TableConfig {
         self.ball.inertia_factor * self.ball.mass * self.ball.radius * self.ball.radius
     }
 
-    /// The minimum speed a ball needs to cross a pocket shelf of the given depth
-    /// (§9.4): `sqrt(2 * mu_slate * g * shelf_depth)`.
+    /// The minimum speed a *rolling* ball needs to cross a pocket shelf of the given
+    /// depth (§9.4): `sqrt(2 * mu_r * g * shelf_depth)`. A ball that is still sliding
+    /// when it crosses the mouth uses its sliding coefficient instead.
     pub fn minimum_speed_to_drop(&self, shelf_depth: f64) -> f64 {
-        let v2 = 2.0 * self.table.mu_slate * self.simulation.gravity * shelf_depth;
+        let v2 = 2.0 * self.cloth.mu_r * self.simulation.gravity * shelf_depth;
         if v2 <= 0.0 {
             0.0
         } else {
