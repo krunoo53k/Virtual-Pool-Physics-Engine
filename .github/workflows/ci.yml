@@ -106,10 +106,66 @@ jobs:
             exit 1
           fi
 
+  corpus:
+    name: Corpus (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: x86_64
+          - mode: aarch64
+          - mode: wasm32-wasip1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
+      - name: Install cross for aarch64
+        if: matrix.mode == 'aarch64'
+        uses: taiki-e/install-action@cross
+      - name: Add the WASI target
+        if: matrix.mode == 'wasm32-wasip1'
+        run: rustup target add wasm32-wasip1
+      - name: Replay the corpus on x86_64
+        if: matrix.mode == 'x86_64'
+        run: cargo test -p pool-intent --test corpus
+      - name: Replay the corpus on aarch64
+        if: matrix.mode == 'aarch64'
+        run: cross test -p pool-intent --test corpus --target aarch64-unknown-linux-gnu
+      - name: Replay the corpus on wasm32-wasip1
+        if: matrix.mode == 'wasm32-wasip1'
+        run: cargo test -p pool-intent --test corpus --target wasm32-wasip1
+
+  corpus_compile:
+    name: Corpus compile (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
+      - name: Add the bare wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Compile the pure-Rust crates and their tests
+        run: >-
+          cargo test -p pool-core -p pool-intent -p pool-rules
+          --target wasm32-unknown-unknown --no-run
+
+  compat_guard:
+    name: Corpus / model-version guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Corpus hashes and model version must move together
+        run: python3 .github/scripts/check_corpus_guard.py
+      - name: The canary in compat.json must match the built helper
+        run: |
+          actual=$(cargo run -q -p pool-intent --example canary | awk '/^canary /{print $2}')
+          expected=$(python3 -c 'import json; print(json.load(open("compat.json"))["canary"])')
+          echo "canary: built=$actual manifest=$expected"
+          test "$actual" = "$expected"
+
   summary:
     name: Summary
     if: always()
-    needs: [format, build, tests, clippy, demos]
+    needs: [format, build, tests, clippy, demos, corpus, corpus_compile, compat_guard]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -126,5 +182,8 @@ jobs:
           TESTS_RESULT: ${{ needs.tests.result }}
           CLIPPY_RESULT: ${{ needs.clippy.result }}
           DEMOS_RESULT: ${{ needs.demos.result }}
+          CORPUS_RESULT: ${{ needs.corpus.result }}
+          CORPUS_COMPILE_RESULT: ${{ needs.corpus_compile.result }}
+          COMPAT_GUARD_RESULT: ${{ needs.compat_guard.result }}
           CLIPPY_WARNINGS: ${{ needs.clippy.outputs.warnings }}
         run: python3 .github/scripts/summary.py test-results/junit.xml

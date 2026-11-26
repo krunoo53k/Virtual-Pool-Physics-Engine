@@ -62,6 +62,17 @@ def main() -> None:
         ("Tests", os.environ.get("TESTS_RESULT", "unknown"), test_details),
         ("Clippy", os.environ.get("CLIPPY_RESULT", "unknown"), clippy_details),
         ("Demos", os.environ.get("DEMOS_RESULT", "unknown"), ""),
+        ("Corpus (3 targets)", os.environ.get("CORPUS_RESULT", "unknown"), ""),
+        (
+            "Corpus compile (wasm32)",
+            os.environ.get("CORPUS_COMPILE_RESULT", "unknown"),
+            "",
+        ),
+        (
+            "Corpus / version guard",
+            os.environ.get("COMPAT_GUARD_RESULT", "unknown"),
+            "",
+        ),
     ]
 
     lines = ["## CI overview", "", "| Check | Result | Details |", "|---|---|---|"]
