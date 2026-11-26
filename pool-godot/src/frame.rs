@@ -72,7 +72,7 @@ pub fn right(direction: Vec3) -> Vec3 {
 /// changes sign. A tip dragged to the right of the ball is right english, and
 /// right english is a negative `contact_offset_x`.
 pub fn contact_offset(across: f64, up: f64) -> (f64, f64) {
-    (-across, up)
+    pool_intent::contact_offset(across, up)
 }
 
 /// The aim direction after a fine trim of `angle` radians about the vertical.
@@ -112,16 +112,10 @@ pub fn angle(direction: Vec3) -> f64 {
 /// direction's height) signs a raised cue NEGATIVE, so the two are each
 /// other's negation - the sign is the engine's, never the game's.
 pub fn cue_direction(level_aim_deg: f64, elevation_deg: f64) -> Vector3 {
-    let degrees = std::f64::consts::PI / 180.0;
-    let aim = level_aim_deg * degrees;
-    let elevation = elevation_deg * degrees;
-    let (s_aim, c_aim) = (libm::sin(aim), libm::cos(aim));
-    let (s_elev, c_elev) = (libm::sin(elevation), libm::cos(elevation));
-    to_godot(pool_core::math::Vec3::new(
-        c_aim * c_elev,
-        s_aim * c_elev,
-        -s_elev,
-    ))
+    // The direction, its degree normalisation and its trig belong to the
+    // shared rlib; this function only converts the core-frame result into the
+    // Godot frame the existing f32-facing callers expect.
+    to_godot(pool_intent::cue_direction(level_aim_deg, elevation_deg))
 }
 
 /// The distance from the tip to the centre of the ball, in metres: the impact

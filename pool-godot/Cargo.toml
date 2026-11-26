@@ -21,6 +21,12 @@ crate-type = ["cdylib", "rlib"]
 # The version is here as well as the path: a published crate has to ask for a
 # version of the core, and the two are released together - the core first.
 pool-core = { path = "../pool-core", version = "0.3.0" }
+# The shared, Godot-free side of a shot: the bridge and the server must derive
+# the same direction, input and outcome from the same flat f64 numbers.
+pool-intent = { path = "../pool-intent", version = "0.3.0" }
+# The BCA judge the client's display-only preview calls instead of its own
+# GDScript rules. The server uses the same crate directly.
+pool-rules = { path = "../pool-rules", version = "0.3.0" }
 # The Godot 4 bindings. `api-4-6` selects the GDExtension API of Godot 4.6, and
 # the extension runs on any later 4.x. The bindings come from the prebuilt
 # `extension_api.json`, so no Godot binary is needed to build.

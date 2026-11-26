@@ -9,7 +9,8 @@
 //! [`crate::shot`], and the core's JSON is in [`crate::json`].
 
 use godot::builtin::{
-    GString, PackedInt32Array, PackedVector3Array, VarArray, VarDictionary, Vector2, Vector3,
+    GString, PackedFloat64Array, PackedInt32Array, PackedVector3Array, VarArray, VarDictionary,
+    Vector2, Vector3,
 };
 use godot::classes::IRefCounted;
 use godot::obj::Gd;
@@ -20,6 +21,7 @@ use crate::json as core_json;
 use crate::shot;
 use pool_core::config::TableConfig;
 use pool_core::geometry::TableGeometry;
+use pool_core::json::Value;
 use pool_core::state::{GamePhase, GameState, MotionState};
 use pool_core::trace::{event_kind_name, pocket_name};
 use pool_core::{hash_state_hex, Trace};
@@ -44,6 +46,31 @@ impl PoolCore {
     #[func]
     fn get_model_version(&self) -> GString {
         GString::from(pool_core::MODEL_VERSION)
+    }
+
+    /// The runtime-reported build identity, as JSON.
+    ///
+    /// A client checking the compatibility manifest needs the git revision,
+    /// the model, the rules and intent revisions, the compilation target and
+    /// the canary - the model string alone is what already drifted. The values
+    /// are stamped at build time by `build.rs` and never enter physics.
+    #[func]
+    fn get_build_info(&self) -> GString {
+        let info = Value::Object(vec![
+            ("git_rev".into(), Value::String(env!("POOL_GIT_REV").into())),
+            (
+                "model".into(),
+                Value::String(pool_core::MODEL_VERSION.into()),
+            ),
+            (
+                "rules".into(),
+                Value::String(pool_rules::RULES_VERSION.into()),
+            ),
+            ("intent".into(), Value::String(env!("POOL_GIT_REV").into())),
+            ("target".into(), Value::String(env!("POOL_TARGET").into())),
+            ("canary".into(), Value::String(pool_intent::canary_hex())),
+        ]);
+        GString::from(info.to_json().as_str())
     }
 
     /// The table configuration, as JSON.
@@ -139,6 +166,99 @@ impl PoolCore {
     #[func]
     fn make_cue_direction(level_aim_deg: f64, elevation_deg: f64) -> Vector3 {
         frame::cue_direction(level_aim_deg, elevation_deg)
+    }
+
+    /// The same direction as a flat `f64` triple in the **core** frame.
+    ///
+    /// The `f32` [`Self::make_cue_direction`] stays for hotseat. Online play
+    /// compares this number with the server's before a stroke, so it must never
+    /// go through a `Vector3`.
+    #[func]
+    fn make_cue_direction_f64(level_aim_deg: f64, elevation_deg: f64) -> PackedFloat64Array {
+        crate::bridge::cue_direction_f64(level_aim_deg, elevation_deg)
+            .into_iter()
+            .collect()
+    }
+
+    /// The online shot: six scalars and a flat, core-frame `f64` rack.
+    ///
+    /// Unlike [`Self::simulate`], no number crosses this boundary as `f32`.
+    /// The direction is built in Rust by `pool-intent` from the degrees the
+    /// wire carries, so the client and the server derive it identically.
+    /// `positions`/`rotations` are flat triples; the cue ball is the first one.
+    #[func]
+    #[allow(clippy::too_many_arguments)] // the six wire scalars plus three flat rack arrays
+    fn simulate_from_intent_f64(
+        &self,
+        cue_speed: f64,
+        level_aim_deg: f64,
+        elevation_deg: f64,
+        contact_x: f64,
+        contact_y: f64,
+        positions: PackedFloat64Array,
+        numbers: PackedInt32Array,
+        rotations: PackedFloat64Array,
+    ) -> Gd<PoolShot> {
+        match crate::bridge::simulate_from_intent_f64(
+            &self.table,
+            cue_speed,
+            level_aim_deg,
+            elevation_deg,
+            contact_x,
+            contact_y,
+            positions.as_slice(),
+            numbers.as_slice(),
+            rotations.as_slice(),
+        ) {
+            Ok((state, trace)) => Gd::from_object(PoolShot {
+                trace,
+                state,
+                error: GString::new(),
+                table: self.table.clone(),
+            }),
+            Err(error) => {
+                let input = pool_intent::shot_input(
+                    &self.table,
+                    cue_speed,
+                    pool_intent::cue_direction(level_aim_deg, elevation_deg),
+                    (contact_x, contact_y),
+                    &crate::bridge::flat_triples(positions.as_slice()),
+                    numbers.as_slice(),
+                    &crate::bridge::flat_triples(rotations.as_slice()),
+                );
+                Gd::from_object(PoolShot {
+                    trace: Trace::default(),
+                    state: shot::faulted_state(&input),
+                    error: GString::from(error.message.as_str()),
+                    table: self.table.clone(),
+                })
+            }
+        }
+    }
+
+    /// The display-only ruling preview: the shared outcome mapping and the
+    /// shared BCA judge, in one JSON call.
+    ///
+    /// A malformed request returns a JSON object with an `error` field instead
+    /// of throwing into GDScript. The client calls this rather than keeping a
+    /// second GDScript judge alive.
+    #[func]
+    fn preview_shot_json(&self, json: GString) -> GString {
+        GString::from(crate::bridge_json::preview_json(&json.to_string()).as_str())
+    }
+
+    /// `pool-rules::judge` and its announcement words, from the same JSON
+    /// request [`Self::preview_shot_json`] takes.
+    #[func]
+    fn judge_json(&self, json: GString) -> GString {
+        GString::from(crate::bridge_json::judge_json(&json.to_string()).as_str())
+    }
+
+    /// `pool-intent::outcome_from_trace` — the index → ball-number mapping and
+    /// typed events/outcome — from the same JSON request.
+    #[func]
+    fn outcome_from_trace_json(&self, json: GString) -> GString {
+        GString::from(crate::bridge_json::outcome_mapping_json(&json.to_string()).as_str())
     }
 
     /// The shot: the whole thing, resolved in one call.
@@ -333,6 +453,44 @@ impl PoolShot {
             .sample_rotation(t)
             .into_iter()
             .map(frame::to_godot)
+            .collect()
+    }
+
+    /// The orientation of every ball at time `t`, as flat core-frame `f64`
+    /// triples.
+    ///
+    /// This is the carry the next shot starts from. It must be exact: a
+    /// renderer that rounds the carried rotations would make the same shot
+    /// replay differently from the server's prediction.
+    #[func]
+    fn sample_rotation_f64(&self, t: f64) -> PackedFloat64Array {
+        crate::bridge::triples_to_flat(&self.trace.sample_rotation(t))
+            .into_iter()
+            .collect()
+    }
+
+    /// The final positions of every ball, as flat core-frame `f64` triples.
+    ///
+    /// The `f32` [`Self::get_final_state`] stays for the renderer; this is the
+    /// readback the server and the canary compare bit for bit.
+    #[func]
+    fn get_final_positions_f64(&self) -> PackedFloat64Array {
+        let positions: Vec<pool_core::math::Vec3> =
+            self.state.balls.iter().map(|ball| ball.position).collect();
+        crate::bridge::triples_to_flat(&positions)
+            .into_iter()
+            .collect()
+    }
+
+    /// The carried rotations at the end of the shot, as flat core-frame `f64`
+    /// triples. The state hash deliberately excludes these (they are a
+    /// rendering fact), so they get their own path pin.
+    #[func]
+    fn get_final_rotations_f64(&self) -> PackedFloat64Array {
+        let rotations: Vec<pool_core::math::Vec3> =
+            self.state.balls.iter().map(|ball| ball.rotation).collect();
+        crate::bridge::triples_to_flat(&rotations)
+            .into_iter()
             .collect()
     }
 

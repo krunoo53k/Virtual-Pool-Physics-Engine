@@ -16,6 +16,8 @@
 //! geometry the balls roll on, and the shot comes back as the same path the
 //! simulation took.
 
+pub mod bridge;
+pub mod bridge_json;
 pub mod classes;
 pub mod frame;
 pub mod json;
