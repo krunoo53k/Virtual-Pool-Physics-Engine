@@ -1,0 +1,8 @@
+# wasm32 test execution: the pure-Rust crates and the determinism corpus run
+# under Node's WASI. gdext's wasm32-unknown-emscripten path is experimental and
+# is deliberately not configured here (see docs/online-multiplayer-e0.md).
+#
+# Cargo runs tests from the package directory, so the runner resolves the repo
+# root from git rather than from a relative path.
+[target.wasm32-wasip1]
+runner = ['sh', '-c', 'node "$(git rev-parse --show-toplevel)/scripts/wasi-test-runner.mjs" "$@"', 'sh']

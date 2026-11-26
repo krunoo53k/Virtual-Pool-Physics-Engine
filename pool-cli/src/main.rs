@@ -10,7 +10,10 @@
 //! pool-cli sweep --kind speed --from 0.5 --to 6 --steps 12 --out speed.csv
 //! pool-cli sweep --kind english --from 0 --to 0.5 --steps 6 --out english.csv
 //! pool-cli sweep --kind cut --from 0 --to 60 --steps 13 --out throw.csv
+//! pool-cli corpus --out tests/fixtures/corpus.json
 //! ```
+
+mod corpus;
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -91,6 +94,7 @@ USAGE:
     pool-cli config
     pool-cli simulate [options]
     pool-cli sweep --kind <speed|english|cut> [options]
+    pool-cli corpus [--out FILE]
     pool-cli help
 
 COMMON OPTIONS:
@@ -446,6 +450,36 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // The corpus has a default destination (the checked-in fixture), so it
+    // owns its write instead of going through the generic `--out` handler.
+    if args.command == "corpus" {
+        let (text, count) = match corpus::command_corpus() {
+            Ok(result) => result,
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let path = args.flags.get("out").cloned().unwrap_or_else(|| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("tests")
+                .join("fixtures")
+                .join("corpus.json")
+                .to_string_lossy()
+                .into_owned()
+        });
+        return match std::fs::write(&path, text) {
+            Ok(()) => {
+                println!("wrote {count} shots to {path}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("error: could not write {path}: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let result = match args.command.as_str() {
         "config" => command_config(),
         "simulate" => command_simulate(&args),

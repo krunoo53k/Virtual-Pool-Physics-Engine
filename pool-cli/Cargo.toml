@@ -8,3 +8,4 @@ repository.workspace = true
 
 [dependencies]
 pool-core = { path = "../pool-core" }
+pool-intent = { path = "../pool-intent" }

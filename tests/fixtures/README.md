@@ -152,3 +152,40 @@ authority for the law; the residual is a recorded deviation, and the test pins i
 - `pocket_drop.json` deliberately leaves the rattle outcome to the implementation: once the
   jaw model is in place, add the observed outcome as a golden value so that a change in the
   jaw parameters shows up as a test failure rather than as a silently different game.
+
+## `corpus.json` (schema `pool-corpus/2`)
+
+`cargo run -q -p pool-cli -- corpus` regenerates the self-play shot corpus byte for byte.
+Its first 72 shots form a carry chain: each starts from the previous shot's final positions
+and rotations, so the renderer's rotation hand-off is pinned even though the canonical state
+hash excludes rotations. The tail places shots from the table's own pocket geometry to
+cover states the carry loop cannot reach.
+
+Every shot stores:
+
+- `intent` — the six wire scalars, and `intent_hex` — the same six as 16 lowercase hex digits
+  of their `f64` bits (`called_pocket` is represented as an `f64`);
+- `positions`, `numbers`, `rotations` — the rack handed to `pool_intent::shot_input`;
+- `events` — the human-readable `(kind, ball, other)` summary, and `events_digest` — a
+  canonical FNV-1a digest over the **complete** sequence: for each event, its kind word,
+  `time.to_bits()`, the ball/rail numbers in the same frame as `events`, and `detail`;
+- `final_rotations` — flat core-frame rotation triples of every ball at the end of the shot,
+  bit-exact (not just the carry chain);
+- `final_state_hash` and `duration`.
+
+Special records add `max_events` (a per-shot override of `TableConfig::simulation.max_events`)
+and `faulted: true` for the fault case; shelf records add `handoff_pocket_states`, the pocket
+states that `shot_input` must recover from the bare positions. The replay test
+(`pool-intent/tests/corpus.rs`) asserts all of these, plus the exact category counts:
+
+| Category | Shots | What it pins |
+|---|---:|---|
+| `rails`, `spin`, `jumps`, `pockets`, `off_table`, `carry` | 16, 16, 12, 15, 10, 3 | the original self-play chain |
+| `shelf` | 2 | a hand-off already past the mouth line (`Entering`) and past the drop line (`Pocketed`) |
+| `jaw` | 2 | a rattle in and a rattle out, both with `jaw` events |
+| `hung_up` | 1 | a low-energy ball that stops on the shelf (`PocketState::HungUp`) |
+| `miscue` | 1 | a tip outside `TableConfig::max_offset_without_miscue()` |
+| `edge` | 2 | a frozen contact and a `2r + tiny epsilon` contact |
+| `fault` | 1 | `GamePhase::Faulted` via an eight-event guard |
+
+The total is 81 shots. No RNG and no wall clock is used anywhere in generation or replay.
