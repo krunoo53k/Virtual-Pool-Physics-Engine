@@ -454,3 +454,140 @@ fn every_shot_replays_bit_for_bit() {
         }
     }
 }
+
+/// The first 72 shots are self-play: shot n+1 starts from shot n's surviving
+/// balls, with rotations carried from n's recorded path. Replaying the chain
+/// here pins the hand-off itself, not just each shot in isolation. The tail
+/// uses placed racks instead, so only consecutive carried shots are compared.
+#[test]
+fn carried_racks_match_the_preceding_shot() {
+    let cfg = TableConfig::default();
+    let shots = array(&corpus(), "shots");
+    assert_eq!(shots.len(), 81, "the corpus must hold 81 shots");
+
+    let is_carry = |category: &str| {
+        matches!(
+            category,
+            "rails" | "spin" | "jumps" | "pockets" | "off_table" | "carry"
+        )
+    };
+    let assert_bits = |got: &[Vec3], want: &[Vec3], id: &str, next_id: &str, what: &str| {
+        assert_eq!(
+            got.len(),
+            want.len(),
+            "{id} -> {next_id}: carried {what} count mismatch"
+        );
+        for (index, (stored, carried)) in got.iter().zip(want.iter()).enumerate() {
+            for component in 0..3 {
+                assert_eq!(
+                    stored.get(component).to_bits(),
+                    carried.get(component).to_bits(),
+                    "{id} -> {next_id}: ball {index} {what} component {component} mismatch"
+                );
+            }
+        }
+    };
+
+    let mut checked = 0;
+    for pair in shots.windows(2) {
+        let (shot, next) = (&pair[0], &pair[1]);
+        if !is_carry(text(shot, "category")) || !is_carry(text(next, "category")) {
+            continue;
+        }
+        let id = text(shot, "id");
+        let next_id = text(next, "id");
+
+        let intent = field(shot, "intent");
+        let speed = number(intent, "speed");
+        let aim_deg = number(intent, "level_aim_deg");
+        let elevation_deg = number(intent, "elevation_deg");
+        let contact_x = number(intent, "contact_x");
+        let contact_y = number(intent, "contact_y");
+        let positions = flat_vec3(shot, "positions");
+        let numbers = ball_numbers(shot, "numbers");
+        let rotations = flat_vec3(shot, "rotations");
+
+        // Mirror the recorder's per-shot setup so the replayed path is the
+        // same one the generator took when it wrote shot n+1's rack.
+        let mut shot_cfg = cfg.clone();
+        if let Some(limit) = shot.get("max_events") {
+            let raw = limit
+                .as_f64()
+                .unwrap_or_else(|| panic!("{id}: max_events is not a number"));
+            let limit = raw as u32;
+            assert_eq!(raw, f64::from(limit), "{id}: max_events is integral");
+            shot_cfg.simulation.max_events = limit;
+        }
+        let faulted = shot
+            .get("faulted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        assert!(!faulted, "{id}: a carried shot cannot be faulted");
+
+        let direction = cue_direction(aim_deg, elevation_deg);
+        let input = shot_input(
+            &cfg,
+            speed,
+            direction,
+            (contact_x, contact_y),
+            &positions,
+            &numbers,
+            &rotations,
+        );
+        let (state, trace) = simulate_record(&input, &shot_cfg, faulted)
+            .unwrap_or_else(|error| panic!("{id} faulted unexpectedly: {}", error.message));
+
+        // The generator's hand-off: drop pocketed/off-table balls, keep each
+        // survivor's position, carry its final rotation from the trace, and
+        // re-spot the cue on the head spot if it did not survive.
+        let final_rotations = trace.sample_rotation(trace.duration);
+        let mut want_numbers: Vec<i32> = Vec::with_capacity(state.balls.len());
+        let mut want_positions: Vec<Vec3> = Vec::with_capacity(state.balls.len());
+        let mut want_rotations: Vec<Vec3> = Vec::with_capacity(state.balls.len());
+        for (index, ball) in state.balls.iter().enumerate() {
+            if ball.is_pocketed || ball.is_off_table {
+                continue;
+            }
+            want_numbers.push(i32::from(ball.number));
+            want_positions.push(ball.position);
+            want_rotations.push(final_rotations.get(index).copied().unwrap_or(Vec3::ZERO));
+        }
+        if !want_numbers.contains(&0) {
+            want_numbers.insert(0, 0);
+            want_positions.insert(
+                0,
+                Vec3::new(
+                    cfg.table.length / 4.0,
+                    cfg.table.width / 2.0,
+                    cfg.ball.radius,
+                ),
+            );
+            want_rotations.insert(0, Vec3::ZERO);
+        }
+
+        assert_eq!(
+            ball_numbers(next, "numbers"),
+            want_numbers,
+            "{id} -> {next_id}: carried ball numbers mismatch"
+        );
+        assert_bits(
+            &flat_vec3(next, "positions"),
+            &want_positions,
+            id,
+            next_id,
+            "positions",
+        );
+        assert_bits(
+            &flat_vec3(next, "rotations"),
+            &want_rotations,
+            id,
+            next_id,
+            "rotations",
+        );
+        checked += 1;
+    }
+    assert_eq!(
+        checked, 71,
+        "the carry chain must hold 71 consecutive pairs"
+    );
+}

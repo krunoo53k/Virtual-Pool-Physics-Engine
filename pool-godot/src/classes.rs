@@ -50,27 +50,18 @@ impl PoolCore {
 
     /// The runtime-reported build identity, as JSON.
     ///
-    /// A client checking the compatibility manifest needs the git revision,
-    /// the model, the rules and intent revisions, the compilation target and
-    /// the canary - the model string alone is what already drifted. The values
-    /// are stamped at build time by `build.rs` and never enter physics.
+    /// A client checking `compat.json` compares `core`, `intent` and `rules`
+    /// with that manifest's `core_rev`, `intent_rev` and `rules_rev`. Those
+    /// three values are read from the manifest by `build.rs` and stamped into
+    /// the extension; they never enter physics.
+    ///
+    /// `git_rev` is the HEAD of the checkout that built the extension. It is
+    /// informational only: it is not one of the manifest's pinned revisions
+    /// (a build of an older commit, or of an uncommitted tree, cannot match
+    /// them) and must not be used for the compatibility check.
     #[func]
     fn get_build_info(&self) -> GString {
-        let info = Value::Object(vec![
-            ("git_rev".into(), Value::String(env!("POOL_GIT_REV").into())),
-            (
-                "model".into(),
-                Value::String(pool_core::MODEL_VERSION.into()),
-            ),
-            (
-                "rules".into(),
-                Value::String(pool_rules::RULES_VERSION.into()),
-            ),
-            ("intent".into(), Value::String(env!("POOL_GIT_REV").into())),
-            ("target".into(), Value::String(env!("POOL_TARGET").into())),
-            ("canary".into(), Value::String(pool_intent::canary_hex())),
-        ]);
-        GString::from(info.to_json().as_str())
+        GString::from(build_info_json().as_str())
     }
 
     /// The table configuration, as JSON.
@@ -487,9 +478,7 @@ impl PoolShot {
     /// rendering fact), so they get their own path pin.
     #[func]
     fn get_final_rotations_f64(&self) -> PackedFloat64Array {
-        let rotations: Vec<pool_core::math::Vec3> =
-            self.state.balls.iter().map(|ball| ball.rotation).collect();
-        crate::bridge::triples_to_flat(&rotations)
+        crate::bridge::final_rotations_f64(&self.trace)
             .into_iter()
             .collect()
     }
@@ -602,6 +591,28 @@ impl PoolShot {
         dictionary.set("balls", &balls.to_variant());
         dictionary
     }
+}
+
+/// The build identity as a JSON string, shared by the Godot method and the
+/// tests so the runtime report can be checked against `compat.json`.
+pub fn build_info_json() -> String {
+    Value::Object(vec![
+        // Informational: the checkout's HEAD, not a compatibility pin.
+        ("git_rev".into(), Value::String(env!("POOL_GIT_REV").into())),
+        (
+            "model".into(),
+            Value::String(pool_core::MODEL_VERSION.into()),
+        ),
+        ("core".into(), Value::String(env!("POOL_CORE_REV").into())),
+        (
+            "intent".into(),
+            Value::String(env!("POOL_INTENT_REV").into()),
+        ),
+        ("rules".into(), Value::String(env!("POOL_RULES_REV").into())),
+        ("target".into(), Value::String(env!("POOL_TARGET").into())),
+        ("canary".into(), Value::String(pool_intent::canary_hex())),
+    ])
+    .to_json()
 }
 
 /// The name of a motion state, as the game sees it.

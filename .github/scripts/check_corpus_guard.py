@@ -3,9 +3,10 @@
 
 Rule: if the hash of an *existing* corpus shot changes, the physics model
 version must change too. If the model version changes while no shot hash
-moves, a written justification is required. Adding shots changes the file
-digest but not the physics digest; that is allowed once the manifest's file
-digest is updated.
+moves, a written justification is required - that is the only case the
+justification field can excuse. Adding shots changes the file digest but not
+the physics digest; that is allowed once the manifest's file digest is
+updated.
 
 The corpus is self-generated: it proves change, not correctness. This guard is
 what stops a physics edit from slipping through under an unchanged version.
@@ -52,10 +53,19 @@ def model_version() -> str:
     return found.group(1)
 
 
+def rules_version() -> str:
+    text = (ROOT / "pool-rules" / "src" / "lib.rs").read_text()
+    found = re.search(r'RULES_VERSION:\s*&str\s*=\s*"([^"]+)"', text)
+    if not found:
+        sys.exit("cannot find RULES_VERSION in pool-rules/src/lib.rs")
+    return found.group(1)
+
+
 def main() -> int:
     document = json.loads(CORPUS.read_text())
     manifest = json.loads(MANIFEST.read_text())
     model = model_version()
+    rules = rules_version()
 
     current_file = file_digest(CORPUS)
     current_hashes = hashes_by_id(document)
@@ -66,18 +76,17 @@ def main() -> int:
     model_changed = model != manifest["model_version"]
 
     problems = []
-    if physics_changed and not model_changed and not justification:
+    if physics_changed and not model_changed:
         problems.append(
             "A corpus shot hash changed but MODEL_VERSION did not. "
-            "Bump the model (outcomes changed) or write a justification in "
-            "tests/fixtures/corpus_manifest.json."
+            "Bump the model (outcomes changed)."
         )
     if model_changed and not physics_changed and not justification:
         problems.append(
             "MODEL_VERSION changed but no corpus shot hash did. "
             "Write a justification in tests/fixtures/corpus_manifest.json."
         )
-    if coverage_changed and not justification:
+    if coverage_changed:
         problems.append(
             "The corpus file changed without updating "
             "tests/fixtures/corpus_manifest.json (corpus_sha256)."
@@ -88,8 +97,8 @@ def main() -> int:
         problems.append("compat.json model does not match pool-core::MODEL_VERSION")
     if compat["corpus_sha256"] != current_file:
         problems.append("compat.json corpus_sha256 does not match corpus.json")
-    if compat["rules_version"] != "1.0":
-        problems.append("compat.json rules_version does not match pool-rules")
+    if compat["rules_version"] != rules:
+        problems.append("compat.json rules_version does not match pool-rules::RULES_VERSION")
 
     for problem in problems:
         print(f"ERROR: {problem}", file=sys.stderr)

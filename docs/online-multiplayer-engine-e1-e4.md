@@ -33,7 +33,9 @@ replays all 54 shots, asserting every Judgement field and the exact signals.
 * `outcome_from_trace(...)` — the core index → ball-number mapping and typed
   events/outcome, so output-side logic cannot drift;
 * `CueTuning` — speed `[0.15, 9.0]`, elevation `[0, 60]`, inclusive edges,
-  radial `hypot ≤ R` tip check (the radius is the table's miscue limit);
+  radial `hypot ≤ R` wire tip check where `R` is the ball radius. A tip outside
+  the *miscue limit* (`R·μ/√(1+μ²)`) but inside the ball is legal on the wire
+  and becomes a core-reported foul; the two bounds are deliberately separate;
 * `canary_hex()` — the three-shot startup canary.
 
 `pool-core/tests/portability.rs` now scans `pool-intent/src` with the same
@@ -51,14 +53,16 @@ New methods:
 | `PoolCore.make_cue_direction_f64` | flat core-frame f64 triple |
 | `PoolCore.preview_shot_json` | JSON → shared outcome + judge + announcements |
 | `PoolCore.judge_json` / `PoolCore.outcome_from_trace_json` | the same request, narrowed to the judge / the outcome mapping |
-| `PoolCore.get_build_info` | JSON: git rev, model, rules, intent, target, canary, for the client's compat-manifest check |
+| `PoolCore.get_build_info` | JSON: `core`/`rules`/`intent` revs from `compat.json`, `target`, `canary`, `model`; `git_rev` is the build HEAD and informational |
 | `PoolShot.sample_rotation_f64` | flat core-frame f64 triples |
 | `PoolShot.get_final_positions_f64` | flat core-frame f64 triples |
-| `PoolShot.get_final_rotations_f64` | flat core-frame f64 triples |
+| `PoolShot.get_final_rotations_f64` | flat core-frame f64 triples from `trace.sample_rotation(duration)` — the final carry, not the incoming orientation |
 
 The hotseat `f32` path has a sunset date; the two paths are intentionally
 *different shots* for the same nominal parameters (the `f32` one quantises the
-direction and the rack), which is why they keep separate pins.
+direction and the rack), which is why they keep separate pins. `frame::cue_direction`
+keeps the legacy bit-for-bit behaviour for wrapped aims; only the online path
+normalises the aim mod 360.
 
 ## E4 — pins
 
@@ -120,8 +124,9 @@ and faulted shots) before treating the corpus as the safety net.
 
 `.github/scripts/check_corpus_guard.py` compares the hashes of the shots listed
 in `tests/fixtures/corpus_manifest.json`'s `baseline_hashes` with the current
-corpus. An existing hash change requires a model bump; a model bump without a
-hash change requires a written justification in the manifest. Adding shots is
+corpus. An existing hash change requires a model bump **and cannot be waived by
+a justification**; a model bump without a hash change requires a written
+justification in the manifest. Adding shots is
 coverage, not a physics change: it only requires updating the manifest's
 `corpus_sha256`. The guard was tested by tampering with a shot hash (fails) and
 by adding a new shot (only the file digest needs updating). The corpus is self-generated: it detects change, not correctness.

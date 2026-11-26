@@ -112,10 +112,20 @@ pub fn angle(direction: Vec3) -> f64 {
 /// direction's height) signs a raised cue NEGATIVE, so the two are each
 /// other's negation - the sign is the engine's, never the game's.
 pub fn cue_direction(level_aim_deg: f64, elevation_deg: f64) -> Vector3 {
-    // The direction, its degree normalisation and its trig belong to the
-    // shared rlib; this function only converts the core-frame result into the
-    // Godot frame the existing f32-facing callers expect.
-    to_godot(pool_intent::cue_direction(level_aim_deg, elevation_deg))
+    // This is the legacy hotseat conversion, kept bit-for-bit for aims outside
+    // [0, 360) as well. The online path uses pool-intent::cue_direction, which
+    // normalises the aim into [0, 360); changing this method would move any
+    // hotseat pin that stored a wrapped aim.
+    let degrees = std::f64::consts::PI / 180.0;
+    let aim = level_aim_deg * degrees;
+    let elevation = elevation_deg * degrees;
+    let (s_aim, c_aim) = (libm::sin(aim), libm::cos(aim));
+    let (s_elev, c_elev) = (libm::sin(elevation), libm::cos(elevation));
+    to_godot(pool_core::math::Vec3::new(
+        c_aim * c_elev,
+        s_aim * c_elev,
+        -s_elev,
+    ))
 }
 
 /// The distance from the tip to the centre of the ball, in metres: the impact
@@ -257,6 +267,15 @@ mod tests {
         // The level aim of a raised shot is its horizontal part: the aim of
         // the raised shot is still along the shooter's left.
         assert!(cue_direction(90.0, 12.0).x.abs() < 1e-7);
+    }
+
+    #[test]
+    fn the_hotseat_direction_does_not_normalise_the_aim() {
+        // The online path normalises in pool-intent. This legacy method must
+        // keep its old bits even for a wrapped aim, or hotseat pins move.
+        let wrapped = cue_direction(450.0, 0.0);
+        let level = cue_direction(90.0, 0.0);
+        assert_ne!(wrapped.x.to_bits(), level.x.to_bits());
     }
 
     #[test]

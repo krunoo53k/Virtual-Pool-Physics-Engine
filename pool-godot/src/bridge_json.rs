@@ -19,6 +19,12 @@
 //!   "error": "" }
 //! ```
 //!
+//! `params` and `match` are optional: when absent, `ShotParams::default()` and
+//! `MatchState::default()` are used, so `judge_json` and `outcome_mapping_json`
+//! work on a request that only carries `numbers`, `events`, `state` and
+//! `error`. An event accepts either the input spelling (`time`, `a`, `b`) or
+//! the output spelling (`t`, `ball`, `other`) for the same three values.
+//!
 //! Output adds `events`, `outcome`, `judgement` and `announcements`.
 
 use pool_core::json::{parse, Value};
@@ -46,6 +52,28 @@ fn integer(value: Option<&Value>, default: i32) -> Result<i32, String> {
         None => Ok(default),
         Some(value) => Ok(number(Some(value))? as i32),
     }
+}
+
+/// A ball or rail index on the wire: a whole number in `0..=255`, or the
+/// default when the field is absent. A `as u8` cast would wrap an out-of-range
+/// or fractional value into a plausible-looking ball index and produce a bogus
+/// ruling instead of an error.
+fn byte(value: Option<&Value>, default: u8, name: &str) -> Result<u8, String> {
+    match value {
+        None => Ok(default),
+        Some(value) => {
+            let n = number(Some(value))?;
+            if !n.is_finite() || n.fract() != 0.0 || n < 0.0 || n > u8::MAX as f64 {
+                return Err(format!("expected a byte for '{name}'"));
+            }
+            Ok(n as u8)
+        }
+    }
+}
+
+/// The first field present in an event, under either spelling.
+fn first<'a>(entry: &'a Value, names: &[&str]) -> Option<&'a Value> {
+    names.iter().find_map(|name| entry.get(name))
 }
 
 fn array<'a>(value: Option<&'a Value>, name: &str) -> Result<&'a [Value], String> {
@@ -79,11 +107,12 @@ fn parse_events(value: Option<&Value>) -> Result<Vec<SimEvent>, String> {
                 .and_then(Value::as_str)
                 .ok_or_else(|| "an event has no kind".to_string())?;
             Ok(SimEvent {
-                time: number(entry.get("time"))?,
+                time: number(first(entry, &["time", "t"]))?,
                 kind: core_kind(word).ok_or_else(|| format!("unknown event kind '{word}'"))?,
-                a: integer(entry.get("a"), -1)? as u8,
-                b: integer(entry.get("b"), -1)? as u8,
-                detail: integer(entry.get("detail"), 0)? as u8,
+                // 255 is the core's "no index": it used to be `-1 as u8`.
+                a: byte(first(entry, &["a", "ball"]), u8::MAX, "a")?,
+                b: byte(first(entry, &["b", "other"]), u8::MAX, "b")?,
+                detail: byte(entry.get("detail"), 0, "detail")?,
             })
         })
         .collect()
@@ -109,8 +138,12 @@ fn parse_state(value: Option<&Value>) -> Result<GameState, String> {
     Ok(game)
 }
 
+/// Optional in the request: a caller that only wants the outcome mapping (or
+/// that has no stroke to describe yet) gets the client's default stroke.
 fn parse_params(value: Option<&Value>) -> Result<pool_rules::ShotParams, String> {
-    let params = value.ok_or_else(|| "no 'params' object".to_string())?;
+    let Some(params) = value else {
+        return Ok(pool_rules::ShotParams::default());
+    };
     Ok(pool_rules::ShotParams {
         speed: number(params.get("speed"))?,
         level_aim_deg: number(params.get("level_aim_deg"))?,
@@ -121,8 +154,11 @@ fn parse_params(value: Option<&Value>) -> Result<pool_rules::ShotParams, String>
     })
 }
 
+/// Optional in the request: without a match, judge a fresh open-table break.
 fn parse_match(value: Option<&Value>) -> Result<pool_rules::MatchState, String> {
-    let state = value.ok_or_else(|| "no 'match' object".to_string())?;
+    let Some(state) = value else {
+        return Ok(pool_rules::MatchState::default());
+    };
     Ok(pool_rules::MatchState {
         player: integer(state.get("player"), 1)?,
         solids_player: integer(state.get("solids_player"), 0)?,
@@ -247,11 +283,16 @@ pub fn preview_json(text: &str) -> String {
 }
 
 /// The judge alone, for a caller that already has typed events and an outcome.
+///
+/// `params` and `match` may be omitted: both default, so a request carrying
+/// only `numbers`, `events`, `state` and `error` still yields a judgement.
 pub fn judge_json(text: &str) -> String {
     subset(text, &["judgement", "announcements"])
 }
 
 /// The outcome mapping alone, for a caller that has no match state to judge.
+///
+/// Like [`judge_json`], this needs neither `params` nor `match` in its request.
 pub fn outcome_mapping_json(text: &str) -> String {
     subset(text, &["events", "outcome", "event_digest"])
 }
@@ -335,5 +376,72 @@ mod tests {
         let output = preview_json("not json");
         let value = parse(&output).expect("even the error is JSON");
         assert!(value.get("error").and_then(Value::as_str).is_some());
+    }
+
+    const MINIMAL_REQUEST: &str = r#"{
+        "numbers": [0, 1],
+        "events": [{"time": 0.3, "kind": "ball-ball", "a": 0, "b": 1, "detail": 0}],
+        "state": {"phase": "settled", "foul": false, "miscue": false, "elapsed_time": 1.0},
+        "error": ""
+    }"#;
+
+    #[test]
+    fn judge_json_needs_neither_params_nor_match() {
+        let output = judge_json(MINIMAL_REQUEST);
+        let value = parse(&output).expect("the judgement is JSON");
+        assert!(value.get("error").is_none(), "{output}");
+        assert!(
+            value.get("judgement").is_some(),
+            "a minimal request still judges the shot"
+        );
+        assert!(value.get("announcements").is_some());
+    }
+
+    #[test]
+    fn an_out_of_range_ball_index_is_an_error_not_a_ruling() {
+        let request = MINIMAL_REQUEST.replace("\"a\": 0", "\"a\": 1e30");
+        let output = preview_json(&request);
+        let value = parse(&output).expect("even the error is JSON");
+        let error = value
+            .get("error")
+            .and_then(Value::as_str)
+            .expect("an error");
+        assert!(error.contains("byte"), "{error}");
+        assert!(value.get("judgement").is_none());
+    }
+
+    #[test]
+    fn outcome_mapping_output_feeds_back_into_preview() {
+        let mapped = outcome_mapping_json(MINIMAL_REQUEST);
+        let mapped = parse(&mapped).expect("the mapping is JSON");
+        assert!(mapped.get("error").is_none());
+        let events = mapped.get("events").expect("the typed events").clone();
+        // The output spells an event's values `time`/`ball`/`other`; the reader
+        // must accept that shape as well as the input's `time`/`a`/`b`.
+        let event = events
+            .as_array()
+            .and_then(|events| events.first())
+            .expect("one event");
+        assert!(event.get("ball").is_some());
+        assert!(event.get("other").is_some());
+
+        let request = Value::Object(vec![
+            (
+                "numbers".into(),
+                Value::Array(vec![Value::Number(0.0), Value::Number(1.0)]),
+            ),
+            ("events".into(), events.clone()),
+            (
+                "state".into(),
+                parse(r#"{"phase":"settled","foul":false,"miscue":false,"elapsed_time":1.0}"#)
+                    .expect("the state is JSON"),
+            ),
+            ("error".into(), Value::String(String::new())),
+        ])
+        .to_json();
+        let output = parse(&preview_json(&request)).expect("the preview is JSON");
+        assert!(output.get("error").is_none(), "{}", output.to_json());
+        assert_eq!(output.get("events"), Some(&events));
+        assert!(output.get("judgement").is_some());
     }
 }
