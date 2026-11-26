@@ -102,10 +102,9 @@ fn source_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
     }
 }
 
-#[test]
-fn the_core_calls_no_platform_transcendental_function() {
+fn check_no_platform_transcendental(dir: PathBuf, minimum_files: usize, what: &str) {
     let mut files = Vec::new();
-    source_files(&source_dir(), &mut files);
+    source_files(&dir, &mut files);
     let mut checked = 0;
     for path in files {
         let text = fs::read_to_string(&path).expect("a source file");
@@ -120,7 +119,7 @@ fn the_core_calls_no_platform_transcendental_function() {
         for function in FORBIDDEN {
             assert!(
                 !code.contains(function),
-                "{} calls the platform's `{function}`: the core must use `libm` (§11.4)",
+                "{} calls the platform's `{function}`: {what} must use `libm` (§11.4)",
                 path.display()
             );
         }
@@ -145,13 +144,33 @@ fn the_core_calls_no_platform_transcendental_function() {
         ] {
             assert!(
                 !code.contains(function),
-                "{} calls the platform's `{function}`: the core must use `libm` (§11.4)",
+                "{} calls the platform's `{function}`: {what} must use `libm` (§11.4)",
                 path.display()
             );
         }
         checked += 1;
     }
-    assert!(checked >= 10, "only {checked} source files were checked");
+    assert!(
+        checked >= minimum_files,
+        "only {checked} source files were checked"
+    );
+}
+
+#[test]
+fn the_core_calls_no_platform_transcendental_function() {
+    check_no_platform_transcendental(source_dir(), 10, "the core");
+}
+
+#[test]
+fn the_shared_helper_calls_no_platform_transcendental_function() {
+    // pool-intent builds the aim direction for both the bridge and the server.
+    // A platform `sin` there would drift exactly where the canary is supposed
+    // to catch drift, so it is held to the same rule as the core.
+    let intent = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("pool-intent")
+        .join("src");
+    check_no_platform_transcendental(intent, 4, "pool-intent");
 }
 
 #[test]

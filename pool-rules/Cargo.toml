@@ -1,0 +1,19 @@
+[package]
+name = "pool-rules"
+description = "BCA eight-ball rules, judgement and rack folding shared by server and client"
+readme = "README.md"
+keywords = ["pool", "rules", "eight-ball"]
+categories = ["game-development", "simulation"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+pool-core = { path = "../pool-core", version = "0.3.0" }
+pool-intent = { path = "../pool-intent", version = "0.3.0" }

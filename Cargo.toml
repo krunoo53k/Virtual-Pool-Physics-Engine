@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["pool-core", "pool-cli", "pool-visual", "pool-godot"]
+members = [
+    "pool-core",
+    "pool-intent",
+    "pool-rules",
+    "pool-cli",
+    "pool-visual",
+    "pool-godot",
+]
 
 [workspace.package]
 version = "0.3.0"
