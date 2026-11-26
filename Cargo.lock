@@ -126,6 +126,7 @@ name = "pool-cli"
 version = "0.3.0"
 dependencies = [
  "pool-core",
+ "pool-intent",
 ]
 
 [[package]]
@@ -142,6 +143,24 @@ dependencies = [
  "godot",
  "libm",
  "pool-core",
+ "pool-intent",
+ "pool-rules",
+]
+
+[[package]]
+name = "pool-intent"
+version = "0.3.0"
+dependencies = [
+ "libm",
+ "pool-core",
+]
+
+[[package]]
+name = "pool-rules"
+version = "0.3.0"
+dependencies = [
+ "pool-core",
+ "pool-intent",
 ]
 
 [[package]]

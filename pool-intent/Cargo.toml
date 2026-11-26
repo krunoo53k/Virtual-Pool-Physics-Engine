@@ -1,0 +1,22 @@
+[package]
+name = "pool-intent"
+description = "Shared shot intent, tuning bounds and outcome mapping for the pool physics core"
+readme = "README.md"
+keywords = ["pool", "physics", "determinism"]
+categories = ["game-development", "simulation"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[lib]
+# This is an rlib on purpose: pool-godot is a cdylib and cannot be depended on
+# by the server or by tests. The Godot binding, the server and the client
+# preview all use this crate for the same numbers.
+crate-type = ["rlib"]
+
+[dependencies]
+pool-core = { path = "../pool-core", version = "0.3.0" }
+libm = { workspace = true }
