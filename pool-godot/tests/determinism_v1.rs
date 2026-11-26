@@ -144,6 +144,22 @@ fn random_f64_bit_patterns_survive_json() {
         checked += 1;
     }
     assert!(checked > 200);
+    // Pin the writer against a value outside this engine: the shortest decimal
+    // that round-trips these bits is fixed by the f64 format, so a writer/reader
+    // pair that merely agrees with itself cannot pass this literal.
+    // The over-precise literal is deliberate: it is the decimal a caller
+    // writes, and the writer must choose the shortest one that round-trips.
+    #[allow(clippy::excessive_precision)]
+    let known = 0.1234567890123456789_f64;
+    assert_eq!(Value::Number(known).to_json(), "0.12345678901234568");
+    assert_eq!(
+        parse("0.12345678901234568")
+            .expect("the literal parses")
+            .as_f64()
+            .expect("it is a number")
+            .to_bits(),
+        known.to_bits()
+    );
     // Pin the sequence itself, so a different generator cannot quietly weaken
     // the test.
     assert_eq!(
@@ -151,6 +167,58 @@ fn random_f64_bit_patterns_survive_json() {
         "d9e504e33fb95cb4",
         "the random bit-pattern sequence moved"
     );
+}
+
+#[test]
+fn published_final_rotations_come_from_the_path_not_the_incoming_state() {
+    let table = TableConfig::default();
+    let (positions, numbers) = rack(&table);
+    let (state, trace) = bridge::simulate_from_intent_f64(
+        &table,
+        REFERENCE[0].0,
+        REFERENCE[0].1,
+        REFERENCE[0].2,
+        REFERENCE[0].3,
+        REFERENCE[0].4,
+        &bridge::triples_to_flat(&positions),
+        &numbers,
+        &[],
+    )
+    .expect("the first reference shot runs");
+
+    let final_flat = bridge::final_rotations_f64(&trace);
+    assert_eq!(
+        rotation_hash(&bridge::flat_triples(&final_flat)),
+        THREE_SHOT_ROTATIONS[0]
+    );
+    // The balls entered at identity, and the incoming state is never stepped.
+    assert!(state.balls.iter().all(|ball| ball.rotation == Vec3::ZERO));
+    let incoming: Vec<Vec3> = state.balls.iter().map(|ball| ball.rotation).collect();
+    assert_ne!(rotation_hash(&incoming), THREE_SHOT_ROTATIONS[0]);
+}
+
+#[test]
+fn build_info_reports_the_exact_compat_revisions() {
+    let compat = parse(include_str!("../../compat.json")).expect("compat.json parses");
+    let info = parse(&pool_godot::classes::build_info_json()).expect("the build info is JSON");
+    for (reported, pinned) in [
+        ("core", "core_rev"),
+        ("intent", "intent_rev"),
+        ("rules", "rules_rev"),
+    ] {
+        let rev = compat
+            .get(pinned)
+            .and_then(Value::as_str)
+            .expect("a pinned revision");
+        assert_eq!(rev.len(), 40, "{pinned} is a full git revision");
+        assert_eq!(
+            info.get(reported).and_then(Value::as_str),
+            Some(rev),
+            "{reported} no longer matches {pinned} in compat.json"
+        );
+    }
+    // HEAD is informational: it is deliberately not one of the pins above.
+    assert!(info.get("git_rev").and_then(Value::as_str).is_some());
 }
 
 #[test]

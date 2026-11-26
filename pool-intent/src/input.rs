@@ -85,18 +85,30 @@ impl CueTuning {
     /// Highest legal butt raise, degrees.
     pub const MAX_ELEVATION_DEG: f64 = 60.0;
 
-    /// The largest radial tip offset that holds, for a given table, in metres.
+    /// The core's miscue limit for a given table, in metres.
     ///
-    /// This is the core's miscue limit, not a second hand-maintained number:
-    /// an offset outside the disc is legal on the wire and becomes a foul the
-    /// core reports.
+    /// This is `R·μ/√(1+μ²)`, **not** the wire bound: an offset outside this
+    /// disc but inside [`Self::max_tip_radius`] is accepted and the core
+    /// reports the miscue instead of validation rejecting the shot (§7).
     pub fn tip_radius(table: &TableConfig) -> f64 {
         table.max_offset_without_miscue()
     }
 
-    /// The largest radial tip offset for the default table, in metres.
+    /// The core's miscue limit for the default table, in metres.
     pub fn default_tip_radius() -> f64 {
         Self::tip_radius(&TableConfig::default())
+    }
+
+    /// The largest radial tip offset accepted on the wire, for a given table,
+    /// in metres.
+    ///
+    /// This is the `R` of the radial `hypot ≤ R` check in §7: the ball radius,
+    /// the largest physically meaningful offset on the ball's face. It is
+    /// deliberately **wider** than [`Self::tip_radius`], the miscue limit; a
+    /// tip between the two is legal on the wire and becomes a core-reported
+    /// miscue rather than a validation failure.
+    pub fn max_tip_radius(table: &TableConfig) -> f64 {
+        table.ball.radius
     }
 
     /// Speed is in `[0.15, 9.0]`, both ends included.
@@ -114,7 +126,9 @@ impl CueTuning {
     ///
     /// This is a **radial** check (`hypot ≤ R`), never two per-axis checks: a
     /// tip near the edge on both axes is outside even though each axis alone is
-    /// inside.
+    /// inside. Callers pass either the wire bound [`Self::max_tip_radius`] or,
+    /// when they specifically want the hold/don't-hold disc,
+    /// [`Self::tip_radius`].
     pub fn tip_is_legal(across: f64, up: f64, radius: f64) -> bool {
         across.is_finite()
             && up.is_finite()
@@ -122,13 +136,20 @@ impl CueTuning {
             && libm::hypot(across, up) <= radius
     }
 
-    /// Tip check against a table's own miscue disc.
+    /// Tip check against a table's wire bound, not its miscue disc.
+    ///
+    /// A tip past the miscue limit is accepted here; the core reports the
+    /// miscue when the shot runs (§7).
     pub fn contact_is_legal(table: &TableConfig, across: f64, up: f64) -> bool {
-        Self::tip_is_legal(across, up, Self::tip_radius(table))
+        Self::tip_is_legal(across, up, Self::max_tip_radius(table))
     }
 
     /// All six shot scalars at once. An aim is legal for any finite value —
     /// it is normalised mod 360 by [`crate::direction::cue_direction`].
+    ///
+    /// The contact check uses the wire bound [`Self::max_tip_radius`], so an
+    /// off-centre tip beyond the miscue limit is legal and becomes a
+    /// core-reported miscue rather than a rejected shot (§7).
     pub fn params_are_legal(
         speed: f64,
         level_aim_deg: f64,
@@ -195,6 +216,50 @@ mod tests {
         assert!(across < radius && up < radius);
         assert!(!CueTuning::tip_is_legal(across, up, radius));
         assert!(!CueTuning::tip_is_legal(f64::NAN, 0.0, radius));
+    }
+
+    #[test]
+    fn the_wire_bound_is_the_ball_radius_not_the_miscue_limit() {
+        let table = TableConfig::default();
+        assert_eq!(CueTuning::max_tip_radius(&table), table.ball.radius);
+        assert!(CueTuning::tip_radius(&table) < CueTuning::max_tip_radius(&table));
+    }
+
+    #[test]
+    fn params_accept_a_tip_past_the_miscue_limit() {
+        let table = TableConfig::default();
+        // 0.02 m sits between the ~0.0147 m miscue disc and the 0.028575 m
+        // ball radius: legal on the wire, a miscue the core reports.
+        assert!(CueTuning::tip_radius(&table) < 0.02);
+        assert!(0.02 < CueTuning::max_tip_radius(&table));
+        assert!(CueTuning::params_are_legal(
+            3.0, 0.0, 0.0, 0.02, 0.0, &table
+        ));
+        assert!(!CueTuning::params_are_legal(
+            3.0, 0.0, 0.0, 0.03, 0.0, &table
+        ));
+    }
+
+    #[test]
+    fn params_reject_non_finite_scalars() {
+        let table = TableConfig::default();
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(!CueTuning::params_are_legal(
+                bad, 0.0, 0.0, 0.0, 0.0, &table
+            ));
+            assert!(!CueTuning::params_are_legal(
+                3.0, bad, 0.0, 0.0, 0.0, &table
+            ));
+            assert!(!CueTuning::params_are_legal(
+                3.0, 0.0, bad, 0.0, 0.0, &table
+            ));
+            assert!(!CueTuning::params_are_legal(
+                3.0, 0.0, 0.0, bad, 0.0, &table
+            ));
+            assert!(!CueTuning::params_are_legal(
+                3.0, 0.0, 0.0, 0.0, bad, &table
+            ));
+        }
     }
 
     #[test]

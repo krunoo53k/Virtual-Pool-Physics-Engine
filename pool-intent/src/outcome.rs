@@ -133,12 +133,15 @@ impl ShotPhase {
         }
     }
 
+    /// Parses a phase word. `solved` is kept as a legacy alias for `settled`;
+    /// unknown words are malformed, not guessed.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(word: &str) -> Option<Self> {
         Some(match word {
             "settled" | "solved" => Self::Settled,
             "settling" => Self::Settling,
-            _ => Self::Faulted,
+            "faulted" => Self::Faulted,
+            _ => return None,
         })
     }
 }
@@ -250,5 +253,7 @@ mod tests {
         for phase in [ShotPhase::Settled, ShotPhase::Settling, ShotPhase::Faulted] {
             assert_eq!(ShotPhase::from_str(phase.as_str()), Some(phase));
         }
+        assert_eq!(ShotPhase::from_str("solved"), Some(ShotPhase::Settled));
+        assert_eq!(ShotPhase::from_str("nonsense"), None);
     }
 }

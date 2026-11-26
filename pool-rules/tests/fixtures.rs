@@ -154,24 +154,24 @@ fn canonical_eight_ball_fixtures() {
                         scenario,
                         shot_name,
                         label,
-                        integer(expect, label),
                         match label {
                             "next_player" => ruling.next_player,
                             "solids_player" => ruling.solids_player,
                             _ => ruling.winner,
                         },
+                        integer(expect, label),
                     ),
                     "ball_in_hand" | "re_rack" | "game_over" => record(
                         &mut failures,
                         scenario,
                         shot_name,
                         label,
-                        boolean(expect, label),
                         match label {
                             "ball_in_hand" => ruling.ball_in_hand,
                             "re_rack" => ruling.re_rack,
                             _ => ruling.game_over,
                         },
+                        boolean(expect, label),
                     ),
                     _ => unreachable!("the fixture field list is closed"),
                 }

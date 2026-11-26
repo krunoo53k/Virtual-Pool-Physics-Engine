@@ -74,6 +74,16 @@ pub fn cue_direction_f64(level_aim_deg: f64, elevation_deg: f64) -> Vec<f64> {
     vec![direction.x, direction.y, direction.z]
 }
 
+/// The carried rotations at the end of the shot, as flat core-frame triples.
+///
+/// These must come from the path, not from the incoming `GameState`: the state
+/// that goes into a shot carries the orientation the balls had *before* it,
+/// which a resting ball never updates. The final orientation is the trace's
+/// analytic rotation at `duration`, including the rotation the ball carried in.
+pub fn final_rotations_f64(trace: &Trace) -> Vec<f64> {
+    triples_to_flat(&trace.sample_rotation(trace.duration))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

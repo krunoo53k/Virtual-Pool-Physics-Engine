@@ -38,46 +38,183 @@ const FORBIDDEN: &[&str] = &[
     ".powf(", ".powi(", ".cbrt(", ".hypot(",
 ];
 
-/// Removes the comments from a source file, so that a doc comment *mentioning*
-/// `f64::sin` is not mistaken for a call to it.
-fn strip_comments(text: &str) -> String {
+/// The free-function spellings of the same calls, for both float widths.
+///
+/// The method spellings in [`FORBIDDEN`] cover `.sin()` on either width, but a
+/// free function is written `f64::sin` / `f32::sin` and needs its own list.
+/// `sin_cos`, `asinh`, `acosh` and `atanh` are easy to miss even on `f64`.
+const FREE_FUNCTIONS: &[&str] = &[
+    "f64::sin",
+    "f64::cos",
+    "f64::tan",
+    "f64::asin",
+    "f64::acos",
+    "f64::atan",
+    "f64::atan2",
+    "f64::sinh",
+    "f64::cosh",
+    "f64::tanh",
+    "f64::exp",
+    "f64::exp2",
+    "f64::exp_m1",
+    "f64::ln",
+    "f64::ln_1p",
+    "f64::log",
+    "f64::log2",
+    "f64::log10",
+    "f64::powf",
+    "f64::powi",
+    "f64::hypot",
+    "f64::cbrt",
+    "f64::sin_cos",
+    "f64::asinh",
+    "f64::acosh",
+    "f64::atanh",
+    "f32::sin",
+    "f32::cos",
+    "f32::tan",
+    "f32::asin",
+    "f32::acos",
+    "f32::atan",
+    "f32::atan2",
+    "f32::sinh",
+    "f32::cosh",
+    "f32::tanh",
+    "f32::exp",
+    "f32::exp2",
+    "f32::exp_m1",
+    "f32::ln",
+    "f32::ln_1p",
+    "f32::log",
+    "f32::log2",
+    "f32::log10",
+    "f32::powf",
+    "f32::powi",
+    "f32::hypot",
+    "f32::cbrt",
+    "f32::sin_cos",
+    "f32::asinh",
+    "f32::acosh",
+    "f32::atanh",
+];
+
+/// Blanks the comments and literal contents of a source file, preserving
+/// newlines. A doc comment *mentioning* `f64::sin`, or a string containing
+/// `#[cfg(test)]`, must not be mistaken for code; a `//` or `/*` inside a
+/// literal must not start a comment either.
+fn strip_comments_and_literals(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
-    let mut in_block = false;
-    let mut in_line = false;
     while let Some(c) = chars.next() {
-        if in_block {
-            if c == '*' && chars.peek() == Some(&'/') {
-                chars.next();
-                in_block = false;
-            }
-            continue;
-        }
-        if in_line {
-            if c == '\n' {
-                in_line = false;
-                out.push(c);
-            }
-            continue;
-        }
         match c {
             '/' if chars.peek() == Some(&'/') => {
                 chars.next();
-                in_line = true;
+                out.push_str("  ");
+                for c in chars.by_ref() {
+                    if c == '\n' {
+                        out.push(c);
+                        break;
+                    }
+                    out.push(' ');
+                }
             }
             '/' if chars.peek() == Some(&'*') => {
                 chars.next();
-                in_block = true;
-            }
-            '"' => {
-                // A string literal: copy it as it is, so that a `//` inside it does
-                // not start a comment.
-                out.push(c);
+                out.push_str("  ");
+                let mut star = false;
                 for c in chars.by_ref() {
-                    out.push(c);
-                    if c == '"' {
+                    if star && c == '/' {
                         break;
                     }
+                    out.push(if c == '\n' { '\n' } else { ' ' });
+                    star = c == '*';
+                }
+            }
+            '"' => {
+                // A normal string: blank it, honouring backslash escapes, so a
+                // forbidden name or an attribute inside it cannot hide code.
+                out.push(' ');
+                let mut escaped = false;
+                for c in chars.by_ref() {
+                    if c == '\n' {
+                        out.push(c);
+                    } else if escaped {
+                        out.push(' ');
+                        escaped = false;
+                    } else if c == '\\' {
+                        out.push(' ');
+                        escaped = true;
+                    } else if c == '"' {
+                        out.push(' ');
+                        break;
+                    } else {
+                        out.push(' ');
+                    }
+                }
+            }
+            'r' if matches!(chars.peek(), Some(&'"') | Some(&'#')) => {
+                // Raw strings (`r"…"`, `r#"…"#`, …). A raw identifier (`r#name`)
+                // has no opening quote and must be left as ordinary code.
+                let mut probe = chars.clone();
+                let mut hashes = 0usize;
+                while probe.peek() == Some(&'#') {
+                    probe.next();
+                    hashes += 1;
+                }
+                if probe.peek() == Some(&'"') {
+                    out.push(' ');
+                    for _ in 0..hashes {
+                        chars.next();
+                        out.push(' ');
+                    }
+                    chars.next(); // the opening quote
+                    out.push(' ');
+                    while let Some(ch) = chars.next() {
+                        out.push(if ch == '\n' { '\n' } else { ' ' });
+                        if ch == '"' {
+                            let mut tail = chars.clone();
+                            let mut seen = 0usize;
+                            while seen < hashes && tail.peek() == Some(&'#') {
+                                tail.next();
+                                seen += 1;
+                            }
+                            if seen == hashes {
+                                for _ in 0..hashes {
+                                    chars.next();
+                                    out.push(' ');
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    out.push(c);
+                }
+            }
+            '\'' => {
+                // A char literal (including `'"'`) is blanked whole so the
+                // quote inside it is not taken for a string; a lifetime (`'a`)
+                // is ordinary code and is copied as is.
+                let is_char = match chars.peek() {
+                    Some('\\') => true,
+                    Some(_) => chars.clone().nth(1) == Some('\''),
+                    None => false,
+                };
+                if is_char {
+                    out.push(' ');
+                    let mut escaped = false;
+                    for c in chars.by_ref() {
+                        out.push(if c == '\n' { '\n' } else { ' ' });
+                        if escaped {
+                            escaped = false;
+                        } else if c == '\\' {
+                            escaped = true;
+                        } else if c == '\'' {
+                            break;
+                        }
+                    }
+                } else {
+                    out.push(c);
                 }
             }
             _ => out.push(c),
@@ -108,14 +245,16 @@ fn check_no_platform_transcendental(dir: PathBuf, minimum_files: usize, what: &s
     let mut checked = 0;
     for path in files {
         let text = fs::read_to_string(&path).expect("a source file");
-        // The test modules are allowed to use the platform's functions: they are not
-        // part of the simulation, and a test that reads an angle in degrees wants the
-        // platform's `to_radians`.
-        let code = match text.find("#[cfg(test)]") {
-            Some(index) => &text[..index],
-            None => &text[..],
+        // Strip first, then cut at `#[cfg(test)]`: an attribute in a comment or a
+        // string is not a test module and must not exempt the code after it.
+        // Real test modules are allowed to use the platform's functions: they are
+        // not part of the simulation, and a test that reads an angle in degrees
+        // wants the platform's `to_radians`.
+        let stripped = strip_comments_and_literals(&text);
+        let code = match stripped.find("#[cfg(test)]") {
+            Some(index) => &stripped[..index],
+            None => &stripped[..],
         };
-        let code = strip_comments(code);
         for function in FORBIDDEN {
             assert!(
                 !code.contains(function),
@@ -123,25 +262,8 @@ fn check_no_platform_transcendental(dir: PathBuf, minimum_files: usize, what: &s
                 path.display()
             );
         }
-        // The same for the free functions, `f64::sin` and the rest.
-        for function in [
-            "f64::sin",
-            "f64::cos",
-            "f64::tan",
-            "f64::asin",
-            "f64::acos",
-            "f64::atan",
-            "f64::atan2",
-            "f64::exp",
-            "f64::ln",
-            "f64::log",
-            "f64::log2",
-            "f64::log10",
-            "f64::powf",
-            "f64::powi",
-            "f64::hypot",
-            "f64::cbrt",
-        ] {
+        // The same for the free functions, `f64::sin` / `f32::sin` and the rest.
+        for function in FREE_FUNCTIONS {
             assert!(
                 !code.contains(function),
                 "{} calls the platform's `{function}`: {what} must use `libm` (§11.4)",
@@ -154,6 +276,25 @@ fn check_no_platform_transcendental(dir: PathBuf, minimum_files: usize, what: &s
         checked >= minimum_files,
         "only {checked} source files were checked"
     );
+}
+
+#[test]
+fn an_attribute_in_a_comment_or_string_does_not_hide_later_code() {
+    let text = r#"
+        // #[cfg(test)]
+        let quote = '"';
+        let s = "// #[cfg(test)]";
+        let x = f64::sinh(1.0);
+        #[cfg(test)]
+        mod tests {}
+    "#;
+    let stripped = strip_comments_and_literals(text);
+    let code = match stripped.find("#[cfg(test)]") {
+        Some(index) => &stripped[..index],
+        None => &stripped[..],
+    };
+    assert!(!code.contains("#[cfg(test)]"));
+    assert!(code.contains("f64::sinh"));
 }
 
 #[test]
