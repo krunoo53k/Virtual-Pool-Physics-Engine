@@ -5,16 +5,10 @@
 //! itself is here, where it can be tested without an engine running.
 
 use pool_core::config::TableConfig;
-use pool_core::geometry::TableGeometry;
-use pool_core::math::{Vec2, Vec3};
+use pool_core::math::Vec3;
 use pool_core::sim::SimError;
-use pool_core::state::{BallState, GamePhase, GameState, PocketState, ShotInput};
+use pool_core::state::{GamePhase, GameState, ShotInput};
 use pool_core::{cue, try_simulate_shot_traced, Trace};
-
-/// A pocketed ball's hand-off position sits at the drop line. Positions cross
-/// the bridge as f32, so the depth recovered there is only good to a few
-/// nanometres; that much slack counts as the line itself.
-const DROP_LINE_TOLERANCE: f64 = 1e-6;
 
 /// The strike: the cue ball's state after the tip hits it.
 pub struct Strike {
@@ -63,44 +57,18 @@ pub fn shot_input(
     numbers: &[i32],
     rotations: &[Vec3],
 ) -> ShotInput {
-    let (across, up) = crate::frame::contact_offset(contact_offset.0, contact_offset.1);
-    let geometry = TableGeometry::new(table);
-    let mut balls: Vec<BallState> = Vec::with_capacity(positions.len());
-    for (index, position) in positions.iter().enumerate() {
-        let number = numbers.get(index).copied().unwrap_or(index as i32);
-        let number = u8::try_from(number).unwrap_or(0);
-        let mut ball = BallState::at_rest(table, number, *position);
-        // The pocket state machine only announces pocket-enter on a crossing
-        // from the table side (§9.2), so a ball handed over with its centre
-        // already past the mouth line would stay OnTable, never get a drop
-        // check and be taken out by the off-table backstop instead (§10.1).
-        // Recover the state from the position. The mouth line itself counts as
-        // in: a ball placed exactly on it cannot fire a crossing either.
-        let plan = Vec2::new(ball.position.x, ball.position.y);
-        for pocket in &geometry.pockets {
-            if pocket.lateral(plan).abs() > pocket.mouth_width / 2.0 {
-                continue;
-            }
-            let depth = pocket.mouth_distance(plan);
-            if depth >= pocket.shelf_depth - DROP_LINE_TOLERANCE {
-                ball.pocket_state = PocketState::Pocketed;
-                ball.is_pocketed = true;
-            } else if depth >= 0.0 {
-                ball.pocket_state = PocketState::Entering;
-            } else {
-                continue;
-            }
-            break;
-        }
-        // The orientation the ball carries in: it is not physics state, and the
-        // shot's own numbers do not depend on it - only the path's rotations do.
-        ball.rotation = rotations.get(index).copied().unwrap_or(Vec3::ZERO);
-        balls.push(ball);
-    }
-    let mut input = ShotInput::new(cue_speed, direction, balls);
-    input.contact_offset_x = across;
-    input.contact_offset_y = up;
-    input
+    // The hand-off is shared with the server: a ball recovered on a pocket
+    // shelf must start in the same pocket state on both sides. See
+    // `pool_intent::input` for the recovery and the DROP_LINE_TOLERANCE slack.
+    pool_intent::shot_input(
+        table,
+        cue_speed,
+        direction,
+        contact_offset,
+        positions,
+        numbers,
+        rotations,
+    )
 }
 
 /// The strike the shot would make.
