@@ -1,0 +1,10 @@
+{
+  "protocol": "1.0",
+  "model": "1.10",
+  "core_rev": "03524767d37f9a6f16c950660b2319ec8de8c8c9",
+  "intent_rev": "860b664886536e742ccb0a07a2823d9bc13a78ab",
+  "rules_rev": "c0fb7b4529474f016fda52b0d34804ab1a71a8af",
+  "canary": "c8ee370c4195017f",
+  "corpus_sha256": "9078fbe66e760a614045f4c7110105d140a8897ffd2a5bba591f30923f51b33f",
+  "rules_version": "1.0"
+}
